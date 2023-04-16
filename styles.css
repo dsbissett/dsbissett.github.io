@@ -20,3 +20,15 @@ body {
 #previewCanvas {
   margin-left: 10px;
 }
+
+/* Responsive styles */
+@media (max-width: 600px) {
+  .game-container {
+    flex-direction: column;
+  }
+
+  #previewCanvas {
+    margin-left: 0;
+    margin-bottom: 10px;
+  }
+}

@@ -1,6 +1,6 @@
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
-const blockSize = 32;
+const blockSize = Math.min(Math.floor(window.innerWidth / 10), 32);
 
 const tetriminos = {
   'I': [
@@ -44,6 +44,18 @@ const colors = [
   '#00f000', // S
   '#f00000'  // Z
 ];
+
+// Update canvas width and height based on screen size
+canvas.width = blockSize * 10;
+canvas.height = blockSize * 20;
+
+const previewCanvas = document.getElementById('previewCanvas');
+const previewCtx = previewCanvas.getContext('2d');
+const previewBlockSize = 32;
+
+// Update preview canvas width and height based on screen size
+previewCanvas.width = blockSize * 5;
+previewCanvas.height = blockSize * 5;
 
 function drawBlock(x, y, value) {
   ctx.fillStyle = colors[value];
@@ -202,10 +214,6 @@ function drawScore() {
   ctx.fillText(`Score: ${score}`, 10, 30);
 }
 
-const previewCanvas = document.getElementById('previewCanvas');
-const previewCtx = previewCanvas.getContext('2d');
-const previewBlockSize = 32;
-
 let nextTetrimino = getRandomTetrimino();
 
 function drawPreview(matrix) {
@@ -235,6 +243,54 @@ const bgMusic = document.getElementById('bgMusic');
 function playBackgroundMusic() {
   bgMusic.volume = 0.5; // Adjust the volume as needed
   bgMusic.play();
+}
+
+// Add touch controls
+canvas.addEventListener('touchstart', handleTouchStart);
+canvas.addEventListener('touchmove', handleTouchMove);
+canvas.addEventListener('touchend', handleTouchEnd);
+
+let touchStartX = null;
+let touchStartY = null;
+
+function handleTouchStart(e) {
+  e.preventDefault();
+  touchStartX = e.touches[0].clientX;
+  touchStartY = e.touches[0].clientY;
+}
+
+function handleTouchMove(e) {
+  e.preventDefault();
+  const touchMoveX = e.touches[0].clientX;
+  const touchMoveY = e.touches[0].clientY;
+
+  const dx = touchMoveX - touchStartX;
+  const dy = touchMoveY - touchStartY;
+
+  if (Math.abs(dx) > Math.abs(dy)) {
+    if (dx > blockSize * 0.75) {
+      moveTetrimino(1);
+      touchStartX = touchMoveX;
+    } else if (dx < -blockSize * 0.75) {
+      moveTetrimino(-1);
+      touchStartX = touchMoveX;
+    }
+  } else {
+    if (dy > blockSize * 0.75) {
+      moveDown();
+      touchStartY = touchMoveY;
+    }
+  }
+}
+
+function handleTouchEnd(e) {
+  e.preventDefault();
+  const dx = e.changedTouches[0].clientX - touchStartX;
+  const dy = e.changedTouches[0].clientY - touchStartY;
+
+  if (Math.abs(dx) < blockSize * 0.25 && Math.abs(dy) < blockSize * 0.25) {
+    rotateTetrimino();
+  }
 }
 
 function gameLoop(time = 0) {
