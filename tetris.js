@@ -49,26 +49,9 @@ const colors = [
 canvas.width = blockSize * 10;
 canvas.height = blockSize * 20;
 
-const grid = Array.from({ length: 20 }, () => Array(10).fill(0));
 const previewCanvas = document.getElementById('previewCanvas');
 const previewCtx = previewCanvas.getContext('2d');
 const previewBlockSize = 32;
-
-const bgMusic = document.getElementById('bgMusic');
-const startBtn = document.getElementById('startBtn');
-
-let score = 0;
-let dropCounter = 0;
-let dropInterval = 1000;
-let lastTime = 0;
-let nextTetrimino = getRandomTetrimino();
-let touchStartX = null;
-let touchStartY = null;
-
-// Add touch controls
-canvas.addEventListener('touchstart', handleTouchStart);
-canvas.addEventListener('touchmove', handleTouchMove);
-canvas.addEventListener('touchend', handleTouchEnd);
 
 // Update preview canvas width and height based on screen size
 previewCanvas.width = blockSize * 5;
@@ -119,35 +102,10 @@ class Tetrimino {
   }
 }
 
-function rotateTetrimino() {
-  const rotatedMatrix = rotateMatrix(tetrimino.matrix);
-  if (!isCollision(rotatedMatrix, tetrimino.x, tetrimino.y)) {
-    tetrimino.matrix = rotatedMatrix;
-  }
-}
-
 function rotateMatrix(matrix) {
-  // Transpose the matrix
-  const transposed = matrix[0].map((_, colIndex) => matrix.map(row => row[colIndex]));
-
-  // Reverse the rows of the transposed matrix
-  const rotated = transposed.map(row => row.reverse());
-
-  return rotated;
+  const result = matrix[0].map((_, i) => matrix.map(row => row[i])).reverse();
+  return result;
 }
-
-// v2
-// function rotateMatrix(matrix) {
-//   const n = matrix.length - 1;
-//   const result = matrix.map((row, i) => row.map((val, j) => matrix[n - j][i]));
-//   return result;
-// }
-
-// v1
-// function rotateMatrix(matrix) {
-//   const result = matrix[0].map((_, i) => matrix.map(row => row[i])).reverse();
-//   return result;
-// }
 
 function isCollision(matrix, offsetX, offsetY) {
   for (let y = 0; y < matrix.length; y++) {
@@ -172,6 +130,11 @@ function clearLines() {
       }
     }
 
+    // Create particles for each block in the cleared row
+    for (let x = 0; x < grid[y].length; x++) {
+      createParticles(x + 0.5, y + 0.5, colors[grid[y][x]]);
+    }
+
     const row = grid.splice(y, 1)[0].fill(0);
     grid.unshift(row);
     y++; // Check the same row index again as it now contains the row above
@@ -182,6 +145,9 @@ function clearLines() {
     updateScore(clearedLines);
   }
 }
+
+const grid = Array.from({ length: 20 }, () => Array(10).fill(0));
+const tetrimino = new Tetrimino(getRandomTetrimino(), 3, 0);
 
 document.addEventListener('keydown', (event) => {
   if (event.key === 'ArrowLeft') {
@@ -194,6 +160,10 @@ document.addEventListener('keydown', (event) => {
     tetrimino.rotate();
   }
 });
+
+let dropCounter = 0;
+let dropInterval = 1000;
+let lastTime = 0;
 
 function merge(grid, tetrimino) {
   tetrimino.matrix.forEach((row, y) => {
@@ -235,6 +205,8 @@ function update(dt) {
   }
 }
 
+let score = 0;
+
 function updateScore(clearedLines) {
   const linePoints = [0, 40, 100, 300, 1200];
   const level = 1; // You can implement level progression based on the player's score or lines cleared
@@ -246,6 +218,8 @@ function drawScore() {
   ctx.font = '20px Arial';
   ctx.fillText(`Score: ${score}`, 10, 30);
 }
+
+let nextTetrimino = getRandomTetrimino();
 
 function drawPreview(matrix) {
   // Clear preview canvas
@@ -269,39 +243,47 @@ function drawPreview(matrix) {
   });
 }
 
+const bgMusic = document.getElementById('bgMusic');
+
 function playBackgroundMusic() {
   bgMusic.volume = 0.5; // Adjust the volume as needed
   bgMusic.play();
 }
 
-// Start the game and play background music when the button is clicked
-startBtn.addEventListener('click', () => {
-  startBtn.style.display = 'none';
-  gameLoop();
-  playBackgroundMusic();
-});
+function playMusicOnClick() {
+  document.addEventListener('touchstart', function onClick(){
+    bgMusic.volume = 0.5;
+    bgMusic.play().catch((error) => {
+      console.error("Error playing background music:", error);
+    });
+    document.removeEventListener('touchstart', onClick);
+  })
+  document.addEventListener('click', function onClick() {
+    bgMusic.volume = 0.5;
+    bgMusic.play().catch((error) => {
+      console.error("Error playing background music:", error);
+    });
+    document.removeEventListener('click', onClick);
+  });
+}
 
-function moveTetrimino(dir) {
-  const newX = tetrimino.x + dir;
-  if (!isCollision(tetrimino.matrix, newX, tetrimino.y)) {
-    tetrimino.x = newX;
+function rotateTetrimino() {
+  const rotatedMatrix = rotateMatrix(tetrimino.matrix);
+  if (!isCollision(rotatedMatrix, tetrimino.x, tetrimino.y)) {
+    tetrimino.matrix = rotatedMatrix;
   }
 }
 
-// Rename 'drop' function to 'moveDown'
-function moveDown() {
-  const newY = tetrimino.y + 1;
-  if (!isCollision(tetrimino.matrix, tetrimino.x, newY)) {
-    tetrimino.y = newY;
-  } else {
-    lockTetrimino();
-    resetTetrimino();
-  }
-}
+// Add touch controls
+canvas.addEventListener('touchstart', handleTouchStart);
+canvas.addEventListener('touchmove', handleTouchMove);
+canvas.addEventListener('touchend', handleTouchEnd);
+
+let touchStartX = null;
+let touchStartY = null;
 
 function handleTouchStart(e) {
   e.preventDefault();
-  console.log("Touch!");
   touchStartX = e.touches[0].clientX;
   touchStartY = e.touches[0].clientY;
 }
@@ -316,19 +298,20 @@ function handleTouchMove(e) {
 
   if (Math.abs(dx) > Math.abs(dy)) {
     if (dx > blockSize * 0.75) {
-      moveTetrimino(1);
+      tetrimino.move(1, 0);
       touchStartX = touchMoveX;
     } else if (dx < -blockSize * 0.75) {
-      moveTetrimino(-1);
+      tetrimino.move(-1, 0);
       touchStartX = touchMoveX;
     }
   } else {
     if (dy > blockSize * 0.75) {
-      moveDown();
+      tetrimino.move(0, 1);
       touchStartY = touchMoveY;
     }
   }
 }
+
 
 function handleTouchEnd(e) {
   e.preventDefault();
@@ -340,7 +323,58 @@ function handleTouchEnd(e) {
   }
 }
 
-const tetrimino = new Tetrimino(getRandomTetrimino(), 3, 0);
+class Particle {
+  constructor(x, y, color) {
+    this.x = x;
+    this.y = y;
+    this.color = color;
+    this.size = Math.random() * 5 + 1;
+    this.speedX = Math.random() * 3 - 1.5;
+    this.speedY = Math.random() * 3 - 1.5;
+  }
+
+  update() {
+    this.x += this.speedX;
+    this.y += this.speedY;
+    if (this.size > 0.1) this.size -= 0.1;
+  }
+
+  draw() {
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fillStyle = this.color;
+    ctx.fill();
+  }
+}
+
+const particles = [];
+
+function createParticles(particleX, y, color) {
+  const numberOfParticles = 30;
+
+  for (let i = 0; i < numberOfParticles; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = Math.random() * 3 + 1;
+    const velocity = {
+      x: Math.cos(angle) * speed,
+      y: Math.sin(angle) * speed
+    };
+    const size = Math.random() * 3 + 1;
+    const life = 100;
+    particles.push(new Particle(particleX * blockSize, y * blockSize, velocity, size, life, color));
+  }
+}
+
+function handleParticles() {
+  particles.forEach((particle, index) => {
+    particle.update();
+    particle.draw();
+
+    if (particle.size <= 0.1) {
+      particles.splice(index, 1);
+    }
+  });
+}
 
 function gameLoop(time = 0) {
   const dt = time - lastTime;
@@ -356,9 +390,12 @@ function gameLoop(time = 0) {
   drawMatrix(grid, 0, 0);
   drawMatrix(tetrimino.matrix, tetrimino.x, tetrimino.y);
   drawScore();
-  
+
+  // Handle particles
+  handleParticles();
+
   // Play background music
-  //playBackgroundMusic();
+  playMusicOnClick();
 
   // Request the next frame
   requestAnimationFrame(gameLoop);
