@@ -120,6 +120,8 @@ function isCollision(matrix, offsetX, offsetY) {
   return false;
 }
 
+let totalClearedRows = 0;
+
 function clearLines() {
   let clearedLines = 0;
 
@@ -213,8 +215,13 @@ let score = 0;
 
 function updateScore(clearedLines) {
   const linePoints = [0, 40, 100, 300, 1200];
-  const level = 1; // You can implement level progression based on the player's score or lines cleared
+  const level = 1; 
   score += linePoints[clearedLines] * (level + 1);
+
+  totalClearedRows += clearedLines; // Update the total cleared rows
+  if (totalClearedRows % 5 === 0) {
+    dropInterval /= 2; // Double the speed of Tetriminos
+  }
 }
 
 function drawScore() {
