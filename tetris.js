@@ -130,10 +130,14 @@ function clearLines() {
       }
     }
 
-    // Create particles for each block in the cleared row
     for (let x = 0; x < grid[y].length; x++) {
-      createParticles(x + 0.5, y + 0.5, colors[grid[y][x]]);
+      createBlocks(x, y, colors[grid[y][x]]);
     }
+
+    // Create particles for each block in the cleared row
+    // for (let x = 0; x < grid[y].length; x++) {
+    //   createParticles(x + 0.5, y + 0.5, colors[grid[y][x]]);
+    // }
 
     const row = grid.splice(y, 1)[0].fill(0);
     grid.unshift(row);
@@ -323,6 +327,56 @@ function handleTouchEnd(e) {
   }
 }
 
+class Block {
+  constructor(x, y, color) {
+    this.x = x;
+    this.y = y;
+    this.color = color;
+    this.size = blockSize;
+    this.speedX = Math.random() * 6 - 3;
+    this.speedY = -Math.random() * 8 - 4;
+    this.gravity = 0.3;
+  }
+
+  update() {
+    this.x += this.speedX;
+    this.y += this.speedY;
+    this.speedY += this.gravity;
+
+    if (this.y > canvas.height) {
+      this.size = 0;
+    }
+  }
+
+  draw() {
+    ctx.fillStyle = this.color;
+    ctx.fillRect(this.x, this.y, this.size, this.size);
+    ctx.strokeStyle = '#000';
+    ctx.strokeRect(this.x, this.y, this.size, this.size);
+  }
+}
+
+const blocks = [];
+
+function createBlocks(x, y, color) {
+  const numberOfBlocks = 1;
+
+  for (let i = 0; i < numberOfBlocks; i++) {
+    blocks.push(new Block(x * blockSize, y * blockSize, color));
+  }
+}
+
+function handleBlocks() {
+  blocks.forEach((block, index) => {
+    block.update();
+    block.draw();
+
+    if (block.size <= 0) {
+      blocks.splice(index, 1);
+    }
+  });
+}
+
 class Particle {
   constructor(x, y, color) {
     this.x = x;
@@ -392,7 +446,8 @@ function gameLoop(time = 0) {
   drawScore();
 
   // Handle particles
-  handleParticles();
+  //handleParticles();
+  handleBlocks();
 
   // Play background music
   playMusicOnClick();
