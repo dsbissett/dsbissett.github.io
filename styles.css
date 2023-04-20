@@ -9,26 +9,25 @@ body {
 
 .game-container {
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   align-items: center;
 }
 
 #gameCanvas {
   border: 1px solid #fff;
+  max-width: 100%;
+  height: auto; /* Maintain aspect ratio */
 }
 
-#previewCanvas {
-  margin-left: 10px;
+.preview-container {
+  display: flex;
+  justify-content: center;
+  margin-top: 10px;
 }
 
-/* Responsive styles */
-@media (max-width: 600px) {
-  .game-container {
-    flex-direction: column;
-  }
-
-  #previewCanvas {
-    margin-left: 0;
-    margin-bottom: 10px;
-  }
+.preview {
+  max-width: 20%; /* Add a width constraint */
+  height: auto; /* Maintain aspect ratio */
+  margin-left: 5px;
+  margin-right: 5px;
 }
