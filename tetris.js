@@ -2,6 +2,16 @@ const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 const blockSize = Math.min(Math.floor(window.innerWidth / 10), 32);
 
+const previewCanvas2 = document.getElementById('previewCanvas2');
+const previewCtx2 = previewCanvas2.getContext('2d');
+previewCanvas2.width = blockSize * 5;
+previewCanvas2.height = blockSize * 5;
+
+const previewCanvas3 = document.getElementById('previewCanvas3');
+const previewCtx3 = previewCanvas3.getContext('2d');
+previewCanvas3.width = blockSize * 5;
+previewCanvas3.height = blockSize * 5;
+
 const tetriminos = {
   'I': [
     [1, 1, 1, 1]
@@ -182,13 +192,17 @@ function merge(grid, tetrimino) {
 }
 
 function resetTetrimino() {
-tetrimino.matrix = nextTetrimino;
+  tetrimino.matrix = nextTetrimino;
   tetrimino.x = Math.floor(grid[0].length / 2) - Math.ceil(tetrimino.matrix[0].length / 2);
   tetrimino.y = 0;
 
-  // Set the next Tetrimino and draw it in the preview window
-  nextTetrimino = getRandomTetrimino();
-  drawPreview(nextTetrimino);
+  // Set the next Tetrimino and draw it in the preview windows
+  nextTetrimino = nextTetrimino2;
+  drawPreview(nextTetrimino, previewCtx);
+  nextTetrimino2 = nextTetrimino3;
+  drawPreview(nextTetrimino2, previewCtx2);
+  nextTetrimino3 = getRandomTetrimino();
+  drawPreview(nextTetrimino3, previewCtx3);
 
   // Check for game over
   if (isCollision(tetrimino.matrix, tetrimino.x, tetrimino.y)) {
@@ -232,10 +246,10 @@ function drawScore() {
 
 let nextTetrimino = getRandomTetrimino();
 
-function drawPreview(matrix) {
+function drawPreview(matrix, context) {
   // Clear preview canvas
-  previewCtx.fillStyle = '#222';
-  previewCtx.fillRect(0, 0, previewCanvas.width, previewCanvas.height);
+  context.fillStyle = '#222';
+  context.fillRect(0, 0, previewCanvas.width, previewCanvas.height);
 
   // Calculate x and y offsets to center the Tetrimino matrix
   const xOffset = Math.floor((previewCanvas.width / previewBlockSize - matrix[0].length) / 2);
@@ -245,10 +259,10 @@ function drawPreview(matrix) {
   matrix.forEach((row, y) => {
     row.forEach((value, x) => {
       if (value) {
-        previewCtx.fillStyle = colors[value];
-        previewCtx.fillRect((x + xOffset) * previewBlockSize, (y + yOffset) * previewBlockSize, previewBlockSize, previewBlockSize);
-        previewCtx.strokeStyle = '#000';
-        previewCtx.strokeRect((x + xOffset) * previewBlockSize, (y + yOffset) * previewBlockSize, previewBlockSize, previewBlockSize);
+        context.fillStyle = colors[value];
+        context.fillRect((x + xOffset) * previewBlockSize, (y + yOffset) * previewBlockSize, previewBlockSize, previewBlockSize);
+        context.strokeStyle = '#000';
+        context.strokeRect((x + xOffset) * previewBlockSize, (y + yOffset) * previewBlockSize, previewBlockSize, previewBlockSize);
       }
     });
   });
@@ -462,6 +476,14 @@ function gameLoop(time = 0) {
   // Request the next frame
   requestAnimationFrame(gameLoop);
 }
+
+// Draw initial previews
+let nextTetrimino2 = getRandomTetrimino();
+let nextTetrimino3 = getRandomTetrimino();
+
+drawPreview(nextTetrimino, previewCtx);
+drawPreview(nextTetrimino2, previewCtx2);
+drawPreview(nextTetrimino3, previewCtx3);
 
 resetTetrimino();
 gameLoop();
