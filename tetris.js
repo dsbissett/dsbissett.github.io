@@ -206,7 +206,8 @@ function resetTetrimino() {
 
   // Check for game over
   if (isCollision(tetrimino.matrix, tetrimino.x, tetrimino.y)) {
-    grid.forEach(row => row.fill(0));
+    //grid.forEach(row => row.fill(0));
+    checkGameOver();
   }
 
   clearLines(); // Clear lines after spawning a new Tetrimino
@@ -220,6 +221,7 @@ function update(dt) {
     } else {
       merge(grid, tetrimino);
       resetTetrimino();
+      checkGameOver();
     }
     dropCounter = 0;
   }
@@ -451,6 +453,52 @@ function handleParticles() {
   });
 }
 
+function drawGameOver() {
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.fillStyle = '#fff';
+  ctx.font = '48px Arial';
+  ctx.fillText('Game Over', canvas.width / 2 - ctx.measureText('Game Over').width / 2, canvas.height / 2 - 48);
+
+  ctx.font = '24px Arial';
+  ctx.fillText('Press any key to restart', canvas.width / 2 - ctx.measureText('Press any key to restart').width / 2, canvas.height / 2 + 12);
+}
+
+function checkGameOver() {
+  for (let y = 0; y < grid.length; y++) {
+    for (let x = 0; x < grid[y].length; x++) {
+      if (grid[y][x] !== 0) {
+        if (y === 0) {
+          console.log('GAME OVER!')
+          gameover = true;
+          return true;
+        }
+        break;
+      }
+    }
+  }
+  gameover = false;
+  return false;
+}
+
+function resetGame() {
+  grid.forEach(row => row.fill(0));
+  score = 0;
+  totalClearedRows = 0;
+  dropInterval = 1000;
+  nextTetrimino = getRandomTetrimino();
+  nextTetrimino2 = getRandomTetrimino();
+  nextTetrimino3 = getRandomTetrimino();
+  tetrimino.matrix = nextTetrimino;
+  tetrimino.x = Math.floor(grid[0].length / 2) - Math.ceil(tetrimino.matrix[0].length / 2);
+  tetrimino.y = 0;
+  resetTetrimino();
+  gameover = false;
+}
+
+let gameover = false;
+
 function gameLoop(time = 0) {
   const dt = time - lastTime;
   lastTime = time;
@@ -473,8 +521,14 @@ function gameLoop(time = 0) {
   // Play background music
   playMusicOnClick();
 
+  if (gameover) {
+    drawGameOver();
+  } else {
+    // Request the next frame
+    requestAnimationFrame(gameLoop);
+  }
   // Request the next frame
-  requestAnimationFrame(gameLoop);
+  //requestAnimationFrame(gameLoop);
 }
 
 // Draw initial previews
@@ -484,6 +538,13 @@ let nextTetrimino3 = getRandomTetrimino();
 drawPreview(nextTetrimino, previewCtx);
 drawPreview(nextTetrimino2, previewCtx2);
 drawPreview(nextTetrimino3, previewCtx3);
+
+document.addEventListener('keydown', (event) => {
+    if (gameover) {
+      resetGame();
+      gameLoop();
+    }
+  });
 
 resetTetrimino();
 gameLoop();
