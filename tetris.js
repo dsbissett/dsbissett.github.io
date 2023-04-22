@@ -90,6 +90,20 @@ function getRandomTetrimino() {
   return tetriminos[randomKey];
 }
 
+const blockLandSound = new Audio('block_land.mp3');
+const blockMoveSound = new Audio('block_move.mp3');
+const blockRotateSound = new Audio('block_rotate.mp3');
+const blockClearSound = new Audio('block_clear.mp3');
+
+async function playAudio(audio) {
+  try {
+    const audioClone = audio.cloneNode();
+    await audioClone.play();
+  } catch (error) {
+    console.error("Error playing audio:", error);
+  }
+}
+
 class Tetrimino {
   constructor(matrix, x, y) {
     this.matrix = matrix;
@@ -101,6 +115,11 @@ class Tetrimino {
     if (!isCollision(this.matrix, this.x + dx, this.y + dy)) {
       this.x += dx;
       this.y += dy;
+      playAudio(blockMoveSound);
+    } else if (dy !== 0) {
+      merge(grid, this);
+      resetTetrimino();
+      playAudio(blockLandSound);
     }
   }
 
@@ -108,6 +127,7 @@ class Tetrimino {
     const rotatedMatrix = rotateMatrix(this.matrix);
     if (!isCollision(rotatedMatrix, this.x, this.y)) {
       this.matrix = rotatedMatrix;
+      playAudio(blockRotateSound);
     }
   }
 }
@@ -159,6 +179,7 @@ function clearLines() {
 
   if (clearedLines > 0) {
     updateScore(clearedLines);
+    playAudio(blockClearSound);
   }
 }
 
@@ -237,6 +258,7 @@ function updateScore(clearedLines) {
   totalClearedRows += clearedLines; // Update the total cleared rows
   if (totalClearedRows % 5 === 0) {
     dropInterval /= 2; // Double the speed of Tetriminos
+    increaseMusicSpeed(); // Increase the speed of the background music
   }
 }
 
@@ -244,6 +266,19 @@ function drawScore() {
   ctx.fillStyle = '#fff';
   ctx.font = '20px Arial';
   ctx.fillText(`Score: ${score}`, 10, 30);
+}
+
+function increaseMusicSpeed() {
+  const speedIncrement = 0.1;
+  const maxSpeed = 5.0;
+
+  // Increase the playback rate of the background music
+  bgMusic.playbackRate += speedIncrement;
+
+  // Limit the playback rate to the maximum speed
+  if (bgMusic.playbackRate > maxSpeed) {
+    bgMusic.playbackRate = maxSpeed;
+  }
 }
 
 let nextTetrimino = getRandomTetrimino();
@@ -273,20 +308,20 @@ function drawPreview(matrix, context) {
 const bgMusic = document.getElementById('bgMusic');
 
 function playBackgroundMusic() {
-  bgMusic.volume = 0.5; // Adjust the volume as needed
+  bgMusic.volume = 0.1; // Adjust the volume as needed
   bgMusic.play();
 }
 
 function playMusicOnClick() {
   document.addEventListener('touchstart', function onClick(){
-    bgMusic.volume = 0.5;
+    bgMusic.volume = 0.1;
     bgMusic.play().catch((error) => {
       console.error("Error playing background music:", error);
     });
     document.removeEventListener('touchstart', onClick);
   })
   document.addEventListener('click', function onClick() {
-    bgMusic.volume = 0.5;
+    bgMusic.volume = 0.1;
     bgMusic.play().catch((error) => {
       console.error("Error playing background music:", error);
     });
