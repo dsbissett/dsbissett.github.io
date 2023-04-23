@@ -142,7 +142,7 @@ function isCollision(matrix, offsetX, offsetY) {
     for (let x = 0; x < matrix[y].length; x++) {
       if (matrix[y][x] &&
           (offsetX + x < 0 || offsetX + x >= 10 || offsetY + y >= 20 ||
-           (grid[offsetY + y] && grid[offsetY + y][offsetX + x]))) {
+           (grid[offsetY + y] && grid[offsetY + y][offsetX + x]))) {        
         return true;
       }
     }
@@ -155,26 +155,35 @@ let totalClearedRows = 0;
 function clearLines() {
   let clearedLines = 0;
 
-  outer: for (let y = grid.length - 1; y >= 0; y--) {
+  function isRowFull(y) {
     for (let x = 0; x < grid[y].length; x++) {
       if (!grid[y][x]) {
-        continue outer;
+        return false;
       }
     }
+    return true;
+  }
 
-    for (let x = 0; x < grid[y].length; x++) {
-      createBlocks(x, y, colors[grid[y][x]]);
+  for (let y = grid.length - 1; y >= 0; y--) {
+    if (isRowFull(y)) {
+      for (const [x, cell] of grid[y].entries()) {
+        createBlocks(x, y, colors[cell]);
+      }
+      
+      // for (let x = 0; x < grid[y].length; x++) {
+      //   createBlocks(x, y, colors[grid[y][x]]);
+      // }
+
+      // Create particles for each block in the cleared row
+      // for (let x = 0; x < grid[y].length; x++) {
+      //   createParticles(x + 0.5, y + 0.5, colors[grid[y][x]]);
+      // }
+
+      const row = grid.splice(y, 1)[0].fill(0);
+      grid.unshift(row);
+      y++; // Check the same row index again as it now contains the row above
+      clearedLines++;
     }
-
-    // Create particles for each block in the cleared row
-    // for (let x = 0; x < grid[y].length; x++) {
-    //   createParticles(x + 0.5, y + 0.5, colors[grid[y][x]]);
-    // }
-
-    const row = grid.splice(y, 1)[0].fill(0);
-    grid.unshift(row);
-    y++; // Check the same row index again as it now contains the row above
-    clearedLines++;
   }
 
   if (clearedLines > 0) {
@@ -182,6 +191,38 @@ function clearLines() {
     playAudio(blockClearSound);
   }
 }
+
+
+// function clearLines() {
+//   let clearedLines = 0;
+
+//   outer: for (let y = grid.length - 1; y >= 0; y--) {
+//     for (let x = 0; x < grid[y].length; x++) {
+//       if (!grid[y][x]) {
+//         continue outer;
+//       }
+//     }
+
+//     for (let x = 0; x < grid[y].length; x++) {
+//       createBlocks(x, y, colors[grid[y][x]]);
+//     }
+
+//     // Create particles for each block in the cleared row
+//     // for (let x = 0; x < grid[y].length; x++) {
+//     //   createParticles(x + 0.5, y + 0.5, colors[grid[y][x]]);
+//     // }
+
+//     const row = grid.splice(y, 1)[0].fill(0);
+//     grid.unshift(row);
+//     y++; // Check the same row index again as it now contains the row above
+//     clearedLines++;
+//   }
+
+//   if (clearedLines > 0) {
+//     updateScore(clearedLines);
+//     playAudio(blockClearSound);
+//   }
+// }
 
 const grid = Array.from({ length: 20 }, () => Array(10).fill(0));
 const tetrimino = new Tetrimino(getRandomTetrimino(), 3, 0);
@@ -269,7 +310,7 @@ function drawScore() {
 }
 
 function increaseMusicSpeed() {
-  const speedIncrement = 0.1;
+  const speedIncrement = 0.25;
   const maxSpeed = 5.0;
 
   // Increase the playback rate of the background music
@@ -502,16 +543,17 @@ function drawGameOver() {
 
 function checkGameOver() {
   for (let y = 0; y < grid.length; y++) {
-    for (let x = 0; x < grid[y].length; x++) {
-      if (grid[y][x] !== 0) {
+    for (const [x, cell] of grid[y].entries()) {
+      if (cell !== 0) {
         if (y === 0) {
-          console.log('GAME OVER!')
+          console.log('GAME OVER!');
           gameover = true;
           return true;
         }
         break;
       }
     }
+    
   }
   gameover = false;
   return false;
