@@ -1,25 +1,41 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Tetris</title>
-  <link rel="stylesheet" href="styles.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Geo Bootstrap Example</title>
+
+    <!-- Bootstrap CSS -->
+    <link href="https://code.divshot.com/geo-bootstrap/swatch/bootstrap.min.css" rel="stylesheet">
+
+    <!-- Geo for Bootstrap CSS -->
+    
 </head>
 <body>
-  <div class="game-container">
-    <canvas id="gameCanvas" width="320" height="640"></canvas>
-    <div class="preview-container">
-      <canvas id="previewCanvas" class="preview" width="160" height="160"></canvas>
-      <canvas id="previewCanvas2" class="preview" width="160" height="160"></canvas>
-      <canvas id="previewCanvas3" class="preview" width="160" height="160"></canvas>
+
+    <div class="container">
+        <div class="row">
+            <div class="col-md-12 text-center">
+                <h1>Geo Bootstrap Example</h1>
+                <p>Select a game to play:</p>
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-md-6 text-center">
+                <!-- Button to Tetris -->
+                <a href="tetris/index.html" class="btn btn-primary btn-lg" role="button">Play Tetris</a>
+            </div>
+            <div class="col-md-6 text-center">
+                <!-- Button to Flappy Bird -->
+                <a href="flappy-bird/index.html" class="btn btn-primary btn-lg" role="button">Play Flappy Bird</a>
+            </div>
+        </div>
     </div>
-  </div>
-  <audio id="bgMusic" src="tetris_music.mp3" loop></audio>
-  <audio id="blockLand" src="block_land.mp3" preload="auto"></audio>
-  <audio id="blockMove" src="block_move.mp3" preload="auto"></audio>
-  <audio id="blockRotate" src="block_rotate.mp3" preload="auto"></audio>
-  <audio id="blockClear" src="block_clear.mp3" preload="auto"></audio>
-  <script src="tetris.js"></script>
+
+    <!-- jQuery -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+    <!-- Bootstrap JS -->
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js"></script>
 </body>
 </html>

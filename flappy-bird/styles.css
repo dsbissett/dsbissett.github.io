@@ -1,0 +1,179 @@
+.bird-flap-low {
+	background: url('imgs/birdie.png') no-repeat -1px 0;
+	width: 90px;
+	height: 64px;
+}
+
+.bird-flap-middle {
+	background: url('imgs/birdie.png') no-repeat -93px 0;
+	width: 90px;
+	height: 64px;
+}
+
+.bird-flap-high {
+	background: url('imgs/birdie.png') no-repeat -185px 0;
+	width: 90px;
+	height: 64px;
+}
+
+.background-day {
+	background: url('imgs/sprite-map.png') no-repeat 0 0;
+	width: 282px;
+	height: 502px;
+}
+
+.background-night {
+	background: url('imgs/sprite-map.png') no-repeat -284px 0;
+	width: 284px;
+	height: 502px;
+}
+
+.ground {
+	background: url('imgs/sprite-map.png') no-repeat -570px 0;
+	width: 330px;
+	height: 110px;
+}
+
+.pipe-up-green {
+	background: url('imgs/sprite-map.png') no-repeat -163px -631px;
+	width: 53px;
+	height: 315px;
+}
+
+.pipe-down-green {
+	background: url('imgs/sprite-map.png') no-repeat -108px -631px;
+	width: 53px;
+	height: 315px;
+}
+
+.pipe-up-brown {
+	background: url('imgs/sprite-map.png') no-repeat 0 -631px;
+	width: 52px;
+	height: 315px;
+}
+
+.bird-blue-idle {
+	background: url('imgs/sprite-map.png') no-repeat -224px -642px;
+	width: 35px;
+	height: 26px;
+}
+
+.bird-blue-flap-down {
+	background: url('imgs/sprite-map.png') no-repeat -224px -693px;
+	width: 35px;
+	height: 26px;
+}
+
+.bird-blue-flap-up {
+	background: url('imgs/sprite-map.png') no-repeat -169px -959px;
+	width: 35px;
+	height: 26px;
+}
+
+.number-1 {
+	background: url('imgs/sprite-map.png') no-repeat -265px -889px;
+	width: 17px;
+	height: 37px;
+}
+
+.number-2 {
+	background: url('imgs/sprite-map.png') no-repeat -570px -312px;
+	width: 25px;
+	height: 37px;
+}
+
+.number-3 {
+	background: url('imgs/sprite-map.png') no-repeat -597px -312px;
+	width: 25px;
+	height: 37px;
+}
+
+.number-4 {
+	background: url('imgs/sprite-map.png') no-repeat -624px -312px;
+	width: 26px;
+	height: 37px;
+}
+
+.number-5 {
+	background: url('imgs/sprite-map.png') no-repeat -652px -312px;
+	width: 25px;
+	height: 37px;
+}
+
+.number-6 {
+	background: url('imgs/sprite-map.png') no-repeat -570px -359px;
+	width: 25px;
+	height: 37px;
+}
+
+.number-7 {
+	background: url('imgs/sprite-map.png') no-repeat -597px -359px;
+	width: 25px;
+	height: 37px;
+}
+
+.number-8 {
+	background: url('imgs/sprite-map.png') no-repeat -624px -359px;
+	width: 26px;
+	height: 37px;
+}
+
+.number-9 {
+	background: url('imgs/sprite-map.png') no-repeat -652px -359px;
+	width: 25px;
+	height: 37px;
+}
+
+.number-0 {
+	background: url('imgs/sprite-map.png') no-repeat -968px -116px;
+	width: 26px;
+	height: 38px;
+}
+
+.get {
+	background: url('imgs/sprite-map.png') no-repeat -576px -114px;
+	width: 64px;
+	height: 43px;
+}
+
+.ready {
+	background: url('imgs/sprite-map.png') no-repeat -642px -114px;
+	width: 115px;
+	height: 51px;
+}
+
+.game {
+	background: url('imgs/sprite-map.png') no-repeat -771px -114px;
+	width: 98px;
+	height: 43px;
+}
+
+.over {
+	background: url('imgs/sprite-map.png') no-repeat -877px -114px;
+	width: 84px;
+	height: 43px;
+}
+
+.flappy-bird-title {
+	background: url('imgs/sprite-map.png') no-repeat -685px -177px;
+	width: 176px;
+	height: 49px;
+}
+
+.scoreboard {
+	background: url('imgs/sprite-map.png') no-repeat -5px -506px;
+	width: 223px;
+	height: 113px;
+}
+
+.silver-medal {
+	background: url('imgs/sprite-map.png') no-repeat -236px -504px;
+	width: 44px;
+	height: 45px;
+}
+
+.gold-medal {
+	background: url('imgs/sprite-map.png') no-repeat -236px -551px;
+	width: 44px;
+	height: 45px;
+}

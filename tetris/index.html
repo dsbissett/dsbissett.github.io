@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tetris</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="game-container">
+    <canvas id="gameCanvas" width="320" height="640"></canvas>
+    <div class="preview-container">
+      <canvas id="previewCanvas" class="preview" width="160" height="160"></canvas>
+      <canvas id="previewCanvas2" class="preview" width="160" height="160"></canvas>
+      <canvas id="previewCanvas3" class="preview" width="160" height="160"></canvas>
+    </div>
+  </div>
+  <audio id="bgMusic" src="tetris_music.mp3" loop></audio>
+  <audio id="blockLand" src="block_land.mp3" preload="auto"></audio>
+  <audio id="blockMove" src="block_move.mp3" preload="auto"></audio>
+  <audio id="blockRotate" src="block_rotate.mp3" preload="auto"></audio>
+  <audio id="blockClear" src="block_clear.mp3" preload="auto"></audio>
+  <script src="tetris.js"></script>
+</body>
+</html>
