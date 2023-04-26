@@ -83,7 +83,7 @@ const sketch = (p) => {
   }
 
   function startGame() {
-    const scaleFactor = p.width / 400;
+    const scaleFactor = p.width / 350;
     bird = new Bird(50 * scaleFactor, p.height / 2, 40 * scaleFactor, 30 * scaleFactor, birdSprite);
     pipes = [];
     score = 0;
