@@ -1,3 +1,23 @@
+/* html, body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  display: flex;
+  justify-content: left;
+  align-items: start;
+  height: 100vh;
+  background-color: #333;
+}
+
+#p5canvas {
+  display: block;
+  margin: 0 auto;
+} */
+/* 
 body {
   margin: 0;
   height: 100vh;
@@ -5,7 +25,7 @@ body {
   justify-content: center;
   align-items: center;
   background-color: #333;
-}
+} */
 
 .game-container {
   display: flex;

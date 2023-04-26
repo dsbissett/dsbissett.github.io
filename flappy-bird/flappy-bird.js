@@ -1,8 +1,9 @@
 let pInstance;
 let offsetX;
 let offsetY;
-const GAME_WIDTH = 400;
-const GAME_HEIGHT = 600;
+const GAME_WIDTH = window.innerWidth || 400;
+const GAME_HEIGHT = window.innerHeight || 600;
+
 
 const sketch = (p) => {
   let birdSprite,
@@ -36,6 +37,8 @@ const sketch = (p) => {
     } else {
       p.createCanvas(GAME_WIDTH, GAME_HEIGHT);
     }
+
+    p.id = "p5canvas";
 
     offsetX = (p.width - GAME_WIDTH) / 2;
     offsetY = (p.height - GAME_HEIGHT) / 2;
