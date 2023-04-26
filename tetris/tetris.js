@@ -95,10 +95,10 @@ const blockMoveSound = new Audio('block_move.mp3');
 const blockRotateSound = new Audio('block_rotate.mp3');
 const blockClearSound = new Audio('block_clear.mp3');
 
-async function playAudio(audio) {
+function playAudio(audio) {
     try {
         const audioClone = audio.cloneNode();
-        await audioClone.play();
+        audioClone.play();
     } catch (error) {
         console.error("Error playing audio:", error);
     }
