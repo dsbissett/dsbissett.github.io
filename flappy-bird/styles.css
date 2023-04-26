@@ -1,3 +1,14 @@
+body {
+	margin: 0;
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	height: 100vh;
+	width: 100vw;
+	overflow: hidden;
+	background-color: #000;
+  }
+
 .bird-flap-low {
 	background: url('imgs/birdie.png') no-repeat -1px 0;
 	width: 90px;

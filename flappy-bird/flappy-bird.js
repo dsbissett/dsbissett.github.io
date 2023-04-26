@@ -1,4 +1,8 @@
 let pInstance;
+let offsetX;
+let offsetY;
+const GAME_WIDTH = 400;
+const GAME_HEIGHT = 600;
 
 const sketch = (p) => {
   let birdSprite,
@@ -27,14 +31,30 @@ const sketch = (p) => {
   };
 
   p.setup = () => {
-    p.createCanvas(p.windowWidth, p.windowHeight);
+    if (p.windowWidth < GAME_WIDTH || p.windowHeight < GAME_HEIGHT) {
+      p.createCanvas(p.windowWidth, p.windowHeight);
+    } else {
+      p.createCanvas(GAME_WIDTH, GAME_HEIGHT);
+    }
+
+    offsetX = (p.width - GAME_WIDTH) / 2;
+    offsetY = (p.height - GAME_HEIGHT) / 2;
     pInstance = p;
     startGame(p);
     groundSpritesCount = Math.ceil(p.width / groundWidth) + 1;
   };
 
   p.draw = () => {
+    // p.push();
+    // p.translate(offsetX, offsetY);
+    // p.scale(GAME_WIDTH / p.width);
+    // drawGame(p);
+    // p.pop();
+    p.background(0);
+    p.push();
+    p.translate(offsetX, offsetY);
     drawGame(p);
+    p.pop();
   };
 
   p.keyPressed = () => {
@@ -66,10 +86,14 @@ const sketch = (p) => {
     score = 0;
     gameStatus = "playing";
 
+    const baseInterval = 2000;
+    const intervalDecrease = Math.floor(score / 500) * 100;
+    const newInterval = Math.max(baseInterval - intervalDecrease, 250); // Ensure the interval doesn't go below 1000ms
+
     gameInterval = setInterval(() => {
       const pipe = new Pipe(p.width, 150 * scaleFactor, 100 * scaleFactor, 350 * scaleFactor, topPipeSprite, bottomPipeSprite, 52 * scaleFactor, 2 * scaleFactor);
       pipes.push(pipe);
-    }, 2000);
+    }, newInterval);
   }
 
   let backgroundX = 0;
