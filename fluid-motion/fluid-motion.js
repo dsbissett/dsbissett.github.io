@@ -14,10 +14,10 @@ class FluidMotion {
     this.config = {
       TEXTURE_DOWNSAMPLE: 1,
       DENSITY_DISSIPATION: 0.98,
-      VELOCITY_DISSIPATION: 0.98,
-      PRESSURE_DISSIPATION: 0.1,
-      PRESSURE_ITERATIONS: 150,
-      CURL: 48,
+      VELOCITY_DISSIPATION: 0.99,
+      PRESSURE_DISSIPATION: 0.8,
+      PRESSURE_ITERATIONS: 2,
+      CURL: 28,
       SPLAT_RADIUS: 0.004,
     };
 
@@ -53,7 +53,10 @@ class FluidMotion {
       depth: false,
       stencil: false,
       antialias: false,
+      powerPreference: 'high-performance',
+      preserveDrawingBuffer: false // iOS optimization
     };
+
     this.gl = (this.canvas.getContext('webgl', params) ||
       this.canvas.getContext('experimental-webgl', params));
 
@@ -178,6 +181,8 @@ class FluidMotion {
     this.canvas.addEventListener('touchstart', (e) => {
       e.preventDefault();
       const touches = e.targetTouches;
+      const rect = this.canvas.getBoundingClientRect();
+      
       for (let i = 0; i < touches.length; i++) {
         if (i >= this.pointers.length) {
           this.pointers.push({
@@ -192,32 +197,40 @@ class FluidMotion {
           });
         }
 
-        this.pointers[i].id = touches[i].identifier;
+        const touch = touches[i];
+        this.pointers[i].id = touch.identifier;
         this.pointers[i].down = true;
-        this.pointers[i].x = touches[i].pageX;
-        this.pointers[i].y = touches[i].pageY;
+        // Convert touch coordinates to canvas space
+        this.pointers[i].x = touch.clientX - rect.left;
+        this.pointers[i].y = touch.clientY - rect.top;
         this.pointers[i].color = [
           Math.random() * 10 + 1,
           Math.random() * 10 + 1,
           Math.random() * 10 + 1,
         ];
       }
-    });
+    }, { passive: false });
 
     this.canvas.addEventListener('touchmove', (e) => {
       e.preventDefault();
       const touches = e.targetTouches;
+      const rect = this.canvas.getBoundingClientRect();
+      
       for (let i = 0; i < touches.length; i++) {
+        const touch = touches[i];
         let pointer = this.pointers[i];
-        pointer.moved = pointer.down;
-        pointer.dx = (touches[i].pageX - pointer.x) * 10.0;
-        pointer.dy = (touches[i].pageY - pointer.y) * 10.0;
-        pointer.x = touches[i].pageX;
-        pointer.y = touches[i].pageY;
+        if (pointer) {
+          pointer.moved = pointer.down;
+          // Convert touch coordinates to canvas space
+          const x = touch.clientX - rect.left;
+          const y = touch.clientY - rect.top;
+          pointer.dx = (x - pointer.x) * 10.0;
+          pointer.dy = (y - pointer.y) * 10.0;
+          pointer.x = x;
+          pointer.y = y;
+        }
       }
-    },
-    false
-    );
+    }, { passive: false });
 
     this.canvas.addEventListener('touchend', (e) => {
       const touches = e.changedTouches;

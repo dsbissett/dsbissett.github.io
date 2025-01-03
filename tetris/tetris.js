@@ -90,10 +90,46 @@ function getRandomTetrimino() {
     return tetriminos[randomKey];
 }
 
-const blockLandSound = new Audio('block_land.mp3');
-const blockMoveSound = new Audio('block_move.mp3');
-const blockRotateSound = new Audio('block_rotate.mp3');
-const blockClearSound = new Audio('block_clear.mp3');
+// Define audio file paths
+const audioFiles = {
+    land: ['block_land.ogg', 'block_land.mp3'],
+    move: ['block_move.ogg', 'block_move.mp3'],
+    rotate: ['block_rotate.ogg', 'block_rotate.mp3'],
+    clear: ['block_clear.ogg', 'block_clear.mp3']
+};
+
+// Create Audio objects with the first supported format
+const blockLandSound = new Audio(audioFiles.land.find(file => {
+    try {
+        return new Audio().canPlayType(`audio/${file.split('.').pop()}`) !== '';
+    } catch (e) {
+        return false;
+    }
+}));
+
+const blockMoveSound = new Audio(audioFiles.move.find(file => {
+    try {
+        return new Audio().canPlayType(`audio/${file.split('.').pop()}`) !== '';
+    } catch (e) {
+        return false;
+    }
+}));
+
+const blockRotateSound = new Audio(audioFiles.rotate.find(file => {
+    try {
+        return new Audio().canPlayType(`audio/${file.split('.').pop()}`) !== '';
+    } catch (e) {
+        return false;
+    }
+}));
+
+const blockClearSound = new Audio(audioFiles.clear.find(file => {
+    try {
+        return new Audio().canPlayType(`audio/${file.split('.').pop()}`) !== '';
+    } catch (e) {
+        return false;
+    }
+}));
 
 function playAudio(audio) {
     try {
