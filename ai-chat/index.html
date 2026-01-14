@@ -304,6 +304,40 @@
         background: rgba(255, 107, 92, 0.1);
       }
 
+      .message__bubble.image-output {
+        padding: 14px;
+      }
+
+      .image-status {
+        font-size: 0.8rem;
+        color: var(--muted);
+        margin-bottom: 10px;
+        letter-spacing: 0.4px;
+        text-transform: uppercase;
+      }
+
+      .image-placeholder {
+        width: min(360px, 100%);
+        aspect-ratio: 4 / 3;
+        border-radius: 18px;
+        background:
+          radial-gradient(circle at 20% 20%, rgba(255, 196, 128, 0.35), transparent 55%),
+          radial-gradient(circle at 65% 55%, rgba(147, 104, 182, 0.4), transparent 60%),
+          linear-gradient(135deg, rgba(44, 44, 52, 0.9), rgba(88, 82, 98, 0.85));
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        position: relative;
+        overflow: hidden;
+      }
+
+      .image-placeholder::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(120deg, transparent, rgba(255, 255, 255, 0.12), transparent);
+        transform: translateX(-100%);
+        animation: shimmer 1.8s infinite;
+      }
+
       .message--user {
         align-self: flex-end;
         text-align: right;
@@ -345,6 +379,49 @@
         gap: 12px;
         align-items: flex-end;
         background: rgba(15, 20, 29, 0.9);
+      }
+
+      .composer__attachments {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+      }
+
+      .composer__attachment {
+        position: relative;
+        width: 64px;
+        height: 64px;
+        border-radius: 12px;
+        overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(8, 11, 17, 0.8);
+      }
+
+      .composer__attachment img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+
+      .composer__remove {
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        border: none;
+        background: rgba(10, 14, 20, 0.85);
+        color: var(--text);
+        font-size: 0.75rem;
+        line-height: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        font-family: "Space Grotesk", "IBM Plex Sans", sans-serif;
+        cursor: pointer;
       }
 
       .composer textarea {
@@ -417,6 +494,15 @@
         to {
           opacity: 1;
           transform: translateY(0);
+        }
+      }
+
+      @keyframes shimmer {
+        0% {
+          transform: translateX(-100%);
+        }
+        100% {
+          transform: translateX(100%);
         }
       }
 
@@ -525,6 +611,7 @@
         </section>
 
         <form class="composer" id="composer" autocomplete="off">
+          <div class="composer__attachments" id="composerAttachments" hidden></div>
           <textarea
             id="messageInput"
             name="message"
@@ -541,6 +628,7 @@
       const form = document.getElementById("composer");
       const input = document.getElementById("messageInput");
       const sendButton = document.getElementById("sendButton");
+      const attachments = document.getElementById("composerAttachments");
 
       const assistantLabel = "Atlas";
       const warningMessages = [
@@ -550,6 +638,9 @@
         "We currently do not support uploads of images containing photorealistic people.",
         "This request appears to violate the AI's terms of service.",
       ];
+      const imagePolicyMessage =
+        "This request violates our content policies, so the image cannot be generated.";
+      let pastedImageUrl = null;
 
       const timeStamp = () =>
         new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -580,6 +671,32 @@
         return message;
       };
 
+      const createImagePlaceholder = () => {
+        const message = document.createElement("div");
+        message.className = "message message--assistant";
+
+        const bubble = document.createElement("div");
+        bubble.className = "message__bubble image-output";
+
+        const status = document.createElement("div");
+        status.className = "image-status";
+        status.textContent = "Creating image";
+
+        const placeholder = document.createElement("div");
+        placeholder.className = "image-placeholder";
+
+        bubble.appendChild(status);
+        bubble.appendChild(placeholder);
+        message.appendChild(bubble);
+
+        const meta = document.createElement("div");
+        meta.className = "message__meta";
+        meta.textContent = `${assistantLabel} Aú ${timeStamp()}`;
+        message.appendChild(meta);
+
+        return message;
+      };
+
       const createTyping = () => {
         const message = document.createElement("div");
         message.className = "message message--assistant message--typing";
@@ -604,12 +721,51 @@
       const pickWarning = () =>
         warningMessages[Math.floor(Math.random() * warningMessages.length)];
 
+      const isImageRequest = (text) =>
+        /\b(image|photo|picture|photograph|pic|snapshot)\b/i.test(text);
+
       const warningDelay = () => {
         const fast = Math.random() < 0.45;
         if (fast) {
           return 450 + Math.floor(Math.random() * 350);
         }
         return 1800 + Math.floor(Math.random() * 2200);
+      };
+
+      const imageFailureDelay = () =>
+        5000 + Math.floor(Math.random() * 2500);
+
+      const clearPastedImage = () => {
+        if (pastedImageUrl) {
+          URL.revokeObjectURL(pastedImageUrl);
+          pastedImageUrl = null;
+        }
+        attachments.innerHTML = "";
+        attachments.hidden = true;
+      };
+
+      const renderPastedImage = (file) => {
+        clearPastedImage();
+        pastedImageUrl = URL.createObjectURL(file);
+        attachments.hidden = false;
+
+        const wrapper = document.createElement("div");
+        wrapper.className = "composer__attachment";
+
+        const preview = document.createElement("img");
+        preview.src = pastedImageUrl;
+        preview.alt = "Pasted image preview";
+
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "composer__remove";
+        remove.setAttribute("aria-label", "Remove image");
+        remove.textContent = "×";
+        remove.addEventListener("click", clearPastedImage);
+
+        wrapper.appendChild(preview);
+        wrapper.appendChild(remove);
+        attachments.appendChild(wrapper);
       };
 
       const autoResize = () => {
@@ -629,34 +785,71 @@
         }
       });
 
-      form.addEventListener("submit", (event) => {
-        event.preventDefault();
-        const text = input.value.trim();
-        if (!text) {
+      input.addEventListener("paste", (event) => {
+        const items = event.clipboardData?.items;
+        if (!items) {
           return;
         }
 
-        const userMessage = createMessage("user", text);
+        for (const item of items) {
+          if (item.type && item.type.startsWith("image/")) {
+            const file = item.getAsFile();
+            if (file) {
+              renderPastedImage(file);
+            }
+            return;
+          }
+        }
+      });
+
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const text = input.value.trim();
+        if (!text && !pastedImageUrl) {
+          return;
+        }
+
+        const userMessage = createMessage("user", text || "Sent an image");
         chatLog.appendChild(userMessage);
         scrollToBottom();
 
         input.value = "";
         autoResize();
         sendButton.disabled = true;
+        clearPastedImage();
 
         const typing = createTyping();
         chatLog.appendChild(typing);
         scrollToBottom();
 
-        setTimeout(() => {
-          typing.remove();
-          const warningText = pickWarning();
-          const assistantMessage = createMessage("assistant", warningText, {
-            warning: true,
-          });
-          chatLog.appendChild(assistantMessage);
-          scrollToBottom();
-        }, warningDelay());
+        if (isImageRequest(text)) {
+          const placeholderDelay = 350 + Math.floor(Math.random() * 400);
+          setTimeout(() => {
+            typing.remove();
+            const imageMessage = createImagePlaceholder();
+            chatLog.appendChild(imageMessage);
+            scrollToBottom();
+
+            setTimeout(() => {
+              imageMessage.remove();
+              const assistantMessage = createMessage("assistant", imagePolicyMessage, {
+                warning: true,
+              });
+              chatLog.appendChild(assistantMessage);
+              scrollToBottom();
+            }, imageFailureDelay());
+          }, placeholderDelay);
+        } else {
+          setTimeout(() => {
+            typing.remove();
+            const warningText = pickWarning();
+            const assistantMessage = createMessage("assistant", warningText, {
+              warning: true,
+            });
+            chatLog.appendChild(assistantMessage);
+            scrollToBottom();
+          }, warningDelay());
+        }
       });
 
       sendButton.disabled = true;
