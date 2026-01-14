@@ -160,6 +160,7 @@
         flex-direction: column;
         gap: 6px;
         transition: border 0.2s ease, background 0.2s ease;
+        cursor: pointer;
       }
 
       .thread.active {
@@ -563,15 +564,15 @@
 
         <div class="sidebar__section">
           <h3>Recent</h3>
-          <div class="thread active">
+          <div class="thread active" data-thread="new-chat">
             <span>New chat</span>
             <small>Live triage session</small>
           </div>
-          <div class="thread">
+          <div class="thread" data-thread="device-pairing">
             <span>Device pairing issue</span>
             <small>Last active 2h ago</small>
           </div>
-          <div class="thread">
+          <div class="thread" data-thread="travel-concierge">
             <span>Travel concierge</span>
             <small>Archived</small>
           </div>
@@ -629,6 +630,7 @@
       const input = document.getElementById("messageInput");
       const sendButton = document.getElementById("sendButton");
       const attachments = document.getElementById("composerAttachments");
+      const threads = Array.from(document.querySelectorAll(".thread"));
 
       const assistantLabel = "Atlas";
       const warningMessages = [
@@ -640,7 +642,39 @@
       ];
       const imagePolicyMessage =
         "This request violates our content policies, so the image cannot be generated.";
+      const policyViolationMessages = [
+        "Sorry, I can't help with that. It violates our content policy.",
+        "I can't assist with that request due to content policy restrictions.",
+        "That request goes against our content policy, so I can't comply.",
+      ];
       let pastedImageUrl = null;
+      let activeThreadId = "new-chat";
+
+      const conversations = {
+        "new-chat": [
+          {
+            role: "assistant",
+            text: "Welcome back!  What can I help you with today?",
+          },
+        ],
+        "device-pairing": [
+          {
+            role: "user",
+            text: "How do I pair my iPhone with Bluetooth speakers?",
+          },
+          {
+            role: "assistant",
+            text:
+              "Sure! Turn on your Bluetooth speaker and put it in pairing mode (usually a button with a Bluetooth icon). On your iPhone, go to Settings → Bluetooth, make sure Bluetooth is on, then tap your speaker name under Other Devices. Once it connects, it will show under My Devices and you should hear a confirmation tone.",
+          },
+        ],
+        "travel-concierge": [
+          {
+            role: "assistant",
+            text: "This thread is archived. Start a new chat to continue.",
+          },
+        ],
+      };
 
       const timeStamp = () =>
         new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -721,6 +755,9 @@
       const pickWarning = () =>
         warningMessages[Math.floor(Math.random() * warningMessages.length)];
 
+      const pickPolicyViolation = () =>
+        policyViolationMessages[Math.floor(Math.random() * policyViolationMessages.length)];
+
       const isImageRequest = (text) =>
         /\b(image|photo|picture|photograph|pic|snapshot)\b/i.test(text);
 
@@ -735,6 +772,30 @@
       const imageFailureDelay = () =>
         5000 + Math.floor(Math.random() * 2500);
 
+      const updateSendButton = () => {
+        sendButton.disabled = input.value.trim().length === 0 && !pastedImageUrl;
+      };
+
+      const renderConversation = (threadId) => {
+        chatLog.innerHTML = "";
+        const messages = conversations[threadId] || [];
+        messages.forEach((entry) => {
+          const message = createMessage(entry.role, entry.text, {
+            warning: entry.warning,
+          });
+          chatLog.appendChild(message);
+        });
+        scrollToBottom();
+      };
+
+      const setActiveThread = (threadId) => {
+        activeThreadId = threadId;
+        threads.forEach((thread) => {
+          thread.classList.toggle("active", thread.dataset.thread === threadId);
+        });
+        renderConversation(threadId);
+      };
+
       const clearPastedImage = () => {
         if (pastedImageUrl) {
           URL.revokeObjectURL(pastedImageUrl);
@@ -742,6 +803,7 @@
         }
         attachments.innerHTML = "";
         attachments.hidden = true;
+        updateSendButton();
       };
 
       const renderPastedImage = (file) => {
@@ -760,12 +822,13 @@
         remove.type = "button";
         remove.className = "composer__remove";
         remove.setAttribute("aria-label", "Remove image");
-        remove.textContent = "×";
+        remove.textContent = "x";
         remove.addEventListener("click", clearPastedImage);
 
         wrapper.appendChild(preview);
         wrapper.appendChild(remove);
         attachments.appendChild(wrapper);
+        updateSendButton();
       };
 
       const autoResize = () => {
@@ -775,7 +838,7 @@
 
       input.addEventListener("input", () => {
         autoResize();
-        sendButton.disabled = input.value.trim().length === 0;
+        updateSendButton();
       });
 
       input.addEventListener("keydown", (event) => {
@@ -802,10 +865,22 @@
         }
       });
 
+      threads.forEach((thread) => {
+        thread.addEventListener("click", () => {
+          const threadId = thread.dataset.thread;
+          if (threadId) {
+            setActiveThread(threadId);
+          }
+        });
+      });
+
       form.addEventListener("submit", (event) => {
         event.preventDefault();
         const text = input.value.trim();
-        if (!text && !pastedImageUrl) {
+        const hasPastedImage = Boolean(pastedImageUrl);
+        const imageRequested = isImageRequest(text) || hasPastedImage;
+        const usePolicyViolation = activeThreadId === "device-pairing";
+        if (!text && !hasPastedImage) {
           return;
         }
 
@@ -815,14 +890,14 @@
 
         input.value = "";
         autoResize();
-        sendButton.disabled = true;
+        updateSendButton();
         clearPastedImage();
 
         const typing = createTyping();
         chatLog.appendChild(typing);
         scrollToBottom();
 
-        if (isImageRequest(text)) {
+        if (imageRequested) {
           const placeholderDelay = 450 + Math.floor(Math.random() * 400);
           setTimeout(() => {
             typing.remove();
@@ -842,7 +917,7 @@
         } else {
           setTimeout(() => {
             typing.remove();
-            const warningText = pickWarning();
+            const warningText = usePolicyViolation ? pickPolicyViolation() : pickWarning();
             const assistantMessage = createMessage("assistant", warningText, {
               warning: true,
             });
@@ -852,7 +927,8 @@
         }
       });
 
-      sendButton.disabled = true;
+      renderConversation(activeThreadId);
+      updateSendButton();
       autoResize();
       scrollToBottom();
     </script>
