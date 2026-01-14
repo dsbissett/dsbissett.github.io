@@ -498,7 +498,7 @@
           </div>
           <div class="status__row">
             <span>Safety filters</span>
-            <strong>Strict</strong>
+            <strong>Off</strong>
           </div>
         </div>
       </aside>
@@ -507,11 +507,11 @@
         <header class="chat__header">
           <div class="chat__title">
             <span>Atlas Assistant</span>
-            <small>Compliance response stream</small>
+            <small>Next Generation AI Assistant</small>
           </div>
           <div class="chat__actions">
             <div class="pill">Session 04A</div>
-            <div class="pill accent">Policy mode</div>
+            <div class="pill accent">Guest Mode</div>
           </div>
         </header>
 
@@ -604,6 +604,14 @@
       const pickWarning = () =>
         warningMessages[Math.floor(Math.random() * warningMessages.length)];
 
+      const warningDelay = () => {
+        const fast = Math.random() < 0.45;
+        if (fast) {
+          return 450 + Math.floor(Math.random() * 350);
+        }
+        return 1800 + Math.floor(Math.random() * 2200);
+      };
+
       const autoResize = () => {
         input.style.height = "auto";
         input.style.height = `${input.scrollHeight}px`;
@@ -648,7 +656,7 @@
           });
           chatLog.appendChild(assistantMessage);
           scrollToBottom();
-        }, 700);
+        }, warningDelay());
       });
 
       sendButton.disabled = true;
