@@ -1,8 +1,56 @@
 let pInstance;
 let offsetX;
 let offsetY;
-const GAME_WIDTH = window.innerWidth || 400;
-const GAME_HEIGHT = window.innerHeight || 600;
+let gameScale = 1;
+const GAME_WIDTH = 350;
+const GAME_HEIGHT = 600;
+const SCALE_FACTOR = GAME_WIDTH / 350;
+const FLAPPY_FONT = "FlappyBirdy";
+const FLAPPY_FONT_URL = "lib/flappy-bird.woff";
+let speedFactor = 1;
+const IS_FILE_PROTOCOL = window.location.protocol === "file:";
+let flappyFontReady = false;
+let flappyFontLoading = false;
+
+if (IS_FILE_PROTOCOL && typeof p5 !== "undefined" && !p5.prototype._loadImageFileCompat) {
+  p5.prototype._loadImageFileCompat = p5.prototype.loadImage;
+  p5.prototype.loadImage = function (path, successCallback, failureCallback) {
+    const pImg = new p5.Image(1, 1, this);
+    const img = new Image();
+    const self = this;
+
+    img.onload = function () {
+      pImg.width = pImg.canvas.width = img.width;
+      pImg.height = pImg.canvas.height = img.height;
+      pImg.drawingContext.drawImage(img, 0, 0);
+      pImg.modified = true;
+      if (typeof successCallback === "function") {
+        successCallback(pImg);
+      }
+      if (typeof self._decrementPreload === "function") {
+        self._decrementPreload();
+      }
+    };
+
+    img.onerror = function (e) {
+      if (typeof p5._friendlyFileLoadError === "function") {
+        p5._friendlyFileLoadError(0, path);
+      }
+      if (typeof failureCallback === "function") {
+        failureCallback(e);
+      } else {
+        console.error(e);
+      }
+      if (typeof self._decrementPreload === "function") {
+        self._decrementPreload();
+      }
+    };
+
+    img.src = path;
+    pImg.modified = true;
+    return pImg;
+  };
+}
 
 
 const sketch = (p) => {
@@ -15,11 +63,15 @@ const sketch = (p) => {
     pipes = [];
   let gameStatus = "playing";
   let score = 0;
-  let gameInterval;
   let groundX = 0;
   let groundSpeed = 2;
+  let baseGroundSpeed = 2;
+  let basePipeSpeed = 2;
   let groundWidth = 0;
-  let groundSpritesCount = 0;
+  let backgroundX = 0;
+  let spawnTimer = 0;
+  let nextPipeDelay = 0;
+  let lastGapCenter = GAME_HEIGHT / 2;
 
   p.preload = () => {
     birdSprite = p.loadImage("images/birdie.png");
@@ -32,19 +84,16 @@ const sketch = (p) => {
   };
 
   p.setup = () => {
-    if (p.windowWidth < GAME_WIDTH || p.windowHeight < GAME_HEIGHT) {
-      p.createCanvas(p.windowWidth, p.windowHeight);
-    } else {
-      p.createCanvas(GAME_WIDTH, GAME_HEIGHT);
-    }
-
+    p.createCanvas(p.windowWidth, p.windowHeight);
     p.id = "p5canvas";
-
-    offsetX = (p.width - GAME_WIDTH) / 2;
-    offsetY = (p.height - GAME_HEIGHT) / 2;
     pInstance = p;
+    updateLayout();
+    ensureFlappyFont();
     startGame(p);
-    groundSpritesCount = Math.ceil(p.width / groundWidth) + 1;
+  };
+
+  p.windowResized = () => {
+    updateLayout();
   };
 
   p.draw = () => {
@@ -54,10 +103,13 @@ const sketch = (p) => {
     // drawGame(p);
     // p.pop();
     p.background(0);
+    drawBackgroundFull();
     p.push();
     p.translate(offsetX, offsetY);
+    p.scale(gameScale);
     drawGame(p);
     p.pop();
+    drawGroundFull();
   };
 
   p.keyPressed = () => {
@@ -83,49 +135,24 @@ const sketch = (p) => {
   }
 
   function startGame() {
-    const scaleFactor = p.width / 350;
-    bird = new Bird(50 * scaleFactor, p.height / 2, 40 * scaleFactor, 30 * scaleFactor, birdSprite);
+    bird = new Bird(50 * SCALE_FACTOR, GAME_HEIGHT / 2, 40 * SCALE_FACTOR, 30 * SCALE_FACTOR, birdSprite);
     pipes = [];
     score = 0;
     gameStatus = "playing";
+    speedFactor = 1;
+    basePipeSpeed = 2 * SCALE_FACTOR;
+    baseGroundSpeed = 2;
+    groundSpeed = baseGroundSpeed;
+    spawnTimer = 0;
+    nextPipeDelay = getPipeSettings().delay;
 
-    const baseInterval = 2000;
-    const intervalDecrease = Math.floor(score / 500) * 100;
-    const newInterval = Math.max(baseInterval - intervalDecrease, 250); // Ensure the interval doesn't go below 1000ms
-
-    gameInterval = setInterval(() => {
-      const pipe = new Pipe(p.width, 150 * scaleFactor, 100 * scaleFactor, 350 * scaleFactor, topPipeSprite, bottomPipeSprite, 52 * scaleFactor, 2 * scaleFactor);
-      pipes.push(pipe);
-    }, newInterval);
+    spawnPipe();
   }
 
-  let backgroundX = 0;
-
   function drawGame() {
-    // Calculate the new backgroundX position
-    backgroundX -= p.width * 0.00125;
-    if (backgroundX <= -p.width) {
-      backgroundX = 0;
-    }
-
-    // Draw the scrolling background
-    //p.image(backgroundSprite, 0, p.height - p.height * 0.15, p.width, p.height * 0.15);
-    p.image(backgroundSprite, backgroundX, -10, p.width, p.height);
-    p.image(backgroundSprite, backgroundX + p.width, 0, p.width, p.height);
-
-    // Draw background, ground, bird, and pipes
+    // Draw bird and pipes in game space
     pipes.forEach((pipe) => pipe.draw(p));
     bird.draw(p, gameStatus);
-
-    // Draw the scrolling ground
-    groundX -= groundSpeed;
-    if (groundX <= -groundWidth) {
-        groundX += groundWidth;
-    }
-    
-    for (let i = 0; i < groundSpritesCount; i++) {
-        drawGround(groundX + i * (groundWidth - 5));
-    }
 
     updateGame(p);
 
@@ -134,18 +161,22 @@ const sketch = (p) => {
     } else {
       // Draw score
       p.fill(255);
-      p.textSize(24);
-      p.textAlign(p.CENTER, p.CENTER);
-      p.text(score, p.width / 2, 50);
+      if (flappyFontReady) {
+        p.textFont(FLAPPY_FONT);
+        p.stroke(0);
+        p.strokeWeight(4);
+        p.textSize(72);
+        p.textAlign(p.CENTER, p.CENTER);
+        p.text(score, GAME_WIDTH / 2, 50);
+        p.noStroke();
+      }
     }
-  }
-
-  function drawGround(x) {
-    p.image(spriteMap, x, p.height - 25, groundWidth, 110, 570, 10, groundWidth, 110);
   }
 
   function updateGame() {
     bird.update(p);
+    speedFactor = getSpeedFactor();
+    groundSpeed = baseGroundSpeed * speedFactor;
 
     if (gameStatus === 'gameOver') {
         if (!checkGroundCollision(bird)) {
@@ -155,13 +186,13 @@ const sketch = (p) => {
         return;
       }
     
+    updateSpawning();
 
     for (let i = pipes.length - 1; i >= 0; i--) {
       pipes[i].update();
 
       if (bird.collidesWith(pipes[i])) {
         gameStatus = "gameOver";
-        clearInterval(gameInterval);
         handleGameOver(p);
         return;
       }
@@ -178,28 +209,247 @@ const sketch = (p) => {
     // Check for ground collision after processing all pipes
     if (checkGroundCollision(bird)) {
       gameStatus = "gameOver";
-      clearInterval(gameInterval);
     }
   }
 
   function checkGroundCollision(bird) {
-    const groundHeight = p.height * 0.15;
-    return bird.y + bird.height >= p.height - groundHeight;
+    const groundHeight = GAME_HEIGHT * 0.15;
+    return bird.y + bird.height >= GAME_HEIGHT - groundHeight;
   }
 
   function handleGameOver(p) {
     bird.velocity = 0; // Stop bird's movement
     bird.gravity = 4; // Apply gravity to make the bird fall
 
-    clearInterval(gameInterval);
-
     p.fill(255);
-    p.textSize(48);
-    p.textAlign(p.CENTER, p.CENTER);
-    p.text("Game Over", p.width / 2, p.height / 2 - 50);
+    if (flappyFontReady) {
+      p.textFont(FLAPPY_FONT);
+      p.stroke(0);
+      p.strokeWeight(4);
+      p.textSize(128);
+      p.textAlign(p.CENTER, p.CENTER);
+      p.text("GAME OVER", GAME_WIDTH / 2, GAME_HEIGHT / 2 - 50);
 
-    p.textSize(24);
-    p.text("Score: " + score, p.width / 2, p.height / 2 + 10);
+      p.textSize(32);
+      p.text("SCORE: " + score, GAME_WIDTH / 2, GAME_HEIGHT / 2 + 10);
+      p.noStroke();
+    }
+  }
+
+  function updateLayout() {
+    p.resizeCanvas(p.windowWidth, p.windowHeight);
+    const scaleX = p.width / GAME_WIDTH;
+    const scaleY = p.height / GAME_HEIGHT;
+    gameScale = Math.min(scaleX, scaleY);
+    const scaledWidth = GAME_WIDTH * gameScale;
+    const scaledHeight = GAME_HEIGHT * gameScale;
+    offsetX = (p.width - scaledWidth) / 2;
+    offsetY = (p.height - scaledHeight) / 2;
+  }
+
+  function ensureFlappyFont() {
+    if (flappyFontReady || flappyFontLoading) {
+      return;
+    }
+
+    if (typeof FontFace === "undefined" || !document.fonts) {
+      flappyFontReady = true;
+      return;
+    }
+
+    flappyFontLoading = true;
+    const font = new FontFace(FLAPPY_FONT, `url(${FLAPPY_FONT_URL})`);
+    font.load().then(
+      (loaded) => {
+        document.fonts.add(loaded);
+        flappyFontReady = true;
+      },
+      () => {
+        flappyFontReady = true;
+      }
+    );
+  }
+
+  function getViewBounds() {
+    const left = -offsetX / gameScale;
+    const right = (p.width - offsetX) / gameScale;
+    return { left, right };
+  }
+
+  function getSpeedFactor() {
+    return 1 + Math.floor(score / 500) * 0.15;
+  }
+
+  function getPipeSettings() {
+    const level = Math.floor(score / 1000);
+    const normalGap = 150 * SCALE_FACTOR;
+    const narrowGap = 120 * SCALE_FACTOR;
+    const minDelay = 850;
+    const speedScale = 1 + Math.floor(score / 500) * 0.15;
+    const baseDelay = Math.max(2000 / speedScale, minDelay);
+    const closeDelay = Math.max(baseDelay * 0.85, minDelay);
+    const farDelay = Math.max(baseDelay * 1.15, minDelay + 120);
+
+    if (level === 0) {
+      return { gap: normalGap, delay: Math.round(baseDelay) };
+    }
+
+    if (score >= 2000) {
+      const narrowChance = Math.min(0.75 + Math.floor((score - 2000) / 1000) * 0.05, 0.9);
+      if (p.random() < narrowChance) {
+        return { gap: narrowGap, delay: Math.round(farDelay) };
+      }
+      return { gap: normalGap, delay: Math.round(closeDelay) };
+    }
+
+    if (level % 2 === 1) {
+      return { gap: normalGap, delay: Math.round(closeDelay) };
+    }
+
+    return { gap: narrowGap, delay: Math.round(farDelay) };
+  }
+
+  function spawnPipe() {
+    const settings = getPipeSettings();
+    const viewRight = getViewBounds().right;
+    const pipeSpawnX = viewRight + 80 * SCALE_FACTOR;
+    const minTop = 100 * SCALE_FACTOR;
+    const maxTop = 350 * SCALE_FACTOR;
+    const targetGapCenter = chooseGapCenter(settings.gap, minTop, maxTop);
+    const topHeight = targetGapCenter - settings.gap / 2;
+    const pipe = new Pipe(
+      pipeSpawnX,
+      settings.gap,
+      minTop,
+      maxTop,
+      topPipeSprite,
+      bottomPipeSprite,
+      52 * SCALE_FACTOR,
+      basePipeSpeed,
+      topHeight
+    );
+    pipes.push(pipe);
+    lastGapCenter = targetGapCenter;
+    nextPipeDelay = settings.delay;
+  }
+
+  function updateSpawning() {
+    spawnTimer += p.deltaTime;
+    while (spawnTimer >= nextPipeDelay) {
+      spawnTimer -= nextPipeDelay;
+      spawnPipe();
+    }
+  }
+
+  function chooseGapCenter(gap, minTop, maxTop) {
+    const minCenter = minTop + gap / 2;
+    const maxCenter = maxTop + gap / 2;
+    const range = maxCenter - minCenter;
+    const upperRange = [minCenter, minCenter + range * 0.33];
+    const middleRange = [minCenter + range * 0.33, minCenter + range * 0.66];
+    const lowerRange = [minCenter + range * 0.66, maxCenter];
+    const midPoint = (minCenter + maxCenter) / 2;
+    const r = p.random();
+
+    if (score >= 2000) {
+      const topMax = minCenter + range / 3;
+      const bottomMin = minCenter + (2 * range) / 3;
+
+      if (lastGapCenter >= bottomMin) {
+        return randomInRange(minCenter, topMax);
+      }
+
+      if (lastGapCenter <= topMax) {
+        return randomInRange(bottomMin, maxCenter);
+      }
+
+      if (r < 0.5) {
+        return randomInRange(minCenter, topMax);
+      }
+      return randomInRange(bottomMin, maxCenter);
+    }
+
+    if (lastGapCenter > midPoint) {
+      if (r < 0.45) {
+        return randomInRange(middleRange[0], middleRange[1]);
+      }
+      if (r < 0.8) {
+        return randomInRange(upperRange[0], upperRange[1]);
+      }
+      return clamp(lastGapCenter + p.random(0.05, 0.15) * GAME_HEIGHT, minCenter, maxCenter);
+    }
+
+    if (r < 0.45) {
+      return randomInRange(middleRange[0], middleRange[1]);
+    }
+    if (r < 0.8) {
+      return randomInRange(lowerRange[0], lowerRange[1]);
+    }
+    return clamp(lastGapCenter - p.random(0.05, 0.15) * GAME_HEIGHT, minCenter, maxCenter);
+  }
+
+  function randomInRange(min, max) {
+    return p.random(min, max);
+  }
+
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  function drawBackgroundFull() {
+    if (!backgroundSprite) {
+      return;
+    }
+
+    const scrollSpeed = p.width * 0.00125 * speedFactor;
+    backgroundX -= scrollSpeed;
+    if (backgroundX <= -p.width) {
+      backgroundX = 0;
+    }
+
+    const drawWidth = p.width + 1;
+    const drawHeight = p.height;
+    const drawX = Math.floor(backgroundX);
+
+    p.image(backgroundSprite, drawX, 0, drawWidth, drawHeight);
+    p.image(backgroundSprite, drawX + p.width, 0, drawWidth, drawHeight);
+  }
+
+  function drawGroundFull() {
+    if (!spriteMap) {
+      return;
+    }
+
+    groundX -= groundSpeed;
+    if (groundX <= -groundWidth) {
+      groundX += groundWidth;
+    }
+
+    const groundDrawWidth = groundWidth * gameScale;
+    const groundDrawHeight = 110 * gameScale;
+    const groundY = offsetY + gameScale * (GAME_HEIGHT - 25);
+    const step = (groundWidth - 5) * gameScale;
+    let startX = offsetX + groundX * gameScale;
+
+    while (startX > -step) {
+      startX -= step;
+    }
+
+    const tiles = Math.ceil((p.width - startX) / step) + 1;
+
+    for (let i = 0; i < tiles; i++) {
+      p.image(
+        spriteMap,
+        startX + i * step,
+        groundY,
+        groundDrawWidth,
+        groundDrawHeight,
+        570,
+        10,
+        groundWidth,
+        110
+      );
+    }
   }
 };
 
@@ -255,8 +505,8 @@ class Bird {
     this.velocity *= 0.9;
 
     // Prevent the bird from going off the screen
-    if (this.y > pInstance.height - this.height) {
-      this.y = pInstance.height - this.height;
+    if (this.y > GAME_HEIGHT - this.height) {
+      this.y = GAME_HEIGHT - this.height;
       this.velocity = 0;
     } else if (this.y < 0) {
       this.y = 0;
@@ -299,7 +549,7 @@ class Bird {
 
   checkGroundCollision() {
     const groundHeight = groundSprite.height;
-    return this.y + this.height >= pInstance.height - groundHeight;
+    return this.y + this.height >= GAME_HEIGHT - groundHeight;
   }
 
   collidesWith(pipe) {
@@ -330,14 +580,15 @@ class Pipe {
     topPipeImg,
     bottomPipeImg,
     width,
-    speed
+    speed,
+    topHeight
   ) {
     this.x = x;
     this.width = width;
     this.speed = speed;
     this.topPipeImg = topPipeImg;
     this.bottomPipeImg = bottomPipeImg;
-    this.topHeight = pInstance.random(minHeight, maxHeight);
+    this.topHeight = typeof topHeight === "number" ? topHeight : pInstance.random(minHeight, maxHeight);
     this.bottomY = this.topHeight + gap;
   }
 
@@ -348,16 +599,17 @@ class Pipe {
       this.x,
       this.bottomY,
       this.width,
-      pInstance.height - this.bottomY
+      GAME_HEIGHT - this.bottomY
     );
   }
 
   update() {
-    this.x -= this.speed;
+    this.x -= this.speed * speedFactor;
   }
 
   isOffScreen() {
-    return this.x + this.width < 0;
+    const viewLeft = -offsetX / gameScale;
+    return this.x + this.width < viewLeft;
   }
 
   passed(bird) {
