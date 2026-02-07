@@ -1,0 +1,650 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Fallout Terminal (FO4-style)</title>
+  <style>
+    :root{
+      --bg:#050806;
+      --phosphor:#39ff6a;
+      --phosphor-dim:rgba(57,255,106,.60);
+      --phosphor-dimmer:rgba(57,255,106,.35);
+      --scanline:rgba(0,0,0,.33);
+      --glass:rgba(40,255,120,.08);
+      --glow:rgba(57,255,106,.45);
+      --warn:#ff4c4c;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --lh: 1.25;
+      --fs: 16px;
+      --cols: 48; /* used for layout hints; JS still wraps */
+    }
+
+    html,body{
+      height:100%;
+      background: radial-gradient(1200px 900px at 50% 35%, #08150c 0%, #030503 55%, #000 100%);
+      margin:0;
+      font-family:var(--mono);
+      color:var(--phosphor);
+      overflow:hidden;
+    }
+
+    /* Outer bezel */
+    .frame{
+      position:relative;
+      height:100%;
+      display:grid;
+      place-items:center;
+      padding:22px;
+      box-sizing:border-box;
+    }
+    .bezel{
+      position:relative;
+      width:min(1100px, 96vw);
+      height:min(740px, 92vh);
+      border-radius:10px;
+      background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(0,0,0,.25));
+      box-shadow:
+        0 25px 80px rgba(0,0,0,.8),
+        inset 0 0 0 2px rgba(255,255,255,.05),
+        inset 0 0 40px rgba(0,0,0,.65);
+      padding:18px;
+      box-sizing:border-box;
+    }
+
+    /* CRT glass */
+    .crt{
+      position:relative;
+      height:100%;
+      border-radius:6px;
+      background:
+        radial-gradient(900px 600px at 50% 30%, rgba(57,255,106,.12) 0%, rgba(57,255,106,.02) 45%, rgba(0,0,0,.15) 70%, rgba(0,0,0,.40) 100%),
+        linear-gradient(180deg, rgba(255,255,255,.03), rgba(0,0,0,.28));
+      overflow:hidden;
+      box-shadow:
+        inset 0 0 0 2px rgba(57,255,106,.10),
+        inset 0 0 80px rgba(0,0,0,.75);
+    }
+
+    /* Vignette + curvature */
+    .crt::before{
+      content:"";
+      position:absolute;
+      inset:-2px;
+      background:
+        radial-gradient(120% 90% at 50% 50%, rgba(0,0,0,0) 40%, rgba(0,0,0,.35) 75%, rgba(0,0,0,.75) 100%),
+        radial-gradient(140% 120% at 50% 55%, rgba(0,0,0,0) 55%, rgba(0,0,0,.25) 80%, rgba(0,0,0,.65) 100%);
+      pointer-events:none;
+      mix-blend-mode:multiply;
+    }
+
+    /* Scanlines */
+    .crt::after{
+      content:"";
+      position:absolute;
+      inset:0;
+      background:
+        repeating-linear-gradient(
+          to bottom,
+          rgba(0,0,0,.28) 0px,
+          rgba(0,0,0,.28) 1px,
+          rgba(0,0,0,0) 3px,
+          rgba(0,0,0,0) 5px
+        );
+      opacity:.55;
+      pointer-events:none;
+    }
+
+    /* Slight barrel distortion via transform */
+    .screen{
+      position:absolute;
+      inset:0;
+      padding:18px 18px 14px 18px;
+      box-sizing:border-box;
+      transform: perspective(900px) rotateX(.6deg);
+      filter: saturate(1.05) contrast(1.05);
+      text-shadow:
+        0 0 10px var(--glow),
+        0 0 22px rgba(57,255,106,.20);
+    }
+
+    .topbar{
+      display:flex;
+      justify-content:space-between;
+      align-items:baseline;
+      gap:16px;
+      padding-bottom:10px;
+      border-bottom:1px solid rgba(57,255,106,.28);
+      margin-bottom:12px;
+    }
+    .title{
+      font-weight:700;
+      letter-spacing:.06em;
+      text-transform:uppercase;
+    }
+    .status{
+      font-size:.95em;
+      color:var(--phosphor-dim);
+      white-space:nowrap;
+    }
+
+    .grid{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:18px;
+      height:calc(100% - 58px);
+      min-height:0;
+    }
+
+    .panel{
+      border:1px solid rgba(57,255,106,.20);
+      background: linear-gradient(180deg, rgba(57,255,106,.05), rgba(0,0,0,.12));
+      box-shadow: inset 0 0 0 1px rgba(0,0,0,.35);
+      border-radius:4px;
+      overflow:hidden;
+      min-height:0;
+      position:relative;
+    }
+    .panel .hdr{
+      padding:8px 10px;
+      border-bottom:1px solid rgba(57,255,106,.18);
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      color:var(--phosphor-dim);
+      font-size:.92em;
+      letter-spacing:.04em;
+    }
+    .panel .body{
+      padding:10px;
+      height:calc(100% - 37px);
+      min-height:0;
+      overflow:auto;
+      scrollbar-width:thin;
+      scrollbar-color: rgba(57,255,106,.35) transparent;
+    }
+    .panel .body::-webkit-scrollbar{ width:10px; }
+    .panel .body::-webkit-scrollbar-thumb{
+      background: rgba(57,255,106,.22);
+      border-radius:10px;
+      border:2px solid transparent;
+      background-clip: content-box;
+    }
+
+    .mono{
+      font-size:var(--fs);
+      line-height:var(--lh);
+      letter-spacing:.02em;
+      white-space:pre;
+      user-select:none;
+    }
+
+    /* Prompt area */
+    .prompt{
+      position:absolute;
+      left:0; right:0; bottom:0;
+      border-top:1px solid rgba(57,255,106,.22);
+      background: linear-gradient(180deg, rgba(0,0,0,.0), rgba(0,0,0,.25));
+      padding:10px;
+      box-sizing:border-box;
+    }
+    .promptline{
+      display:flex;
+      align-items:baseline;
+      gap:10px;
+      font-size:var(--fs);
+      line-height:var(--lh);
+    }
+    .label{
+      color:var(--phosphor-dim);
+      white-space:nowrap;
+    }
+    .input{
+      position:relative;
+      flex:1;
+      min-width:0;
+      white-space:pre;
+      overflow:hidden;
+    }
+    .caret{
+      display:inline-block;
+      width:.65ch;
+      height:1.05em;
+      background: var(--phosphor);
+      box-shadow: 0 0 14px var(--glow);
+      transform: translateY(.12em);
+      animation: blink 1s steps(2, end) infinite;
+      margin-left:.15ch;
+    }
+    @keyframes blink{ 50%{ opacity:0; } }
+
+    .hint{
+      margin-top:6px;
+      color:var(--phosphor-dimmer);
+      font-size:.9em;
+      display:flex;
+      justify-content:space-between;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+
+    /* Selection highlight (FO-like inverse) */
+    .sel{
+      background: rgba(57,255,106,.90);
+      color: #031006;
+      text-shadow:none;
+      box-shadow: 0 0 18px rgba(57,255,106,.35);
+    }
+
+    /* Boot flicker */
+    .flicker{
+      animation: boot 650ms ease-out 1;
+    }
+    @keyframes boot{
+      0%{ opacity:0; transform:scaleY(.98); filter:brightness(1.6) contrast(1.2); }
+      22%{ opacity:1; }
+      35%{ opacity:.35; }
+      55%{ opacity:1; }
+      100%{ opacity:1; transform:none; filter:none; }
+    }
+
+    /* Noise layer */
+    .noise{
+      position:absolute;
+      inset:0;
+      pointer-events:none;
+      opacity:.10;
+      mix-blend-mode:overlay;
+      background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E");
+      background-size:180px 180px;
+    }
+
+    .kpi{
+      color:var(--phosphor-dim);
+      font-size:.92em;
+      white-space:nowrap;
+    }
+
+    .bad{ color: rgba(255, 120, 120, .95); text-shadow: 0 0 12px rgba(255,120,120,.25); }
+    .ok{ color: var(--phosphor); }
+
+    /* Mobile: single column */
+    @media (max-width: 860px){
+      .grid{ grid-template-columns: 1fr; }
+      .panel.codes{ display:none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <div class="bezel">
+      <div class="crt">
+        <div class="noise"></div>
+        <div class="screen flicker" id="screen">
+          <div class="topbar">
+            <div class="title">ROBCO INDUSTRIES (TM) TERMLINK</div>
+            <div class="status" id="status">PROTOCOL: VT-ROBCO // SESSION: 0x7A1C</div>
+          </div>
+
+          <div class="grid">
+            <div class="panel codes">
+              <div class="hdr">
+                <span>MEMORY DUMP</span>
+                <span class="kpi" id="kpiLeft">ADDR: 0xF0A0</span>
+              </div>
+              <div class="body">
+                <div class="mono" id="dump"></div>
+              </div>
+            </div>
+
+            <div class="panel main" id="mainPanel">
+              <div class="hdr">
+                <span id="hdrRight">WELCOME</span>
+                <span class="kpi" id="kpiRight">TRIES: <span id="tries">4</span></span>
+              </div>
+              <div class="body" id="logBody">
+                <div class="mono" id="log"></div>
+              </div>
+
+              <div class="prompt">
+                <div class="promptline">
+                  <span class="label">&gt;</span>
+                  <div class="input" id="input"></div>
+                  <span class="caret" aria-hidden="true"></span>
+                </div>
+                <div class="hint">
+                  <span>TYPE: <span class="ok">HELP</span> / <span class="ok">LOGIN</span> / <span class="ok">READ</span> / <span class="ok">DIR</span> / <span class="ok">CLEAR</span></span>
+                  <span>ARROWS: SELECT • ENTER: RUN</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+
+  const dumpEl = $("dump");
+  const logEl = $("log");
+  const inputEl = $("input");
+  const triesEl = $("tries");
+  const hdrRight = $("hdrRight");
+  const logBody = $("logBody");
+  const kpiLeft = $("kpiLeft");
+
+  // ---------- Utilities ----------
+  const rand = (n) => Math.floor(Math.random() * n);
+  const hex = (n) => n.toString(16).toUpperCase().padStart(4,"0");
+  const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+
+  function scrollLogToBottom(){
+    logBody.scrollTop = logBody.scrollHeight;
+  }
+
+  function writeLines(lines){
+    if (!Array.isArray(lines)) lines = [lines];
+    logEl.textContent += (logEl.textContent ? "\n" : "") + lines.join("\n");
+    scrollLogToBottom();
+  }
+
+  function clearLog(){
+    logEl.textContent = "";
+  }
+
+  // ---------- FO-style "memory dump" ----------
+  const glyphs = "!@#$%^&*()_+-=[]{};:,.<>?/\\|~";
+  const wordList = [
+    "OVERRIDE","TERMINAL","SECURITY","ROBCO","INDUSTRIES","SYNAPSE","CIPHERS",
+    "ELEVATOR","WASTELAND","FIREWALL","PASSWORD","HARDLOCK","PROTOCOL",
+    "DATABASE","MUNITIONS","POWERGRID","AUXILIARY","ARCHIVE","CONTROLS","ACCESS"
+  ];
+
+  function buildDump(rows=16, cols=2){
+    // Each row contains two address blocks like FO terminals
+    // Example: 0xF0A0  (..)(..)...WORD....
+    const start = 0xF0A0 + rand(0x0500);
+    kpiLeft.textContent = "ADDR: 0x" + hex(start);
+
+    const lines = [];
+    for (let r=0;r<rows;r++){
+      const addr1 = start + r*0x10;
+      const addr2 = addr1 + rows*0x10;
+
+      const block1 = buildDumpBlock(18);
+      const block2 = buildDumpBlock(18);
+
+      lines.push(
+        "0x" + hex(addr1) + "  " + block1 + "    " +
+        "0x" + hex(addr2) + "  " + block2
+      );
+    }
+    dumpEl.textContent = lines.join("\n");
+  }
+
+  function buildDumpBlock(len){
+    // Mostly glyphs with occasional words inserted.
+    let s = "";
+    while (s.length < len){
+      const roll = Math.random();
+      if (roll < 0.12 && s.length < len-7){
+        const w = wordList[rand(wordList.length)];
+        s += w.slice(0, Math.min(w.length, len - s.length));
+      } else {
+        s += glyphs[rand(glyphs.length)];
+      }
+    }
+    return s.slice(0,len);
+  }
+
+  // ---------- Terminal state ----------
+  const state = {
+    tries: 4,
+    locked: false,
+    selected: 0,
+    commands: ["HELP","LOGIN","READ","DIR","CLEAR"],
+    input: "",
+    username: "USER",
+    password: "FIREWALL", // for demo
+    loggedIn: false,
+    files: [
+      { name: "NOTICE.TXT", content: [
+        "ROBCO INDUSTRIES (TM) TERMLINK",
+        "--------------------------------",
+        "AUTHORIZED PERSONNEL ONLY.",
+        "",
+        "REMINDER: REPORT ALL ANOMALOUS",
+        "ACTIVITY TO SECURITY."
+      ]},
+      { name: "LOG_2287.TXT", content: [
+        "10/23/2287  21:14  MAINTENANCE RUN",
+        "10/24/2287  06:02  POWER CYCLE OK",
+        "10/24/2287  06:18  ACCESS VIOLATION (3)",
+        "10/24/2287  06:19  LOCKOUT ARMED"
+      ]},
+    ]
+  };
+
+  function banner(){
+    return [
+      "WELCOME TO ROBCO INDUSTRIES (TM) TERMLINK",
+      "",
+      "ENTER PASSWORD NOW"
+    ];
+  }
+
+  function setHeader(text){
+    hdrRight.textContent = text;
+  }
+
+  function updateTries(){
+    triesEl.textContent = String(state.tries);
+    triesEl.className = state.tries <= 1 ? "bad" : "";
+  }
+
+  function setInputText(t){
+    state.input = t;
+    inputEl.textContent = t;
+  }
+
+  function printPromptEcho(cmd){
+    writeLines("> " + cmd);
+  }
+
+  function normalize(cmd){
+    return cmd.trim().toUpperCase();
+  }
+
+  function help(){
+    writeLines([
+      "AVAILABLE COMMANDS:",
+      "  HELP   - THIS LIST",
+      "  LOGIN  - AUTHENTICATE",
+      "  DIR    - LIST FILES (REQUIRES LOGIN)",
+      "  READ   - READ A FILE (REQUIRES LOGIN)",
+      "  CLEAR  - CLEAR SCREEN",
+      "",
+      "TIP: TYPE A COMMAND, OR USE UP/DOWN TO CYCLE SUGGESTIONS."
+    ]);
+  }
+
+  function likeness(a,b){
+    a = a.toUpperCase(); b = b.toUpperCase();
+    const n = Math.min(a.length,b.length);
+    let m = 0;
+    for (let i=0;i<n;i++) if (a[i] === b[i]) m++;
+    return m;
+  }
+
+  function lockout(){
+    state.locked = true;
+    setHeader("LOCKED");
+    writeLines([
+      "",
+      "TERMINAL LOCKED",
+      "PLEASE CONTACT AN ADMINISTRATOR",
+    ]);
+  }
+
+  function cmdLogin(arg){
+    if (state.locked) return;
+    if (state.loggedIn){
+      writeLines("ALREADY LOGGED IN AS " + state.username);
+      return;
+    }
+    if (!arg){
+      writeLines("USAGE: LOGIN <PASSWORD>");
+      return;
+    }
+    const guess = arg.toUpperCase();
+    if (guess === state.password){
+      state.loggedIn = true;
+      setHeader("ACCESS GRANTED");
+      writeLines([
+        "PASSWORD ACCEPTED",
+        "WELCOME, " + state.username,
+      ]);
+      return;
+    }
+    state.tries--;
+    updateTries();
+    const like = likeness(guess, state.password);
+    writeLines([
+      "ENTRY DENIED",
+      "LIKENESS=" + like
+    ]);
+    if (state.tries <= 0) lockout();
+  }
+
+  function cmdDir(){
+    if (!state.loggedIn){
+      writeLines("ACCESS DENIED. LOGIN REQUIRED.");
+      return;
+    }
+    writeLines(["FILES:", ...state.files.map(f => "  " + f.name)]);
+  }
+
+  function cmdRead(arg){
+    if (!state.loggedIn){
+      writeLines("ACCESS DENIED. LOGIN REQUIRED.");
+      return;
+    }
+    if (!arg){
+      writeLines("USAGE: READ <FILENAME>");
+      return;
+    }
+    const name = arg.trim().toUpperCase();
+    const f = state.files.find(x => x.name.toUpperCase() === name);
+    if (!f){
+      writeLines("FILE NOT FOUND: " + name);
+      return;
+    }
+    writeLines(["", "OPENING " + f.name, "--------------------------------", ...f.content, ""]);
+  }
+
+  function runCommand(raw){
+    const cmdline = raw.trim();
+    if (!cmdline) return;
+
+    printPromptEcho(cmdline);
+
+    const parts = cmdline.split(/\s+/);
+    const cmd = normalize(parts[0]);
+    const arg = parts.slice(1).join(" ");
+
+    switch(cmd){
+      case "HELP": help(); break;
+      case "CLEAR":
+        clearLog();
+        writeLines(banner());
+        break;
+      case "LOGIN": cmdLogin(arg); break;
+      case "DIR": cmdDir(); break;
+      case "READ": cmdRead(arg); break;
+      default:
+        writeLines("UNKNOWN COMMAND: " + cmd);
+    }
+  }
+
+  // ---------- Input handling (keyboard-only, terminal vibe) ----------
+  function applySuggestion(){
+    setInputText(state.commands[state.selected]);
+  }
+
+  document.addEventListener("keydown", (e) => {
+    // Keep focus "in terminal"
+    const key = e.key;
+
+    if (key === "ArrowUp" || key === "ArrowDown"){
+      e.preventDefault();
+      const dir = key === "ArrowUp" ? -1 : 1;
+      state.selected = (state.selected + dir + state.commands.length) % state.commands.length;
+      applySuggestion();
+      return;
+    }
+
+    if (key === "Tab"){
+      e.preventDefault();
+      applySuggestion();
+      return;
+    }
+
+    if (key === "Enter"){
+      e.preventDefault();
+      const cmd = state.input;
+      setInputText("");
+      runCommand(cmd);
+      return;
+    }
+
+    if (key === "Backspace"){
+      e.preventDefault();
+      setInputText(state.input.slice(0,-1));
+      return;
+    }
+
+    if (key === "Escape"){
+      e.preventDefault();
+      setInputText("");
+      return;
+    }
+
+    // Printable characters
+    if (key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey){
+      // FO terminals are usually uppercase; do that.
+      e.preventDefault();
+      const next = (state.input + key).toUpperCase();
+      // soft cap line length
+      setInputText(next.slice(0, 60));
+    }
+  });
+
+  // ---------- Boot ----------
+  function boot(){
+    buildDump(16,2);
+    updateTries();
+    setHeader("WELCOME");
+    clearLog();
+    writeLines(banner());
+    setInputText("HELP");
+    scrollLogToBottom();
+
+    // light "hum" effect via status changes
+    setInterval(() => {
+      const sess = "0x" + hex(0x7000 + rand(0x0FFF));
+      $("status").textContent = "PROTOCOL: VT-ROBCO // SESSION: " + sess;
+    }, 2200);
+
+    // occasional subtle refresh of dump
+    setInterval(() => buildDump(16,2), 12000);
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>
