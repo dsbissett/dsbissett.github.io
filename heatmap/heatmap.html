@@ -1,0 +1,608 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Severity-Weighted KDE Heatmap (Demo)</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b0f17;
+      --panel: rgba(255,255,255,0.06);
+      --panel2: rgba(255,255,255,0.08);
+      --text: rgba(255,255,255,0.92);
+      --muted: rgba(255,255,255,0.65);
+      --border: rgba(255,255,255,0.14);
+      --shadow: 0 10px 30px rgba(0,0,0,0.45);
+      --radius: 14px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+    }
+
+    html, body {
+      height: 100%;
+      margin: 0;
+      background: radial-gradient(1200px 700px at 20% 10%, rgba(102, 153, 255, 0.08), transparent 55%),
+                  radial-gradient(1000px 600px at 90% 20%, rgba(255, 107, 107, 0.10), transparent 55%),
+                  var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      overflow: hidden;
+    }
+
+    .app {
+      height: 100%;
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 14px;
+      padding: 14px;
+      box-sizing: border-box;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    .panel header {
+      padding: 14px 14px 10px;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(to bottom, rgba(255,255,255,0.05), transparent);
+    }
+
+    .panel header .title {
+      font-size: 14px;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin: 0 0 8px;
+    }
+
+    .panel header .subtitle {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .panel .content {
+      padding: 14px;
+      overflow: auto;
+      min-height: 0;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .control {
+      background: var(--panel2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px;
+    }
+
+    .control label {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    .control label .value {
+      font-family: var(--mono);
+      color: var(--text);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: #ff6b6b;
+    }
+
+    .btnrow {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    button {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 10px 12px;
+      border-radius: 12px;
+      cursor: pointer;
+      font-weight: 650;
+      transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+    }
+
+    button:hover { background: rgba(255,255,255,0.12); }
+    button:active { transform: translateY(1px); }
+    button.primary { background: rgba(255, 107, 107, 0.18); border-color: rgba(255,107,107,0.45); }
+    button.primary:hover { background: rgba(255, 107, 107, 0.24); }
+
+    .hint {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.35;
+      margin: 10px 0 0;
+    }
+
+    .legend {
+      display: grid;
+      grid-template-columns: 22px 1fr;
+      gap: 10px;
+      align-items: center;
+      margin-top: 12px;
+    }
+
+    .swatch {
+      width: 22px; height: 22px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+    }
+
+    .mono {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: rgba(255,255,255,0.82);
+      line-height: 1.35;
+      background: rgba(0,0,0,0.22);
+      border: 1px solid rgba(255,255,255,0.10);
+      padding: 10px;
+      border-radius: 12px;
+      overflow-x: auto;
+      margin-top: 12px;
+    }
+
+    .canvasWrap {
+      position: relative;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .overlay {
+      position: absolute;
+      left: 12px;
+      top: 12px;
+      background: rgba(0,0,0,0.35);
+      border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 12px;
+      padding: 10px 12px;
+      backdrop-filter: blur(6px);
+      font-size: 12px;
+      color: rgba(255,255,255,0.80);
+    }
+
+    .overlay b { color: rgba(255,255,255,0.95); }
+    .overlay .k { font-family: var(--mono); color: rgba(255,255,255,0.92); }
+
+    @media (max-width: 980px) {
+      body { overflow: auto; }
+      .app {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto minmax(520px, 1fr);
+        height: auto;
+      }
+      .canvasWrap { height: 70vh; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <section class="panel">
+      <header>
+        <p class="title">Demo</p>
+        <p class="subtitle">Severity-Weighted KDE Heatmap</p>
+      </header>
+
+      <div class="content">
+        <div class="row">
+          <div class="control">
+            <label>
+              <span>Grid step (px)</span>
+              <span class="value" id="gridStepVal"></span>
+            </label>
+            <input id="gridStep" type="range" min="3" max="18" step="1" value="8" />
+          </div>
+
+          <div class="control">
+            <label>
+              <span>Felony weight (w)</span>
+              <span class="value" id="felonyWVal"></span>
+            </label>
+            <input id="felonyW" type="range" min="1" max="20" step="1" value="12" />
+          </div>
+
+          <div class="control">
+            <label>
+              <span>Misdemeanor weight (w)</span>
+              <span class="value" id="misWVal"></span>
+            </label>
+            <input id="misW" type="range" min="1" max="10" step="1" value="4" />
+          </div>
+
+          <div class="control">
+            <label>
+              <span>Felony σ (px)</span>
+              <span class="value" id="felonySigmaVal"></span>
+            </label>
+            <input id="felonySigma" type="range" min="18" max="180" step="2" value="95" />
+          </div>
+
+          <div class="control">
+            <label>
+              <span>Misdemeanor σ (px)</span>
+              <span class="value" id="misSigmaVal"></span>
+            </label>
+            <input id="misSigma" type="range" min="18" max="180" step="2" value="65" />
+          </div>
+
+          <div class="control">
+            <label>
+              <span>Opacity</span>
+              <span class="value" id="opacityVal"></span>
+            </label>
+            <input id="opacity" type="range" min="0.15" max="1" step="0.05" value="0.92" />
+          </div>
+
+          <div class="btnrow">
+            <button id="regen" class="primary">Regenerate Points</button>
+            <button id="clear">Clear Points</button>
+          </div>
+
+          <p class="hint">
+            Click to add incidents: <b>Shift+Click</b> adds a felony (high severity), normal click adds a misdemeanor.
+            Drag to pan points? (Not implemented.) The heat is computed on a grid using:
+            <span class="k">R(x)=∑ wᵢ·exp( - d(x,xᵢ)² / (2σᵢ²) )</span>.
+          </p>
+
+          <div class="mono" id="formulaBox"></div>
+
+          <div class="legend">
+            <div class="swatch" style="background: rgb(0,255,80);"></div>
+            <div>Low / safe</div>
+            <div class="swatch" style="background: rgb(255,255,0);"></div>
+            <div>Elevated</div>
+            <div class="swatch" style="background: rgb(255,165,0);"></div>
+            <div>High</div>
+            <div class="swatch" style="background: rgb(180,0,0);"></div>
+            <div>Severe</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="canvasWrap">
+      <canvas id="c"></canvas>
+      <div class="overlay" id="overlay"></div>
+    </section>
+  </div>
+
+  <script>
+    // ------------------------------
+    // Severity-Weighted KDE Heatmap
+    // R(x) = Σ_i w_i * exp( - d(x, x_i)^2 / (2 * σ_i^2) )
+    // ------------------------------
+
+    const canvas = document.getElementById("c");
+    const ctx = canvas.getContext("2d", { willReadFrequently: false });
+
+    const ui = {
+      gridStep: document.getElementById("gridStep"),
+      felonyW: document.getElementById("felonyW"),
+      misW: document.getElementById("misW"),
+      felonySigma: document.getElementById("felonySigma"),
+      misSigma: document.getElementById("misSigma"),
+      opacity: document.getElementById("opacity"),
+      regen: document.getElementById("regen"),
+      clear: document.getElementById("clear"),
+
+      gridStepVal: document.getElementById("gridStepVal"),
+      felonyWVal: document.getElementById("felonyWVal"),
+      misWVal: document.getElementById("misWVal"),
+      felonySigmaVal: document.getElementById("felonySigmaVal"),
+      misSigmaVal: document.getElementById("misSigmaVal"),
+      opacityVal: document.getElementById("opacityVal"),
+
+      formulaBox: document.getElementById("formulaBox"),
+      overlay: document.getElementById("overlay"),
+    };
+
+    const SEVERITY = {
+      FELONY: "felony",
+      MISD: "misdemeanor",
+    };
+
+    /** @type {{x:number,y:number,sev:"felony"|"misdemeanor"}[]} */
+    let points = [];
+
+    function resizeCanvas() {
+      const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = Math.floor(rect.width * dpr);
+      canvas.height = Math.floor(rect.height * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // draw in CSS pixels
+      render();
+    }
+
+    function clamp01(v) { return Math.max(0, Math.min(1, v)); }
+
+    function lerp(a, b, t) { return a + (b - a) * t; }
+
+    function mixRGB(c1, c2, t) {
+      return [
+        Math.round(lerp(c1[0], c2[0], t)),
+        Math.round(lerp(c1[1], c2[1], t)),
+        Math.round(lerp(c1[2], c2[2], t)),
+      ];
+    }
+
+    // Simple 4-stop ramp: green -> yellow -> orange -> dark red
+    const RAMP = [
+      { t: 0.00, c: [0, 255, 80] },
+      { t: 0.45, c: [255, 255, 0] },
+      { t: 0.72, c: [255, 165, 0] },
+      { t: 1.00, c: [180, 0, 0] },
+    ];
+
+    function rampColor(t) {
+      t = clamp01(t);
+      for (let i = 0; i < RAMP.length - 1; i++) {
+        const a = RAMP[i], b = RAMP[i + 1];
+        if (t >= a.t && t <= b.t) {
+          const u = (t - a.t) / (b.t - a.t || 1);
+          return mixRGB(a.c, b.c, u);
+        }
+      }
+      return RAMP[RAMP.length - 1].c;
+    }
+
+    function readParams() {
+      const gridStep = +ui.gridStep.value;
+      const felonyW = +ui.felonyW.value;
+      const misW = +ui.misW.value;
+      const felonySigma = +ui.felonySigma.value;
+      const misSigma = +ui.misSigma.value;
+      const opacity = +ui.opacity.value;
+
+      ui.gridStepVal.textContent = `${gridStep}`;
+      ui.felonyWVal.textContent = `${felonyW}`;
+      ui.misWVal.textContent = `${misW}`;
+      ui.felonySigmaVal.textContent = `${felonySigma}`;
+      ui.misSigmaVal.textContent = `${misSigma}`;
+      ui.opacityVal.textContent = `${opacity.toFixed(2)}`;
+
+      ui.formulaBox.textContent =
+`R(x)=Σᵢ wᵢ·exp( - d(x,xᵢ)² / (2σᵢ²) )
+
+Demo mapping:
+- felony:       w=${felonyW}, σ=${felonySigma}px
+- misdemeanor:  w=${misW}, σ=${misSigma}px
+- grid step:    ${gridStep}px`;
+
+      return { gridStep, felonyW, misW, felonySigma, misSigma, opacity };
+    }
+
+    function kdeAt(x, y, params) {
+      // R(x) = Σ w_i * exp( - d^2 / (2σ_i^2) )
+      let r = 0;
+
+      for (const p of points) {
+        const dx = x - p.x;
+        const dy = y - p.y;
+        const d2 = dx * dx + dy * dy;
+
+        const w = (p.sev === SEVERITY.FELONY) ? params.felonyW : params.misW;
+        const sigma = (p.sev === SEVERITY.FELONY) ? params.felonySigma : params.misSigma;
+        const denom = 2 * sigma * sigma;
+
+        r += w * Math.exp(-d2 / denom);
+      }
+
+      return r;
+    }
+
+    function renderBaseMapGrid() {
+      // Optional background grid texture
+      const w = canvas.getBoundingClientRect().width;
+      const h = canvas.getBoundingClientRect().height;
+
+      ctx.save();
+      ctx.clearRect(0, 0, w, h);
+
+      // subtle vignette
+      const g = ctx.createRadialGradient(w * 0.5, h * 0.45, 10, w * 0.5, h * 0.45, Math.max(w, h) * 0.7);
+      g.addColorStop(0, "rgba(255,255,255,0.05)");
+      g.addColorStop(1, "rgba(0,0,0,0.35)");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, w, h);
+
+      // faint grid
+      ctx.strokeStyle = "rgba(255,255,255,0.06)";
+      ctx.lineWidth = 1;
+
+      const step = 48;
+      for (let x = 0; x <= w; x += step) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, h);
+        ctx.stroke();
+      }
+      for (let y = 0; y <= h; y += step) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(w, y);
+        ctx.stroke();
+      }
+
+      ctx.restore();
+    }
+
+    function renderPointsOverlay() {
+      const w = canvas.getBoundingClientRect().width;
+      const h = canvas.getBoundingClientRect().height;
+
+      ctx.save();
+
+      // points
+      for (const p of points) {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.sev === SEVERITY.FELONY ? 6 : 4, 0, Math.PI * 2);
+
+        if (p.sev === SEVERITY.FELONY) {
+          ctx.fillStyle = "rgba(255, 70, 70, 0.95)";
+          ctx.strokeStyle = "rgba(255, 200, 200, 0.85)";
+        } else {
+          ctx.fillStyle = "rgba(255, 230, 80, 0.95)";
+          ctx.strokeStyle = "rgba(255, 250, 210, 0.75)";
+        }
+
+        ctx.lineWidth = 1.2;
+        ctx.fill();
+        ctx.stroke();
+      }
+
+      // border
+      ctx.strokeStyle = "rgba(255,255,255,0.10)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
+
+      ctx.restore();
+    }
+
+    function renderHeat(params) {
+      const w = canvas.getBoundingClientRect().width;
+      const h = canvas.getBoundingClientRect().height;
+
+      if (!points.length) return;
+
+      const step = params.gridStep;
+
+      // compute KDE on grid; store values & track max for normalization
+      const samples = [];
+      let maxR = 0;
+
+      for (let y = 0; y <= h; y += step) {
+        for (let x = 0; x <= w; x += step) {
+          const r = kdeAt(x, y, params);
+          samples.push({ x, y, r });
+          if (r > maxR) maxR = r;
+        }
+      }
+
+      if (maxR <= 0) return;
+
+      // draw as colored cells
+      ctx.save();
+      ctx.globalAlpha = params.opacity;
+
+      for (const s of samples) {
+        const t = clamp01(s.r / maxR);
+        const [rr, gg, bb] = rampColor(t);
+        ctx.fillStyle = `rgb(${rr},${gg},${bb})`;
+        ctx.fillRect(s.x, s.y, step + 1, step + 1);
+      }
+
+      ctx.restore();
+    }
+
+    function render() {
+      const params = readParams();
+      renderBaseMapGrid();
+      renderHeat(params);
+      renderPointsOverlay();
+
+      ui.overlay.innerHTML =
+        `<div><b>Points:</b> ${points.length}</div>
+         <div><b>Add:</b> click = misdemeanor, <span class="k">Shift+Click</span> = felony</div>
+         <div><b>Formula:</b> <span class="k">R(x)=Σ wᵢ·exp(-d²/(2σᵢ²))</span></div>`;
+    }
+
+    function randomPoints() {
+      const w = canvas.getBoundingClientRect().width;
+      const h = canvas.getBoundingClientRect().height;
+
+      const rand = (min, max) => min + Math.random() * (max - min);
+
+      const felonyCount = 10;
+      const misCount = 28;
+
+      const pts = [];
+
+      // cluster a few felonies
+      for (let i = 0; i < felonyCount; i++) {
+        const cx = rand(w * 0.18, w * 0.82);
+        const cy = rand(h * 0.18, h * 0.82);
+        pts.push({ x: cx + rand(-35, 35), y: cy + rand(-35, 35), sev: SEVERITY.FELONY });
+      }
+
+      // scatter misdemeanors with mild clustering
+      for (let i = 0; i < misCount; i++) {
+        const near = pts[Math.floor(Math.random() * pts.length)];
+        const useNear = Math.random() < 0.55;
+        const x = useNear ? near.x + rand(-120, 120) : rand(0, w);
+        const y = useNear ? near.y + rand(-120, 120) : rand(0, h);
+        pts.push({ x: clamp01(x / w) * w, y: clamp01(y / h) * h, sev: SEVERITY.MISD });
+      }
+
+      points = pts;
+    }
+
+    // UI bindings
+    for (const el of [ui.gridStep, ui.felonyW, ui.misW, ui.felonySigma, ui.misSigma, ui.opacity]) {
+      el.addEventListener("input", render);
+    }
+
+    ui.regen.addEventListener("click", () => {
+      randomPoints();
+      render();
+    });
+
+    ui.clear.addEventListener("click", () => {
+      points = [];
+      render();
+    });
+
+    canvas.addEventListener("click", (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      const sev = e.shiftKey ? SEVERITY.FELONY : SEVERITY.MISD;
+      points.push({ x, y, sev });
+      render();
+    });
+
+    window.addEventListener("resize", resizeCanvas);
+
+    // init
+    resizeCanvas();
+    randomPoints();
+    render();
+  </script>
+</body>
+</html>

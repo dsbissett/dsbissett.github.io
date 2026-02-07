@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>DRAKE – Tearable Cloth Text (3× Size)</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#f2f2f2}
+  canvas{display:block;width:100vw;height:100vh}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<script>
+(() => {
+  const canvas = document.getElementById("c");
+  const ctx = canvas.getContext("2d");
+  const DPR = Math.min(2, window.devicePixelRatio || 1);
+
+  let W=0,H=0;
+
+  // Params
+  const accuracy = 10;
+  const gravity = 520;
+  const friction = 0.992;
+  const bounce = 0.40;
+
+  let spacing = 10;
+  let tearDist = 70;
+
+  const mouse = {
+    down:false, button:0,
+    x:0,y:0, px:0,py:0,
+    influence:42, cut:10
+  };
+
+  class Point{
+    constructor(x,y){
+      this.x=x; this.y=y;
+      this.px=x; this.py=y;
+      this.vx=0; this.vy=0;
+      this.constraints=[];
+      this.pinned=false;
+      this.pinX=0; this.pinY=0;
+    }
+
+    update(dt){
+      if(this.pinned){
+        if(mouse.down){
+          const dx=this.x-mouse.x, dy=this.y-mouse.y;
+          const d=Math.hypot(dx,dy);
+          if(mouse.button===0 && d<mouse.influence){
+            this.pinned=false;
+          } else if(mouse.button===2 && d<mouse.cut){
+            this.constraints.length=0;
+          }
+        }
+        if(this.pinned){
+          this.x=this.pinX; this.y=this.pinY;
+          this.px=this.pinX; this.py=this.pinY;
+          this.vx=this.vy=0;
+          return;
+        }
+      }
+
+      if(mouse.down){
+        const dx=this.x-mouse.x, dy=this.y-mouse.y;
+        const d=Math.hypot(dx,dy);
+        if(mouse.button===0 && d<mouse.influence){
+          const mx=mouse.x-mouse.px;
+          const my=mouse.y-mouse.py;
+          this.px=this.x-mx;
+          this.py=this.y-my;
+        }else if(mouse.button===2 && d<mouse.cut){
+          this.constraints.length=0;
+        }
+      }
+
+      this.vy += gravity;
+
+      const nx = this.x + (this.x - this.px) * friction + this.vx * dt * dt;
+      const ny = this.y + (this.y - this.py) * friction + this.vy * dt * dt;
+
+      this.px = this.x; this.py = this.y;
+      this.x = nx; this.y = ny;
+
+      this.vx = 0; this.vy = 0;
+
+      if(this.x < 0){ this.x=0; this.px=this.x + (this.x - this.px)*bounce; }
+      if(this.x > W){ this.x=W; this.px=this.x + (this.x - this.px)*bounce; }
+      if(this.y < 0){ this.y=0; this.py=this.y + (this.y - this.py)*bounce; }
+      if(this.y > H){ this.y=H; this.py=this.y + (this.y - this.py)*bounce; }
+    }
+
+    resolve(){ for(const c of this.constraints) c.resolve(); }
+    draw(){ for(const c of this.constraints) c.draw(); }
+
+    attach(p){ this.constraints.push(new Constraint(this,p)); }
+    free(c){ const i=this.constraints.indexOf(c); if(i>-1) this.constraints.splice(i,1); }
+
+    pin(){
+      this.pinned=true;
+      this.pinX=this.x; this.pinY=this.y;
+      this.px=this.x; this.py=this.y;
+    }
+  }
+
+  class Constraint{
+    constructor(p1,p2,len){
+      this.p1=p1; this.p2=p2;
+      this.length = len ?? spacing;
+    }
+    resolve(){
+      const dx=this.p1.x-this.p2.x;
+      const dy=this.p1.y-this.p2.y;
+      const dist=Math.hypot(dx,dy) || 1e-6;
+
+      if(dist > tearDist){
+        this.p1.free(this);
+        return;
+      }
+
+      const diff = (dist - this.length) / dist;
+      const px = dx * 0.5 * diff;
+      const py = dy * 0.5 * diff;
+
+      if(!this.p1.pinned){ this.p1.x -= px; this.p1.y -= py; }
+      if(!this.p2.pinned){ this.p2.x += px; this.p2.y += py; }
+    }
+    draw(){
+      ctx.moveTo(this.p1.x,this.p1.y);
+      ctx.lineTo(this.p2.x,this.p2.y);
+    }
+  }
+
+  let points=[];
+
+  function buildTextPoints(text){
+    points=[];
+
+    const off=document.createElement("canvas");
+    const octx=off.getContext("2d");
+
+    // ★★★ 3× SIZE CHANGE IS HERE ★★★
+    const targetW=W*0.95;
+    const targetH=H*0.65;
+
+    let fs=Math.floor(Math.min(720, Math.max(240, H*0.55))); // ~3× previous
+    const font=()=>`900 ${fs}px Arial Black, Impact, system-ui, sans-serif`;
+
+    for(let i=0;i<60;i++){
+      octx.font=font();
+      const m=octx.measureText(text);
+      if(m.width<=targetW && fs<=targetH) break;
+      fs=Math.floor(fs*0.95);
+    }
+
+    spacing = Math.max(10, Math.min(18, Math.floor(fs/18)));
+    tearDist = spacing * 9.0;
+    mouse.influence = spacing * 4.6;
+    mouse.cut = spacing * 1.2;
+
+    octx.font=font();
+    const m=octx.measureText(text);
+    const pad=36;
+
+    off.width=Math.ceil(m.width + pad*2);
+    off.height=Math.ceil(fs + pad*2);
+
+    octx.font=font();
+    octx.fillStyle="#000";
+    octx.textBaseline="top";
+    octx.fillText(text,pad,pad);
+
+    const img=octx.getImageData(0,0,off.width,off.height).data;
+
+    const ox=(W-off.width)/2;
+    const oy=Math.max(24, H*0.08);
+
+    const map=new Map();
+    const key=(x,y)=>(x<<16)|y;
+
+    for(let y=0;y<off.height;y+=spacing){
+      for(let x=0;x<off.width;x+=spacing){
+        const a=img[(y*off.width + x)*4 + 3];
+        if(a>8){
+          const p=new Point(ox+x, oy+y);
+          points.push(p);
+          map.set(key(x,y), p);
+        }
+      }
+    }
+
+    const diag = Math.hypot(spacing, spacing);
+
+    for(let y=0;y<off.height;y+=spacing){
+      for(let x=0;x<off.width;x+=spacing){
+        const p=map.get(key(x,y));
+        if(!p) continue;
+
+        const r = map.get(key(x+spacing,y));
+        const d = map.get(key(x,y+spacing));
+        const dr= map.get(key(x+spacing,y+spacing));
+        const dl= map.get(key(x-spacing,y+spacing));
+
+        if(r) p.attach(r);
+        if(d) p.attach(d);
+        if(dr) p.constraints.push(new Constraint(p, dr, diag));
+        if(dl) p.constraints.push(new Constraint(p, dl, diag));
+      }
+    }
+
+    let minY=Infinity;
+    for(const p of points) if(p.y<minY) minY=p.y;
+
+    const band = spacing * 2.4;
+    for(const p of points){
+      if(p.y <= minY + band) p.pin();
+    }
+  }
+
+  function rebuild(){ buildTextPoints("DRAKE"); }
+
+  function resize(){
+    W=Math.floor(innerWidth);
+    H=Math.floor(innerHeight);
+    canvas.width=Math.floor(W*DPR);
+    canvas.height=Math.floor(H*DPR);
+    canvas.style.width=W+"px";
+    canvas.style.height=H+"px";
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+    rebuild();
+  }
+
+  function setMouse(e){
+    const r=canvas.getBoundingClientRect();
+    mouse.px=mouse.x; mouse.py=mouse.y;
+    mouse.x=e.clientX-r.left;
+    mouse.y=e.clientY-r.top;
+  }
+
+  canvas.addEventListener("pointerdown", e=>{
+    canvas.setPointerCapture(e.pointerId);
+    mouse.down=true;
+    mouse.button=e.button||0;
+    setMouse(e);
+  });
+  canvas.addEventListener("pointermove", e=>setMouse(e));
+  canvas.addEventListener("pointerup", e=>{
+    mouse.down=false;
+    try{ canvas.releasePointerCapture(e.pointerId);}catch{}
+  });
+  canvas.addEventListener("pointercancel", ()=>mouse.down=false);
+  canvas.addEventListener("contextmenu", e=>e.preventDefault());
+
+  addEventListener("keydown", e=>{
+    if(e.key==="r"||e.key==="R") rebuild();
+  });
+
+  let last=performance.now();
+  function loop(now){
+    const dt=Math.min(1/30,(now-last)/1000);
+    last=now;
+
+    ctx.clearRect(0,0,W,H);
+    ctx.beginPath();
+
+    for(let i=0;i<accuracy;i++){
+      for(const p of points) p.resolve();
+    }
+
+    for(const p of points){
+      p.update(dt);
+      p.draw();
+    }
+
+    ctx.strokeStyle="#555";
+    ctx.lineWidth=Math.max(1,spacing/7);
+    ctx.lineCap="round";
+    ctx.stroke();
+
+    requestAnimationFrame(loop);
+  }
+
+  resize();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

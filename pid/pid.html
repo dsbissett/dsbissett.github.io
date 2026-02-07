@@ -1,0 +1,1273 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PID Demo — 1D Mass–Spring–Damper (Position Control)</title>
+  <style>
+    :root{
+      --bg:#0b1020;
+      --panel:#121a33;
+      --panel2:#0f1730;
+      --text:#e9ecff;
+      --muted:#a9b1d6;
+      --grid:rgba(255,255,255,.08);
+      --accent:#7aa2f7;
+      --good:#9ece6a;
+      --warn:#e0af68;
+      --bad:#f7768e;
+      --cyan:#7dcfff;
+      --violet:#bb9af7;
+      --pink:#ff9bd1;
+    }
+    *{box-sizing:border-box;}
+    html,body{height:100%;}
+    body{
+      margin:0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+      background: radial-gradient(1200px 800px at 20% 10%, rgba(122,162,247,.18), transparent 60%),
+                  radial-gradient(900px 700px at 80% 30%, rgba(187,154,247,.12), transparent 55%),
+                  radial-gradient(900px 700px at 45% 85%, rgba(125,207,255,.10), transparent 55%),
+                  var(--bg);
+      color:var(--text);
+    }
+    header{
+      padding:16px 18px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      border-bottom:1px solid rgba(255,255,255,.08);
+      position:sticky;
+      top:0;
+      background:rgba(11,16,32,.8);
+      backdrop-filter: blur(10px);
+      z-index:10;
+    }
+    header h1{
+      margin:0;
+      font-size:16px;
+      letter-spacing:.2px;
+      font-weight:650;
+    }
+    header .sub{
+      margin:0;
+      font-size:12px;
+      color:var(--muted);
+    }
+    .wrap{
+      padding:18px;
+      display:grid;
+      grid-template-columns: 1.35fr .65fr;
+      gap:14px;
+      max-width:1200px;
+      margin:0 auto;
+    }
+    .card{
+      background:linear-gradient(180deg, rgba(18,26,51,.92), rgba(15,23,48,.92));
+      border:1px solid rgba(255,255,255,.08);
+      border-radius:14px;
+      box-shadow: 0 16px 40px rgba(0,0,0,.35);
+      overflow:hidden;
+    }
+    .card .hd{
+      padding:12px 14px;
+      border-bottom:1px solid rgba(255,255,255,.08);
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+    }
+    .card .hd .title{
+      font-weight:650;
+      font-size:13px;
+      letter-spacing:.2px;
+    }
+    .row{
+      display:grid;
+      grid-template-rows: auto auto;
+      gap:14px;
+    }
+    .simArea{
+      padding:12px 12px 14px;
+      display:grid;
+      grid-template-rows:auto auto;
+      gap:12px;
+    }
+    canvas{
+      display:block;
+      width:100%;
+      height:100%;
+      background: rgba(7,10,20,.55);
+      border:1px solid rgba(255,255,255,.06);
+      border-radius:12px;
+    }
+    .charts{
+      padding:12px;
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:12px;
+    }
+    .charts .chart{
+      height:240px;
+    }
+    .charts .chart.small{
+      height:240px;
+    }
+    .controls{
+      padding:12px;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+    }
+    .grid2{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:10px;
+    }
+    .btnRow{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+    button, select{
+      appearance:none;
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.06);
+      color:var(--text);
+      padding:8px 10px;
+      border-radius:10px;
+      cursor:pointer;
+      font-weight:600;
+      font-size:12px;
+    }
+    button:hover, select:hover{ border-color: rgba(255,255,255,.22); }
+    button:active{ transform: translateY(1px); }
+    button.primary{ background: rgba(122,162,247,.18); border-color: rgba(122,162,247,.35); }
+    button.danger{ background: rgba(247,118,142,.14); border-color: rgba(247,118,142,.35); }
+    button.good{ background: rgba(158,206,106,.14); border-color: rgba(158,206,106,.35); }
+    button:disabled{ opacity:.55; cursor:not-allowed; }
+    .ctrlGroup{
+      padding:10px;
+      border-radius:12px;
+      border:1px solid rgba(255,255,255,.08);
+      background: rgba(0,0,0,.12);
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+    }
+    .ctrlGroup .lbl{
+      display:flex;
+      justify-content:space-between;
+      gap:10px;
+      font-size:12px;
+      color:var(--muted);
+    }
+    .ctrlGroup .lbl b{ color:var(--text); font-weight:650; }
+    input[type="range"]{
+      width:100%;
+      accent-color: var(--accent);
+    }
+    .tog{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      font-size:12px;
+      color:var(--muted);
+    }
+    .tog input{ transform: scale(1.05); }
+    .metrics{
+      padding:12px;
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:10px;
+    }
+    .metric{
+      padding:10px;
+      border-radius:12px;
+      border:1px solid rgba(255,255,255,.08);
+      background: rgba(0,0,0,.12);
+    }
+    .metric .k{ font-size:11px; color:var(--muted); margin-bottom:4px;}
+    .metric .v{ font-size:14px; font-weight:700; }
+    .legend{
+      display:flex;
+      gap:10px;
+      align-items:center;
+      flex-wrap:wrap;
+      font-size:11px;
+      color:var(--muted);
+    }
+    .dot{
+      width:9px; height:9px; border-radius:99px; display:inline-block; margin-right:6px;
+    }
+    .note{
+      padding:12px;
+      font-size:12px;
+      color:var(--muted);
+      line-height:1.35;
+      border-top:1px solid rgba(255,255,255,.08);
+    }
+    @media (max-width: 980px){
+      .wrap{ grid-template-columns: 1fr; }
+      .charts{ grid-template-columns: 1fr; }
+      .charts .chart{ height:240px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>PID Controller Demo — 1D Mass–Spring–Damper (Position Control)</h1>
+      <p class="sub">Drag the target. Tune Kp/Ki/Kd. Toggle saturation, delay, noise, and anti-windup.</p>
+    </div>
+    <div class="legend" aria-label="Legend">
+      <span><span class="dot" style="background:var(--accent)"></span>Setpoint</span>
+      <span><span class="dot" style="background:var(--good)"></span>Position</span>
+      <span><span class="dot" style="background:var(--cyan)"></span>Control u</span>
+      <span><span class="dot" style="background:var(--violet)"></span>P/I/D terms</span>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <div class="row">
+      <section class="card">
+        <div class="hd">
+          <div class="title">Plant Visualization (drag setpoint)</div>
+          <div class="legend">
+            <span><span class="dot" style="background:var(--accent)"></span>r(t)</span>
+            <span><span class="dot" style="background:var(--good)"></span>y(t)</span>
+          </div>
+        </div>
+        <div class="simArea">
+          <div style="height:210px;">
+            <canvas id="simCanvas" width="1000" height="420"></canvas>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="hd">
+          <div class="title">Time Domain</div>
+          <div class="legend">
+            <span><span class="dot" style="background:var(--accent)"></span>Setpoint</span>
+            <span><span class="dot" style="background:var(--good)"></span>Position</span>
+            <span><span class="dot" style="background:var(--bad)"></span>Error</span>
+          </div>
+        </div>
+        <div class="charts">
+          <div class="chart">
+            <canvas id="timeCanvas" width="900" height="520"></canvas>
+          </div>
+          <div class="chart">
+            <canvas id="ctrlCanvas" width="900" height="520"></canvas>
+          </div>
+        </div>
+        <div class="note">
+          Left chart: setpoint, position, and error. Right chart: control output u and P/I/D contributions.
+        </div>
+      </section>
+    </div>
+
+    <aside class="card">
+      <div class="hd">
+        <div class="title">Controls</div>
+        <div class="btnRow">
+          <button id="btnRun" class="primary">Pause</button>
+          <button id="btnReset" class="danger">Reset</button>
+        </div>
+      </div>
+
+      <div class="controls">
+        <div class="grid2">
+          <div class="ctrlGroup">
+            <div class="lbl"><span>Preset</span></div>
+            <select id="preset">
+              <option value="balanced">Balanced (PID)</option>
+              <option value="p_only">P-only (oscillatory)</option>
+              <option value="pi">PI (no SSE)</option>
+              <option value="pd">PD (damped)</option>
+              <option value="aggressive">Aggressive (fast/overshoot)</option>
+              <option value="noisy_sensor">Noisy Sensor (D hurts)</option>
+              <option value="has_delay">Has Delay (harder)</option>
+            </select>
+          </div>
+          <div class="ctrlGroup">
+            <div class="lbl"><span>Setpoint Mode</span></div>
+            <select id="spMode">
+              <option value="drag">Drag</option>
+              <option value="step">Step</option>
+              <option value="sine">Sine</option>
+              <option value="random">Random</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="ctrlGroup">
+          <div class="lbl"><span><b>Kp</b></span><span id="kpVal"></span></div>
+          <input id="kp" type="range" min="0" max="300" step="1" value="110">
+          <div class="lbl"><span><b>Ki</b></span><span id="kiVal"></span></div>
+          <input id="ki" type="range" min="0" max="80" step="0.5" value="12">
+          <div class="lbl"><span><b>Kd</b></span><span id="kdVal"></span></div>
+          <input id="kd" type="range" min="0" max="80" step="0.5" value="18">
+        </div>
+
+        <div class="ctrlGroup">
+          <div class="lbl"><span>Plant params</span><span style="color:var(--muted);font-size:11px;">(m, c, k)</span></div>
+          <div class="lbl"><span><b>Mass m</b></span><span id="mVal"></span></div>
+          <input id="m" type="range" min="0.2" max="8" step="0.1" value="1.2">
+          <div class="lbl"><span><b>Damping c</b></span><span id="cVal"></span></div>
+          <input id="c" type="range" min="0" max="8" step="0.05" value="0.8">
+          <div class="lbl"><span><b>Spring k</b></span><span id="kVal"></span></div>
+          <input id="k" type="range" min="0" max="30" step="0.1" value="10">
+        </div>
+
+        <div class="ctrlGroup">
+          <div class="lbl"><span>Non-idealities</span></div>
+
+          <div class="tog">
+            <span>Actuator saturation (|u| ≤ umax)</span>
+            <input id="sat" type="checkbox" checked>
+          </div>
+          <div class="lbl"><span><b>u max</b></span><span id="umaxVal"></span></div>
+          <input id="umax" type="range" min="1" max="50" step="0.5" value="15">
+
+          <div class="tog">
+            <span>Anti-windup (integrator clamp)</span>
+            <input id="aw" type="checkbox" checked>
+          </div>
+
+          <div class="tog">
+            <span>Sensor noise</span>
+            <input id="noise" type="checkbox">
+          </div>
+          <div class="lbl"><span><b>Noise σ</b></span><span id="noiseVal"></span></div>
+          <input id="noiseSigma" type="range" min="0" max="0.25" step="0.005" value="0.05" disabled>
+
+          <div class="tog">
+            <span>Measurement delay</span>
+            <input id="delay" type="checkbox">
+          </div>
+          <div class="lbl"><span><b>Delay</b></span><span id="delayVal"></span></div>
+          <input id="delayMs" type="range" min="0" max="350" step="10" value="120" disabled>
+
+          <div class="tog">
+            <span>D-term low-pass filter</span>
+            <input id="dFilt" type="checkbox" checked>
+          </div>
+          <div class="lbl"><span><b>D filter τ</b></span><span id="tauVal"></span></div>
+          <input id="tau" type="range" min="0.001" max="0.25" step="0.001" value="0.03">
+        </div>
+
+        <div class="btnRow">
+          <button id="btnKick" class="good">Disturbance “Kick”</button>
+          <button id="btnCenter">Center Setpoint</button>
+        </div>
+
+        <section class="card" style="border:none; background:transparent; box-shadow:none;">
+          <div class="hd" style="border:none; padding:0 0 8px 0;">
+            <div class="title">Live Metrics</div>
+          </div>
+          <div class="metrics">
+            <div class="metric">
+              <div class="k">Rise time (10–90%)</div>
+              <div class="v" id="rise">—</div>
+            </div>
+            <div class="metric">
+              <div class="k">Overshoot</div>
+              <div class="v" id="ov">—</div>
+            </div>
+            <div class="metric">
+              <div class="k">Settling time (±2%)</div>
+              <div class="v" id="set">—</div>
+            </div>
+            <div class="metric">
+              <div class="k">Steady-state error</div>
+              <div class="v" id="sse">—</div>
+            </div>
+          </div>
+        </section>
+
+        <div class="note">
+          Model: <span style="color:var(--text)">m·x¨ + c·x˙ + k·x = u</span> (position control).<br/>
+          PID: <span style="color:var(--text)">u = Kp·e + Ki∫e dt + Kd·de/dt</span> (discrete-time, optional D filter).
+        </div>
+      </div>
+    </aside>
+  </div>
+
+<script>
+(() => {
+  // ---------- Utilities ----------
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+
+  // Box-Muller
+  const randn = (() => {
+    let spare = null;
+    return (sigma=1) => {
+      if (spare !== null) {
+        const v = spare; spare = null;
+        return v * sigma;
+      }
+      let u=0, v=0;
+      while(u===0) u = Math.random();
+      while(v===0) v = Math.random();
+      const mag = Math.sqrt(-2.0 * Math.log(u));
+      const z0 = mag * Math.cos(2*Math.PI*v);
+      const z1 = mag * Math.sin(2*Math.PI*v);
+      spare = z1;
+      return z0 * sigma;
+    };
+  })();
+
+  // ---------- DOM ----------
+  const simCanvas = document.getElementById('simCanvas');
+  const timeCanvas = document.getElementById('timeCanvas');
+  const ctrlCanvas = document.getElementById('ctrlCanvas');
+  const ctxSim = simCanvas.getContext('2d');
+  const ctxTime = timeCanvas.getContext('2d');
+  const ctxCtrl = ctrlCanvas.getContext('2d');
+
+  const el = (id) => document.getElementById(id);
+
+  const btnRun = el('btnRun');
+  const btnReset = el('btnReset');
+  const btnKick = el('btnKick');
+  const btnCenter = el('btnCenter');
+
+  const kp = el('kp'), ki = el('ki'), kd = el('kd');
+  const m = el('m'), c = el('c'), k = el('k');
+  const sat = el('sat'), umax = el('umax'), aw = el('aw');
+  const noise = el('noise'), noiseSigma = el('noiseSigma');
+  const delay = el('delay'), delayMs = el('delayMs');
+  const dFilt = el('dFilt'), tau = el('tau');
+
+  const preset = el('preset');
+  const spMode = el('spMode');
+
+  const kpVal = el('kpVal'), kiVal = el('kiVal'), kdVal = el('kdVal');
+  const mVal = el('mVal'), cVal = el('cVal'), kVal = el('kVal');
+  const umaxVal = el('umaxVal'), noiseVal = el('noiseVal'), delayVal = el('delayVal'), tauVal = el('tauVal');
+
+  const riseEl = el('rise'), ovEl = el('ov'), setEl = el('set'), sseEl = el('sse');
+
+  // ---------- Simulation Parameters ----------
+  const dt = 1/240;                  // simulation step
+  const renderHz = 60;
+  const historySeconds = 10;
+  const historyLen = Math.floor(historySeconds / dt);
+
+  // coordinate scaling
+  const xMin = -1.2, xMax = 1.2;     // meters
+  const toPx = (x, W) => ( (x - xMin) / (xMax - xMin) ) * W;
+  const fromPx = (px, W) => xMin + (px / W) * (xMax - xMin);
+
+  // ---------- State ----------
+  let running = true;
+
+  // plant state: x, v
+  let x = 0, v = 0;
+
+  // setpoint
+  let r = 0;
+  let rPhase = 0;
+  let rHold = 0;
+  let nextRandomAt = 0;
+
+  // PID state
+  let integral = 0;
+  let prevE = 0;
+  let dFiltState = 0;
+
+  // delay buffer
+  let measBuf = [];
+  let measDelaySamples = 0;
+
+  // kick impulse
+  let kickV = 0;
+
+  // history buffers
+  const hist = {
+    t: new Float32Array(historyLen),
+    r: new Float32Array(historyLen),
+    y: new Float32Array(historyLen),
+    e: new Float32Array(historyLen),
+    u: new Float32Array(historyLen),
+    p: new Float32Array(historyLen),
+    i: new Float32Array(historyLen),
+    d: new Float32Array(historyLen),
+  };
+  let histIdx = 0;
+  let simTime = 0;
+
+  // metrics tracking (step-like)
+  let stepRef = { active: false, t0: 0, r0: 0, r1: 0 };
+  const metrics = { rise: null, overshoot: null, settling: null, sse: null };
+
+  // ---------- UI Helpers ----------
+  const fmt = (n, digits=3) => Number(n).toFixed(digits);
+  const setText = (node, text) => { node.textContent = text; };
+
+  function syncLabels(){
+    setText(kpVal, fmt(+kp.value, 0));
+    setText(kiVal, fmt(+ki.value, 1));
+    setText(kdVal, fmt(+kd.value, 1));
+
+    setText(mVal, fmt(+m.value, 2));
+    setText(cVal, fmt(+c.value, 2));
+    setText(kVal, fmt(+k.value, 2));
+
+    setText(umaxVal, fmt(+umax.value, 1));
+    setText(noiseVal, fmt(+noiseSigma.value, 3));
+    setText(delayVal, `${(+delayMs.value)|0} ms`);
+    setText(tauVal, fmt(+tau.value, 3));
+
+    noiseSigma.disabled = !noise.checked;
+    delayMs.disabled = !delay.checked;
+  }
+
+  // ---------- Presets ----------
+  function applyPreset(name){
+    const set = (a,b,c) => { kp.value=a; ki.value=b; kd.value=c; };
+    const setPlant = (mm, cc, kk) => { m.value=mm; c.value=cc; k.value=kk; };
+    const setNonIdeal = ({_sat,_umax,_aw,_noise,_sig,_delay,_dms,_df,_tau}) => {
+      sat.checked = _sat;
+      umax.value = _umax;
+      aw.checked = _aw;
+      noise.checked = _noise;
+      noiseSigma.value = _sig;
+      delay.checked = _delay;
+      delayMs.value = _dms;
+      dFilt.checked = _df;
+      tau.value = _tau;
+    };
+
+    if (name === 'balanced'){
+      set(110, 12, 18);
+      setPlant(1.2, 0.8, 10);
+      setNonIdeal({_sat:true,_umax:15,_aw:true,_noise:false,_sig:0.05,_delay:false,_dms:120,_df:true,_tau:0.03});
+    } else if (name === 'p_only'){
+      set(190, 0, 0);
+      setPlant(1.2, 0.4, 10);
+      setNonIdeal({_sat:true,_umax:15,_aw:true,_noise:false,_sig:0.05,_delay:false,_dms:120,_df:true,_tau:0.03});
+    } else if (name === 'pi'){
+      set(90, 18, 0);
+      setPlant(1.2, 0.8, 10);
+      setNonIdeal({_sat:true,_umax:15,_aw:true,_noise:false,_sig:0.05,_delay:false,_dms:120,_df:true,_tau:0.03});
+    } else if (name === 'pd'){
+      set(160, 0, 26);
+      setPlant(1.2, 0.8, 10);
+      setNonIdeal({_sat:true,_umax:15,_aw:true,_noise:false,_sig:0.05,_delay:false,_dms:120,_df:true,_tau:0.03});
+    } else if (name === 'aggressive'){
+      set(220, 28, 24);
+      setPlant(1.2, 0.7, 10);
+      setNonIdeal({_sat:true,_umax:18,_aw:true,_noise:false,_sig:0.05,_delay:false,_dms:120,_df:true,_tau:0.02});
+    } else if (name === 'noisy_sensor'){
+      set(120, 10, 22);
+      setPlant(1.2, 0.8, 10);
+      setNonIdeal({_sat:true,_umax:15,_aw:true,_noise:true,_sig:0.06,_delay:false,_dms:120,_df:true,_tau:0.06});
+    } else if (name === 'has_delay'){
+      set(130, 16, 24);
+      setPlant(1.2, 0.9, 10);
+      setNonIdeal({_sat:true,_umax:15,_aw:true,_noise:false,_sig:0.05,_delay:true,_dms:160,_df:true,_tau:0.04});
+    }
+
+    syncLabels();
+    rebuildDelayBuffer();
+  }
+
+  // ---------- Delay Buffer ----------
+  function rebuildDelayBuffer(){
+    measDelaySamples = delay.checked ? Math.max(0, Math.round((+delayMs.value/1000) / dt)) : 0;
+    measBuf = new Array(measDelaySamples + 1).fill(0);
+  }
+
+  // ---------- Metrics (step-ish) ----------
+  function startStepMetrics(r0, r1){
+    stepRef = { active: true, t0: simTime, r0, r1 };
+    metrics.rise = null;
+    metrics.overshoot = null;
+    metrics.settling = null;
+    metrics.sse = null;
+  }
+
+  function updateMetrics(){
+    if (!stepRef.active) return;
+
+    const t = simTime - stepRef.t0;
+    const target = stepRef.r1;
+    const amp = target - stepRef.r0;
+    const dir = Math.sign(amp) || 1;
+    const y = x;
+
+    const y0 = stepRef.r0;
+    const y10 = y0 + 0.1 * amp;
+    const y90 = y0 + 0.9 * amp;
+
+    // rise time
+    if (metrics.rise === null){
+      // crude: detect first time cross 10% and 90%
+      // We'll track crossings via temporary state on stepRef
+      if (stepRef.t10 === undefined) stepRef.t10 = null;
+      if (stepRef.t90 === undefined) stepRef.t90 = null;
+
+      if (stepRef.t10 === null && dir*(y - y10) >= 0) stepRef.t10 = t;
+      if (stepRef.t10 !== null && stepRef.t90 === null && dir*(y - y90) >= 0) stepRef.t90 = t;
+
+      if (stepRef.t10 !== null && stepRef.t90 !== null){
+        metrics.rise = Math.max(0, stepRef.t90 - stepRef.t10);
+      }
+    }
+
+    // overshoot
+    if (metrics.overshoot === null){
+      if (stepRef.peak === undefined) stepRef.peak = y;
+      stepRef.peak = (dir > 0) ? Math.max(stepRef.peak, y) : Math.min(stepRef.peak, y);
+
+      const peakErr = (dir > 0) ? (stepRef.peak - target) : (target - stepRef.peak);
+      const os = peakErr > 0 ? (peakErr / Math.abs(amp)) : 0;
+      // finalize after 2s
+      if (t > 2.0){
+        metrics.overshoot = os;
+      }
+    }
+
+    // settling time (2% band) — first time after which it stays in band for 1s
+    if (metrics.settling === null){
+      const band = 0.02 * Math.abs(amp || 1);
+      const inBand = Math.abs(y - target) <= band;
+
+      if (stepRef.inBandSince === undefined) stepRef.inBandSince = null;
+      if (inBand){
+        if (stepRef.inBandSince === null) stepRef.inBandSince = t;
+        if (t - stepRef.inBandSince >= 1.0){
+          metrics.settling = stepRef.inBandSince;
+        }
+      } else {
+        stepRef.inBandSince = null;
+      }
+    }
+
+    // SSE after 3s
+    if (metrics.sse === null && t > 3.0){
+      metrics.sse = target - y;
+    }
+
+    // display
+    riseEl.textContent = metrics.rise === null ? "—" : `${fmt(metrics.rise,2)} s`;
+    ovEl.textContent = metrics.overshoot === null ? "—" : `${fmt(metrics.overshoot*100,1)} %`;
+    setEl.textContent = metrics.settling === null ? "—" : `${fmt(metrics.settling,2)} s`;
+    sseEl.textContent = metrics.sse === null ? "—" : `${fmt(metrics.sse,3)} m`;
+
+    // stop tracking eventually
+    if (t > 8.0) stepRef.active = false;
+  }
+
+  // ---------- Setpoint generator ----------
+  function updateSetpoint(){
+    const mode = spMode.value;
+
+    if (mode === 'drag'){
+      // r set via drag
+      return;
+    }
+
+    if (mode === 'step'){
+      // hold rHold, update occasionally if never set
+      if (simTime === 0) r = rHold;
+      return;
+    }
+
+    if (mode === 'sine'){
+      const A = 0.8;
+      const w = 2*Math.PI*0.15; // 0.15 Hz
+      r = A * Math.sin(w * simTime);
+      return;
+    }
+
+    if (mode === 'random'){
+      if (simTime >= nextRandomAt){
+        const prev = r;
+        r = (Math.random()*1.8 - 0.9);
+        nextRandomAt = simTime + 1.7 + Math.random()*1.8;
+        startStepMetrics(prev, r);
+      }
+      return;
+    }
+  }
+
+  // ---------- PID compute ----------
+  function computeControl(yMeas){
+    const Kp = +kp.value, Ki = +ki.value, Kd = +kd.value;
+
+    const e = r - yMeas;
+
+    // derivative with optional low-pass
+    const de = (e - prevE) / dt;
+    let dTerm = de;
+    if (dFilt.checked){
+      const T = +tau.value;
+      const alpha = clamp(dt / (T + dt), 0, 1); // simple 1st order LPF on derivative
+      dFiltState = lerp(dFiltState, de, alpha);
+      dTerm = dFiltState;
+    }
+
+    // Integrator update (pre-sat)
+    const iCandidate = integral + e * dt;
+
+    const pOut = Kp * e;
+    const iOut = Ki * iCandidate;
+    const dOut = Kd * dTerm;
+
+    let u = pOut + iOut + dOut;
+
+    // Saturation + anti-windup (integrator clamp)
+    if (sat.checked){
+      const umaxV = +umax.value;
+      const uSat = clamp(u, -umaxV, umaxV);
+
+      if (aw.checked){
+        // clamp integrator if actuator saturated and error pushes further into saturation
+        const saturated = (u !== uSat);
+        const pushing = (u > uSat && e > 0) || (u < uSat && e < 0);
+        if (!saturated || !pushing){
+          integral = iCandidate;
+        }
+      } else {
+        integral = iCandidate;
+      }
+
+      u = uSat;
+    } else {
+      integral = iCandidate;
+    }
+
+    prevE = e;
+
+    // Recompute iOut based on actual integral for logging (can differ when clamped)
+    const iOutActual = Ki * integral;
+
+    return { u, e, pOut, iOut: iOutActual, dOut };
+  }
+
+  // ---------- Plant integration ----------
+  function stepPlant(u){
+    const mm = +m.value, cc = +c.value, kk = +k.value;
+
+    // optional kick as velocity impulse that decays instantly
+    if (kickV !== 0){
+      v += kickV;
+      kickV = 0;
+    }
+
+    // m xdd + c xd + k x = u  => xdd = (u - c v - k x)/m
+    const a = (u - cc * v - kk * x) / mm;
+
+    // semi-implicit Euler
+    v += a * dt;
+    x += v * dt;
+
+    // keep within view (soft clamp)
+    const soft = 1.18;
+    if (x > soft){ x = soft; v *= -0.35; }
+    if (x < -soft){ x = -soft; v *= -0.35; }
+  }
+
+  // ---------- Measurement path (noise + delay) ----------
+  function measure(){
+    let y = x;
+
+    if (noise.checked){
+      y += randn(+noiseSigma.value);
+    }
+
+    if (measDelaySamples > 0){
+      measBuf.push(y);
+      y = measBuf.shift();
+    }
+
+    return y;
+  }
+
+  // ---------- History ----------
+  function pushHistory(vals){
+    hist.t[histIdx] = simTime;
+    hist.r[histIdx] = vals.r;
+    hist.y[histIdx] = vals.y;
+    hist.e[histIdx] = vals.e;
+    hist.u[histIdx] = vals.u;
+    hist.p[histIdx] = vals.p;
+    hist.i[histIdx] = vals.i;
+    hist.d[histIdx] = vals.d;
+
+    histIdx = (histIdx + 1) % historyLen;
+  }
+
+  function readHistory(){
+    // return arrays in chronological order
+    const out = { t:[], r:[], y:[], e:[], u:[], p:[], i:[], d:[] };
+    for (let i=0; i<historyLen; i++){
+      const idx = (histIdx + i) % historyLen;
+      out.t.push(hist.t[idx]);
+      out.r.push(hist.r[idx]);
+      out.y.push(hist.y[idx]);
+      out.e.push(hist.e[idx]);
+      out.u.push(hist.u[idx]);
+      out.p.push(hist.p[idx]);
+      out.i.push(hist.i[idx]);
+      out.d.push(hist.d[idx]);
+    }
+    return out;
+  }
+
+  // ---------- Drawing helpers ----------
+  function clear(ctx){
+    ctx.clearRect(0,0,ctx.canvas.width, ctx.canvas.height);
+  }
+
+  function drawGrid(ctx, pad=40, xDiv=10, yDiv=6){
+    const W = ctx.canvas.width, H = ctx.canvas.height;
+    ctx.save();
+    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--grid');
+    ctx.lineWidth = 1;
+
+    const x0 = pad, x1 = W - pad;
+    const y0 = pad, y1 = H - pad;
+
+    for (let i=0;i<=xDiv;i++){
+      const x = x0 + (x1-x0) * (i/xDiv);
+      ctx.beginPath();
+      ctx.moveTo(x, y0);
+      ctx.lineTo(x, y1);
+      ctx.stroke();
+    }
+    for (let j=0;j<=yDiv;j++){
+      const y = y0 + (y1-y0) * (j/yDiv);
+      ctx.beginPath();
+      ctx.moveTo(x0, y);
+      ctx.lineTo(x1, y);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  function drawAxesLabels(ctx, leftLabel, rightLabel){
+    const W = ctx.canvas.width, H = ctx.canvas.height;
+    ctx.save();
+    ctx.fillStyle = "rgba(233,236,255,.8)";
+    ctx.font = "12px ui-sans-serif, system-ui";
+    ctx.fillText(leftLabel, 12, 18);
+    if (rightLabel) ctx.fillText(rightLabel, W - ctx.measureText(rightLabel).width - 12, 18);
+    ctx.restore();
+  }
+
+  function plot(ctx, series, yMin, yMax, color, pad=40, lineWidth=2){
+    const W = ctx.canvas.width, H = ctx.canvas.height;
+    const x0 = pad, x1 = W - pad;
+    const y0 = pad, y1 = H - pad;
+
+    const n = series.length;
+    if (n < 2) return;
+
+    const mapX = (i) => x0 + (x1-x0) * (i/(n-1));
+    const mapY = (y) => y1 - ( (y - yMin) / (yMax - yMin) ) * (y1-y0);
+
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lineWidth;
+    ctx.beginPath();
+    ctx.moveTo(mapX(0), mapY(series[0]));
+    for (let i=1;i<n;i++){
+      ctx.lineTo(mapX(i), mapY(series[i]));
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawZeroLine(ctx, yMin, yMax, pad=40){
+    if (!(yMin < 0 && yMax > 0)) return;
+    const W = ctx.canvas.width, H = ctx.canvas.height;
+    const x0 = pad, x1 = W - pad;
+    const y0 = pad, y1 = H - pad;
+    const y = y1 - ((0 - yMin)/(yMax-yMin))*(y1-y0);
+    ctx.save();
+    ctx.strokeStyle = "rgba(255,255,255,.18)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x0, y);
+    ctx.lineTo(x1, y);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function niceRange(min, max){
+    if (min === max) { min -= 1; max += 1; }
+    const pad = 0.08 * (max - min);
+    return [min - pad, max + pad];
+  }
+
+  // ---------- Draw simulation (cart + spring + target) ----------
+  function drawSim(){
+    const W = ctxSim.canvas.width, H = ctxSim.canvas.height;
+    clear(ctxSim);
+
+    // background grid
+    ctxSim.save();
+    ctxSim.globalAlpha = 0.85;
+    drawGrid(ctxSim, 36, 12, 6);
+    ctxSim.restore();
+
+    const trackY = Math.round(H*0.62);
+    const padX = 60;
+
+    // track
+    ctxSim.save();
+    ctxSim.strokeStyle = "rgba(255,255,255,.22)";
+    ctxSim.lineWidth = 4;
+    ctxSim.lineCap = "round";
+    ctxSim.beginPath();
+    ctxSim.moveTo(padX, trackY);
+    ctxSim.lineTo(W - padX, trackY);
+    ctxSim.stroke();
+    ctxSim.restore();
+
+    // origin marker
+    const x0 = toPx(0, W);
+    ctxSim.save();
+    ctxSim.strokeStyle = "rgba(255,255,255,.14)";
+    ctxSim.lineWidth = 2;
+    ctxSim.beginPath();
+    ctxSim.moveTo(x0, trackY - 62);
+    ctxSim.lineTo(x0, trackY + 62);
+    ctxSim.stroke();
+    ctxSim.restore();
+
+    // setpoint marker
+    const spx = toPx(r, W);
+    ctxSim.save();
+    ctxSim.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--accent');
+    ctxSim.lineWidth = 3;
+    ctxSim.beginPath();
+    ctxSim.moveTo(spx, trackY - 58);
+    ctxSim.lineTo(spx, trackY + 58);
+    ctxSim.stroke();
+    ctxSim.fillStyle = "rgba(122,162,247,.18)";
+    ctxSim.fillRect(spx-10, trackY - 58, 20, 116);
+    ctxSim.restore();
+
+    // cart
+    const cartX = toPx(x, W);
+    const cartW = 90, cartH = 44;
+    const cartY = trackY - cartH - 10;
+
+    ctxSim.save();
+    ctxSim.fillStyle = "rgba(158,206,106,.22)";
+    ctxSim.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--good');
+    ctxSim.lineWidth = 3;
+    ctxSim.beginPath();
+    roundRect(ctxSim, cartX - cartW/2, cartY, cartW, cartH, 12);
+    ctxSim.fill();
+    ctxSim.stroke();
+
+    // wheels
+    ctxSim.fillStyle = "rgba(233,236,255,.75)";
+    circle(ctxSim, cartX - cartW/3, trackY - 8, 8);
+    circle(ctxSim, cartX + cartW/3, trackY - 8, 8);
+
+    // spring (to origin)
+    const springStartX = padX + 10;
+    const springEndX = cartX - cartW/2;
+    drawSpring(ctxSim, springStartX, cartY + cartH/2, springEndX, cartY + cartH/2, 10, 14);
+
+    ctxSim.restore();
+
+    // annotations
+    ctxSim.save();
+    ctxSim.fillStyle = "rgba(233,236,255,.85)";
+    ctxSim.font = "12px ui-sans-serif, system-ui";
+    ctxSim.fillText(`x = ${fmt(x,3)} m`, 14, H - 18);
+    ctxSim.fillText(`r = ${fmt(r,3)} m`, 130, H - 18);
+    ctxSim.fillText(`v = ${fmt(v,3)} m/s`, 250, H - 18);
+    ctxSim.restore();
+  }
+
+  function roundRect(ctx, x, y, w, h, r){
+    const rr = Math.min(r, w/2, h/2);
+    ctx.moveTo(x+rr,y);
+    ctx.arcTo(x+w,y, x+w,y+h, rr);
+    ctx.arcTo(x+w,y+h, x,y+h, rr);
+    ctx.arcTo(x,y+h, x,y, rr);
+    ctx.arcTo(x,y, x+w,y, rr);
+    ctx.closePath();
+  }
+
+  function circle(ctx, x, y, r){
+    ctx.beginPath();
+    ctx.arc(x,y,r,0,Math.PI*2);
+    ctx.fill();
+  }
+
+  function drawSpring(ctx, x1, y1, x2, y2, coils, amp){
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const L = Math.sqrt(dx*dx + dy*dy);
+    const ux = dx / (L || 1);
+    const uy = dy / (L || 1);
+    const nx = -uy, ny = ux;
+
+    const start = 18, end = 18;
+    const usable = Math.max(0, L - start - end);
+    const seg = usable / (coils*2);
+
+    ctx.save();
+    ctx.strokeStyle = "rgba(255,255,255,.70)";
+    ctx.lineWidth = 2;
+
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+
+    // lead-in
+    ctx.lineTo(x1 + ux*start, y1 + uy*start);
+
+    // coils
+    let px = x1 + ux*start;
+    let py = y1 + uy*start;
+    for (let i=0;i<coils*2;i++){
+      const s = (i+1) * seg;
+      const off = (i%2===0 ? 1 : -1) * amp;
+      const cx = x1 + ux*(start + s) + nx*off;
+      const cy = y1 + uy*(start + s) + ny*off;
+      ctx.lineTo(cx, cy);
+      px = cx; py = cy;
+    }
+
+    // lead-out
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ---------- Draw charts ----------
+  function drawCharts(){
+    const H = readHistory();
+
+    // time chart ranges (position)
+    const posMin = Math.min(...H.r, ...H.y, ...H.e);
+    const posMax = Math.max(...H.r, ...H.y, ...H.e);
+    const [yMin1, yMax1] = niceRange(posMin, posMax);
+
+    clear(ctxTime);
+    drawGrid(ctxTime);
+    drawAxesLabels(ctxTime, "Position (m)", "History ~10s");
+    drawZeroLine(ctxTime, yMin1, yMax1);
+
+    plot(ctxTime, H.r, yMin1, yMax1, getCSS('--accent'), 40, 2.4);
+    plot(ctxTime, H.y, yMin1, yMax1, getCSS('--good'), 40, 2.4);
+    plot(ctxTime, H.e, yMin1, yMax1, getCSS('--bad'), 40, 1.8);
+
+    // control chart ranges (u + terms)
+    const minU = Math.min(...H.u, ...H.p, ...H.i, ...H.d);
+    const maxU = Math.max(...H.u, ...H.p, ...H.i, ...H.d);
+    const [yMin2, yMax2] = niceRange(minU, maxU);
+
+    clear(ctxCtrl);
+    drawGrid(ctxCtrl);
+    drawAxesLabels(ctxCtrl, "Control / Terms", "");
+    drawZeroLine(ctxCtrl, yMin2, yMax2);
+
+    plot(ctxCtrl, H.u, yMin2, yMax2, getCSS('--cyan'), 40, 2.4);
+    plot(ctxCtrl, H.p, yMin2, yMax2, "rgba(187,154,247,.95)", 40, 1.6);
+    plot(ctxCtrl, H.i, yMin2, yMax2, "rgba(255,155,209,.95)", 40, 1.6);
+    plot(ctxCtrl, H.d, yMin2, yMax2, "rgba(224,175,104,.95)", 40, 1.6);
+
+    // saturation lines
+    if (sat.checked){
+      const umaxV = +umax.value;
+      drawHLine(ctxCtrl, umaxV, yMin2, yMax2, "rgba(125,207,255,.25)");
+      drawHLine(ctxCtrl, -umaxV, yMin2, yMax2, "rgba(125,207,255,.25)");
+    }
+  }
+
+  function getCSS(name){
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
+  function drawHLine(ctx, y, yMin, yMax, color, pad=40){
+    const W = ctx.canvas.width, H = ctx.canvas.height;
+    const x0 = pad, x1 = W - pad;
+    const y0 = pad, y1 = H - pad;
+    const py = y1 - ((y - yMin)/(yMax-yMin))*(y1-y0);
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6,6]);
+    ctx.beginPath();
+    ctx.moveTo(x0, py);
+    ctx.lineTo(x1, py);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ---------- Input: drag setpoint ----------
+  let dragging = false;
+
+  function pointerToSetpoint(evt){
+    const rect = simCanvas.getBoundingClientRect();
+    const xpx = clamp(evt.clientX - rect.left, 0, rect.width);
+    // translate using CSS width -> canvas width mapping
+    const W = simCanvas.width;
+    const pxCanvas = (xpx / rect.width) * W;
+    return clamp(fromPx(pxCanvas, W), xMin, xMax);
+  }
+
+  simCanvas.addEventListener('pointerdown', (evt) => {
+    if (spMode.value !== 'drag') return;
+    dragging = true;
+    simCanvas.setPointerCapture(evt.pointerId);
+    const prev = r;
+    r = pointerToSetpoint(evt);
+    startStepMetrics(prev, r);
+  });
+
+  simCanvas.addEventListener('pointermove', (evt) => {
+    if (!dragging || spMode.value !== 'drag') return;
+    r = pointerToSetpoint(evt);
+  });
+
+  simCanvas.addEventListener('pointerup', (evt) => {
+    dragging = false;
+    try { simCanvas.releasePointerCapture(evt.pointerId); } catch {}
+  });
+
+  // ---------- Controls wiring ----------
+  [kp,ki,kd,m,c,k,umax,noiseSigma,delayMs,tau].forEach(i => i.addEventListener('input', () => {
+    syncLabels();
+    if (i === delayMs) rebuildDelayBuffer();
+  }));
+
+  [noise,delay].forEach(chk => chk.addEventListener('change', () => {
+    syncLabels();
+    rebuildDelayBuffer();
+  }));
+
+  [sat,aw,dFilt].forEach(chk => chk.addEventListener('change', () => syncLabels()));
+
+  preset.addEventListener('change', () => applyPreset(preset.value));
+
+  spMode.addEventListener('change', () => {
+    // initialize for non-drag modes
+    if (spMode.value === 'step'){
+      const prev = r;
+      rHold = r;
+      // trigger metrics for a new step to current value (mostly no-op)
+      startStepMetrics(prev, rHold);
+    }
+    if (spMode.value === 'random'){
+      nextRandomAt = simTime;
+    }
+  });
+
+  btnRun.addEventListener('click', () => {
+    running = !running;
+    btnRun.textContent = running ? "Pause" : "Run";
+    btnRun.classList.toggle('primary', running);
+  });
+
+  btnReset.addEventListener('click', resetAll);
+
+  btnKick.addEventListener('click', () => {
+    // impulse velocity
+    kickV = (Math.random() < 0.5 ? -1 : 1) * (0.9 + Math.random()*1.2);
+  });
+
+  btnCenter.addEventListener('click', () => {
+    const prev = r;
+    r = 0;
+    rHold = 0;
+    startStepMetrics(prev, r);
+  });
+
+  function resetAll(){
+    x = 0; v = 0;
+    r = 0; rHold = 0;
+    rPhase = 0;
+    nextRandomAt = 0;
+
+    integral = 0;
+    prevE = 0;
+    dFiltState = 0;
+
+    simTime = 0;
+    histIdx = 0;
+
+    rebuildDelayBuffer();
+
+    for (let i=0;i<historyLen;i++){
+      hist.t[i] = -historySeconds + i*dt;
+      hist.r[i] = 0;
+      hist.y[i] = 0;
+      hist.e[i] = 0;
+      hist.u[i] = 0;
+      hist.p[i] = 0;
+      hist.i[i] = 0;
+      hist.d[i] = 0;
+    }
+
+    stepRef = { active: false, t0: 0, r0: 0, r1: 0 };
+    metrics.rise = metrics.overshoot = metrics.settling = metrics.sse = null;
+    riseEl.textContent = ovEl.textContent = setEl.textContent = sseEl.textContent = "—";
+  }
+
+  // ---------- Main loop ----------
+  syncLabels();
+  applyPreset('balanced');
+  resetAll();
+
+  // seed history with zeros
+  for (let i=0;i<historyLen;i++){
+    hist.t[i] = -historySeconds + i*dt;
+  }
+
+  let lastRender = performance.now();
+  let acc = 0;
+
+  function frame(now){
+    const elapsed = (now - lastRender) / 1000;
+    lastRender = now;
+
+    // cap huge pauses
+    const step = Math.min(elapsed, 0.05);
+    if (running){
+      acc += step;
+      while (acc >= dt){
+        updateSetpoint();
+
+        const yMeas = measure();
+        const { u, e, pOut, iOut, dOut } = computeControl(yMeas);
+        stepPlant(u);
+
+        pushHistory({ r, y: x, e, u, p: pOut, i: iOut, d: dOut });
+        simTime += dt;
+
+        updateMetrics();
+
+        acc -= dt;
+      }
+    }
+
+    // render
+    drawSim();
+    drawCharts();
+
+    requestAnimationFrame(frame);
+  }
+
+  requestAnimationFrame(frame);
+
+})();
+</script>
+</body>
+</html>
