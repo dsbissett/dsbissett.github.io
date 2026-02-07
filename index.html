@@ -267,7 +267,8 @@
         z-index: 1;
       }
 
-      .card:hover {
+      .card:hover,
+      .card.is-active {
         transform: translateY(-10px) scale(1.03);
         background: rgba(255, 255, 255, 0.1);
         box-shadow: 0 15px 30px rgba(0,255,245, 0.3);
@@ -309,7 +310,8 @@
       .card[data-accent="hot"] .fin { background: var(--rocket-red); }
       .card[data-accent="lime"] .fin { background: var(--ufo-green); }
 
-      .card:hover .fin {
+      .card:hover .fin,
+      .card.is-active .fin {
         height: 100%;
         opacity: 0.1;
         background: linear-gradient(to bottom, currentColor, transparent);
@@ -335,7 +337,8 @@
         transition: all 0.3s;
       }
 
-      .card:hover .icon-box {
+      .card:hover .icon-box,
+      .card.is-active .icon-box {
         background: var(--atomic-teal);
         color: #000;
         box-shadow: 0 0 10px var(--atomic-teal);
@@ -351,7 +354,8 @@
         text-shadow: 0 0 5px rgba(0,0,0,0.5);
       }
 
-      .card:hover h2 {
+      .card:hover h2,
+      .card.is-active h2 {
         text-shadow: 0 0 10px var(--atomic-teal);
       }
 
@@ -388,7 +392,8 @@
         transition: all 0.2s;
       }
 
-      .card:hover .tag {
+      .card:hover .tag,
+      .card.is-active .tag {
         background: var(--atomic-teal);
         color: #000;
         border-color: var(--atomic-teal);
@@ -409,7 +414,8 @@
         transition: transform 0.2s;
       }
 
-      .card:hover .arrow {
+      .card:hover .arrow,
+      .card.is-active .arrow {
         transform: translateX(5px);
         color: var(--rocket-red);
         text-shadow: 0 0 10px var(--rocket-red);
@@ -434,7 +440,8 @@
         transition: all 0.5s;
         pointer-events: none;
       }
-      .card:hover .starburst {
+      .card:hover .starburst,
+      .card.is-active .starburst {
         transform: rotate(180deg) scale(1.2);
         opacity: 0.1;
         animation: starburstSpin 1s ease-out;
@@ -731,6 +738,19 @@
       document.querySelectorAll(".card a").forEach(link => {
         link.addEventListener("mouseenter", playHoverSound);
         link.addEventListener("focusin", playHoverSound);
+        link.addEventListener("touchstart", playHoverSound, { passive: true });
+      });
+
+      document.querySelectorAll(".card").forEach((card) => {
+        card.addEventListener("touchstart", () => {
+          card.classList.add("is-active");
+        }, { passive: true });
+        card.addEventListener("touchend", () => {
+          card.classList.remove("is-active");
+        });
+        card.addEventListener("touchcancel", () => {
+          card.classList.remove("is-active");
+        });
       });
 
       // Make entire cards clickable even if decorative layers intercept clicks.
