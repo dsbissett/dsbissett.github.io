@@ -1,0 +1,1254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>88-Key Web Piano (A0 - C8)</title>
+  <style>
+    :root {
+      --white-key-width: min(28px, calc((100vw - 40px) / 52));
+      --white-key-height: 180px;
+      --black-key-width: calc(var(--white-key-width) * 0.64);
+      --black-key-height: 110px;
+    }
+
+    body {
+      background-color: #222;
+      color: #eee;
+      font-family: sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      user-select: none;
+      gap: 10px;
+    }
+
+    h1 { margin: 0; font-weight: 300; }
+    p { margin: 0 0 10px 0; color: #888; }
+
+    .controls {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .tempo-control {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: #cfcfcf;
+      font-size: 13px;
+      background: #2a2a2a;
+      border: 1px solid #555;
+      border-radius: 6px;
+      padding: 7px 10px;
+    }
+
+    .tempo-control input[type="range"] {
+      width: 140px;
+      accent-color: #72bbff;
+    }
+
+    .tempo-value {
+      min-width: 42px;
+      text-align: right;
+      color: #eee;
+      font-variant-numeric: tabular-nums;
+    }
+
+    button {
+      background: #3a3a3a;
+      color: #eee;
+      border: 1px solid #555;
+      border-radius: 6px;
+      padding: 10px 14px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    select {
+      background: #3a3a3a;
+      color: #eee;
+      border: 1px solid #555;
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-size: 14px;
+    }
+    .status { color: #aaa; font-size: 12px; }
+
+    .roll-container {
+      position: relative;
+      width: calc((52 * var(--white-key-width)) + 20px);
+      height: 550px;
+      background: #0d0f15;
+      padding: 10px;
+      border-radius: 5px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+      overflow: hidden;
+      box-sizing: border-box;
+    }
+
+    .note-roll {
+      position: relative;
+      width: calc(52 * var(--white-key-width));
+      height: 100%;
+      overflow: hidden;
+      border-radius: 3px;
+      background:
+        radial-gradient(circle at 50% -20%, rgba(255,255,255,0.08), rgba(0,0,0,0) 45%),
+        linear-gradient(to bottom, #090b10 0%, #06070a 100%);
+    }
+
+    #noteRoll {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .note-roll-hitline {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 3px;
+      background: linear-gradient(to right, rgba(140,170,255,0.65), rgba(255,179,130,0.65));
+      box-shadow: 0 0 8px rgba(185, 210, 255, 0.25);
+      pointer-events: none;
+    }
+
+    .piano-container {
+      position: relative;
+      width: calc((52 * var(--white-key-width)) + 20px);
+      height: calc(var(--white-key-height) + 10px);
+      background: #111;
+      padding: 10px 10px 0 10px;
+      border-radius: 5px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      box-sizing: border-box;
+    }
+
+    .keyboard {
+      position: relative;
+      width: calc(52 * var(--white-key-width));
+      height: 100%;
+      display: flex;
+    }
+
+    .key {
+      position: relative;
+      cursor: pointer;
+      border-radius: 0 0 3px 3px;
+      transition: background-color 0.1s, transform 0.05s;
+      z-index: 1;
+    }
+
+    .key.white {
+      width: var(--white-key-width);
+      height: var(--white-key-height);
+      background: linear-gradient(to bottom, #fff 0%, #eee 100%);
+      border: 1px solid #ccc;
+      border-top: none;
+      box-sizing: border-box;
+    }
+
+    .key.white:active, .key.white.active {
+      background: #ffd84a;
+      transform: translateY(2px);
+      box-shadow: inset 0 2px 6px rgba(0,0,0,0.2);
+    }
+    .key.white.active-left {
+      background: #72bbff;
+      transform: translateY(2px);
+      box-shadow: inset 0 2px 6px rgba(0,0,0,0.22);
+    }
+    .key.white.active-right {
+      background: #ffad73;
+      transform: translateY(2px);
+      box-shadow: inset 0 2px 6px rgba(0,0,0,0.22);
+    }
+
+    .key.black {
+      width: var(--black-key-width);
+      height: var(--black-key-height);
+      background: linear-gradient(to bottom, #333 0%, #000 100%);
+      position: absolute;
+      top: 0;
+      z-index: 2;
+      transform: translateX(-50%);
+      border: 1px solid #000;
+      box-shadow: 2px 2px 2px rgba(0,0,0,0.3);
+    }
+
+    .key.black:active, .key.black.active {
+      background: #595959;
+      box-shadow: inset 0 1px 4px rgba(0,0,0,0.35);
+    }
+    .key.black.active-left {
+      background: #3d7db6;
+      box-shadow: inset 0 1px 4px rgba(0,0,0,0.35);
+    }
+    .key.black.active-right {
+      background: #b56e40;
+      box-shadow: inset 0 1px 4px rgba(0,0,0,0.35);
+    }
+
+    .key span {
+      position: absolute;
+      bottom: 10px;
+      left: 0;
+      width: 100%;
+      text-align: center;
+      font-size: 8px;
+      color: #888;
+      pointer-events: none;
+    }
+    .key.black span { color: #ddd; bottom: 5px; }
+  </style>
+</head>
+<body>
+  <h1>Web Audio Piano</h1>
+  <p>Range: A0 to C8 (88 Keys). Click/Tap to play.</p>
+
+  <div class="controls">
+    <select id="pieceSelect">
+      <option value="chopin">Chopin</option>
+      <option value="liszt">Liszt</option>
+      <option value="beethoven">Beethoven</option>
+      <option value="jllewis">JL Lewis</option>
+    </select>
+    <button id="playBtn">Play</button>
+    <button id="stopBtn" disabled>Stop</button>
+    <label class="tempo-control" for="tempoSlider">
+      Tempo
+      <input id="tempoSlider" type="range" min="50" max="150" step="1" value="100" />
+      <span class="tempo-value" id="tempoValue">100%</span>
+    </label>
+    <span class="status" id="status">Select a piece and click Play.</span>
+  </div>
+
+  <div class="roll-container">
+    <div class="note-roll">
+      <canvas id="noteRoll"></canvas>
+      <div class="note-roll-hitline"></div>
+    </div>
+  </div>
+
+  <div class="piano-container">
+    <div class="keyboard" id="keyboard"></div>
+  </div>
+
+  <script>
+    // -----------------------------
+    // Audio (simple synth)
+    // -----------------------------
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    const ctx = new AudioContext();
+
+    function getFrequency(n) { // n=1 => A0
+      return 27.5 * Math.pow(2, (n - 1) / 12);
+    }
+
+    // Small polyphony manager so overlapping notes sound OK
+    const activeVoices = new Map(); // midiNote -> { osc, gain }
+
+    function midiToFreq(midi) {
+      return 440 * Math.pow(2, (midi - 69) / 12);
+    }
+
+    function noteOn(midi, velocity = 0.8) {
+      if (ctx.state === "suspended") ctx.resume();
+
+      // If same note is already sounding, stop it first
+      if (activeVoices.has(midi)) noteOff(midi);
+
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = "triangle";
+      osc.frequency.setValueAtTime(midiToFreq(midi), ctx.currentTime);
+
+      const v = Math.max(0.0, Math.min(1.0, velocity));
+      gain.gain.setValueAtTime(0, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(0.5 * v, ctx.currentTime + 0.01);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start();
+      activeVoices.set(midi, { osc, gain });
+    }
+
+    function noteOff(midi) {
+      const voice = activeVoices.get(midi);
+      if (!voice) return;
+
+      const t = ctx.currentTime;
+      voice.gain.gain.cancelScheduledValues(t);
+      voice.gain.gain.setValueAtTime(voice.gain.gain.value, t);
+      voice.gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+      voice.osc.stop(t + 0.15);
+      activeVoices.delete(midi);
+    }
+
+    // -----------------------------
+    // Keyboard UI generation + lookup
+    // -----------------------------
+    const notes = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+    const startKey = 1, endKey = 88;
+
+    const keyboard = document.getElementById("keyboard");
+    const noteRollCanvas = document.getElementById("noteRoll");
+    const noteRollCtx = noteRollCanvas.getContext("2d");
+    let whiteKeyCounter = 0;
+
+    // Map midi->keyDiv for highlighting.
+    // A0 is MIDI 21, and your key index 1 is A0, so: midi = 20 + keyIndex
+    const midiToKeyDiv = new Map();
+    const rollKeyLayout = new Map();
+    let rollLaneXs = [];
+    let rollNotes = [];
+    let rollAnimationId = 0;
+    const ROLL_LEAD_IN_MS = 2600;
+    let playing = false;
+    let tempoMultiplier = 1;
+    let playbackEvents = [];
+    let playbackIndex = 0;
+    let playbackScoreMs = 0;
+    let playbackLastFrameMs = 0;
+    let playbackEndMs = 0;
+    let activePieceId = "chopin";
+    let useBackingTrackClock = false;
+    const cachedPieceEvents = new Map();
+    const backingTrack = new Audio();
+    backingTrack.preload = "auto";
+    backingTrack.loop = false;
+    const PIECES = {
+      chopin: {
+        label: "Chopin",
+        audioFile: "chopin.ogg",
+        noteDataFile: "chopin.mid",
+      },
+      liszt: {
+        label: "Liszt",
+        audioFile: "liszt.ogg",
+        noteDataFile: "liszt.mid",
+      },
+      beethoven: {
+        label: "Beethoven",
+        audioFile: "beethoven.ogg",
+        noteDataFile: "beethoven.mid",
+      },
+      jllewis: {
+        label: "JL Lewis",
+        audioFile: "jllewis.ogg",
+        noteDataFile: "jllewis.MID",
+      },
+    };
+
+    for (let i = startKey; i <= endKey; i++) {
+      const noteIndexRaw = (i + 8) % 12; // aligns key 1 to A
+      const noteName = notes[noteIndexRaw];
+      const isBlack = noteName.includes("#");
+      const octave = Math.floor((i + 8) / 12);
+
+      const keyDiv = document.createElement("div");
+      keyDiv.classList.add("key");
+      keyDiv.dataset.note = `${noteName}${octave}`;
+      keyDiv.dataset.freq = getFrequency(i);
+
+      const label = document.createElement("span");
+      if (noteName === "C" || i === 1 || i === 88) label.innerText = `${noteName}${octave}`;
+      keyDiv.appendChild(label);
+
+      if (isBlack) {
+        keyDiv.classList.add("black");
+        keyDiv.style.left = `calc(${whiteKeyCounter} * var(--white-key-width) - (var(--black-key-width) / 2))`;
+      } else {
+        keyDiv.classList.add("white");
+        whiteKeyCounter++;
+      }
+
+      // Mouse/touch play (single-note quick sound)
+      const playHandler = (e) => {
+        e.preventDefault();
+        // use the same synth path (midi computed from key index)
+        const midi = 20 + i;
+        noteOn(midi, 0.9);
+        keyDiv.classList.add("active");
+        setTimeout(() => {
+          keyDiv.classList.remove("active");
+          noteOff(midi);
+        }, 200);
+      };
+
+      keyDiv.addEventListener("mousedown", playHandler);
+      keyDiv.addEventListener("mouseenter", (e) => { if (e.buttons === 1) playHandler(e); });
+
+      keyboard.appendChild(keyDiv);
+
+      const midi = 20 + i; // i=1 => 21 (A0), i=88 => 108 (C8)
+      midiToKeyDiv.set(midi, keyDiv);
+    }
+
+    function captureRollKeyLayout() {
+      const keyboardRect = keyboard.getBoundingClientRect();
+      rollKeyLayout.clear();
+      rollLaneXs = [];
+
+      for (const [midi, keyEl] of midiToKeyDiv.entries()) {
+        const rect = keyEl.getBoundingClientRect();
+        const isBlack = keyEl.classList.contains("black");
+        rollKeyLayout.set(midi, {
+          x: rect.left - keyboardRect.left,
+          w: rect.width,
+          isBlack,
+        });
+        if (!isBlack) rollLaneXs.push(rect.left - keyboardRect.left);
+      }
+
+      rollLaneXs.sort((a, b) => a - b);
+      rollLaneXs.push(keyboard.clientWidth);
+    }
+
+    function resizeNoteRollCanvas() {
+      const dpr = window.devicePixelRatio || 1;
+      const cssW = Math.max(1, noteRollCanvas.clientWidth);
+      const cssH = Math.max(1, noteRollCanvas.clientHeight);
+      noteRollCanvas.width = Math.round(cssW * dpr);
+      noteRollCanvas.height = Math.round(cssH * dpr);
+      noteRollCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      captureRollKeyLayout();
+      const elapsedMs = playing ? playbackScoreMs : -1;
+      drawNoteRoll(elapsedMs);
+    }
+
+    function buildRollNotes(events) {
+      if (!events?.length) return [];
+      const noteOnQueues = new Map(); // midi -> onEvent[]
+      const bars = [];
+      const fallbackEnd = (events[events.length - 1]?.tMs ?? 0) + 300;
+
+      for (const ev of events) {
+        if (ev.type === "on") {
+          if (!noteOnQueues.has(ev.midi)) noteOnQueues.set(ev.midi, []);
+          noteOnQueues.get(ev.midi).push(ev);
+        } else if (ev.type === "off") {
+          const q = noteOnQueues.get(ev.midi);
+          if (!q?.length) continue;
+          const onEv = q.shift();
+          bars.push({
+            midi: ev.midi,
+            startMs: onEv.tMs,
+            endMs: Math.max(ev.tMs, onEv.tMs + 35),
+            hand: onEv.hand ?? (ev.midi < 60 ? "left" : "right"),
+          });
+        }
+      }
+
+      for (const [midi, q] of noteOnQueues.entries()) {
+        for (const onEv of q) {
+          bars.push({
+            midi,
+            startMs: onEv.tMs,
+            endMs: Math.max(fallbackEnd, onEv.tMs + 35),
+            hand: onEv.hand ?? (midi < 60 ? "left" : "right"),
+          });
+        }
+      }
+
+      bars.sort((a, b) => a.startMs - b.startMs);
+      return bars;
+    }
+
+    function getRollPalette(currentMs) {
+      const phase = (currentMs * 0.015);
+      const topHue = ((phase + 255) % 360 + 360) % 360;
+      const midHue = (topHue + 52) % 360;
+      const bottomHue = (topHue + 108) % 360;
+      return { topHue, midHue, bottomHue };
+    }
+
+    function createGlobalRollGradient(currentMs, hitY) {
+      const { topHue, midHue, bottomHue } = getRollPalette(currentMs);
+      const grad = noteRollCtx.createLinearGradient(0, 0, 0, hitY);
+      grad.addColorStop(0.00, `hsla(${topHue.toFixed(1)}, 95%, 70%, 0.98)`);
+      grad.addColorStop(0.48, `hsla(${midHue.toFixed(1)}, 94%, 58%, 0.97)`);
+      grad.addColorStop(1.00, `hsla(${bottomHue.toFixed(1)}, 92%, 48%, 0.96)`);
+      return grad;
+    }
+
+    function roundedRectPath(ctx2d, x, y, wRect, hRect, radius) {
+      const r = Math.max(0, Math.min(radius, Math.min(wRect, hRect) / 2));
+      ctx2d.beginPath();
+      ctx2d.moveTo(x + r, y);
+      ctx2d.lineTo(x + wRect - r, y);
+      ctx2d.arcTo(x + wRect, y, x + wRect, y + r, r);
+      ctx2d.lineTo(x + wRect, y + hRect - r);
+      ctx2d.arcTo(x + wRect, y + hRect, x + wRect - r, y + hRect, r);
+      ctx2d.lineTo(x + r, y + hRect);
+      ctx2d.arcTo(x, y + hRect, x, y + hRect - r, r);
+      ctx2d.lineTo(x, y + r);
+      ctx2d.arcTo(x, y, x + r, y, r);
+      ctx2d.closePath();
+    }
+
+    function drawNoteRoll(currentMs = -1) {
+      const w = noteRollCanvas.clientWidth;
+      const h = noteRollCanvas.clientHeight;
+      noteRollCtx.clearRect(0, 0, w, h);
+
+      if (rollLaneXs.length) {
+        noteRollCtx.strokeStyle = "rgba(255,255,255,0.08)";
+        noteRollCtx.lineWidth = 1;
+        noteRollCtx.beginPath();
+        for (const x of rollLaneXs) {
+          const laneX = Math.round(x) + 0.5;
+          noteRollCtx.moveTo(laneX, 0);
+          noteRollCtx.lineTo(laneX, h);
+        }
+        noteRollCtx.stroke();
+      }
+
+      if (currentMs < 0 || !rollNotes.length) return;
+
+      const hitY = h - 3;
+      const pxPerMs = hitY / ROLL_LEAD_IN_MS;
+      const rollPalette = getRollPalette(currentMs);
+      const rollGradient = createGlobalRollGradient(currentMs, hitY);
+
+      for (const note of rollNotes) {
+        if (note.endMs < currentMs - 20) continue;
+        const layout = rollKeyLayout.get(note.midi);
+        if (!layout) continue;
+
+        const rawTop = hitY - ((note.endMs - currentMs) * pxPerMs);
+        const rawBottom = hitY - ((note.startMs - currentMs) * pxPerMs);
+        const yTop = Math.max(0, rawTop);
+        const yBottom = Math.min(hitY, rawBottom);
+        const barHeight = yBottom - yTop;
+        if (barHeight <= 0) continue;
+
+        const inset = layout.isBlack ? 1 : 0.5;
+        const x = layout.x + inset;
+        const barW = Math.max(2, layout.w - (2 * inset));
+        const radius = Math.max(2, Math.min(9, barW * 0.22));
+
+        // Soft bloom around the note body.
+        noteRollCtx.save();
+        noteRollCtx.globalCompositeOperation = "lighter";
+        noteRollCtx.shadowBlur = 16;
+        noteRollCtx.shadowColor = "rgba(255, 160, 120, 0.65)";
+        noteRollCtx.fillStyle = rollGradient;
+        roundedRectPath(noteRollCtx, x, yTop, barW, barHeight, radius);
+        noteRollCtx.fill();
+        noteRollCtx.restore();
+
+        // Main rounded note block.
+        noteRollCtx.fillStyle = rollGradient;
+        roundedRectPath(noteRollCtx, x, yTop, barW, barHeight, radius);
+        noteRollCtx.fill();
+
+        // Subtle glossy top highlight for the Synthesia-style look.
+        const glossH = Math.max(2, Math.min(10, barHeight * 0.18));
+        const gloss = noteRollCtx.createLinearGradient(x, yTop, x, yTop + glossH);
+        gloss.addColorStop(0, "rgba(255,255,255,0.42)");
+        gloss.addColorStop(1, "rgba(255,255,255,0.00)");
+        noteRollCtx.fillStyle = gloss;
+        roundedRectPath(noteRollCtx, x + 0.5, yTop + 0.5, Math.max(1, barW - 1), glossH, Math.max(1, radius * 0.7));
+        noteRollCtx.fill();
+
+        // Contact glow at the key intersection.
+        // It persists while a note is sustained and uses the current roll color.
+        const approachDistance = hitY - rawBottom;
+        const contactWindowPx = 28;
+        const inApproach = approachDistance >= 0 && approachDistance <= contactWindowPx;
+        const isHeld = currentMs >= note.startMs && currentMs <= note.endMs;
+        if (inApproach || isHeld) {
+          const approachIntensity = inApproach
+            ? Math.pow(1 - (approachDistance / contactWindowPx), 1.7)
+            : 0;
+          const attackElapsedMs = Math.max(0, currentMs - note.startMs);
+          const attackBoost = Math.max(0, 1 - Math.min(1, attackElapsedMs / 180));
+          const sustainIntensity = isHeld ? (0.42 + (0.38 * attackBoost * attackBoost)) : 0;
+          const contactIntensity = Math.max(0, Math.min(1, Math.max(approachIntensity, sustainIntensity)));
+          const cx = x + (barW / 2);
+          const cy = hitY - 1;
+          const glowR = Math.max(16, barW * 2.9);
+          const glowHue = rollPalette.bottomHue;
+          const edgeHue = (glowHue + 14) % 360;
+
+          noteRollCtx.save();
+          noteRollCtx.globalCompositeOperation = "lighter";
+
+          // Soft color halo around the contact point.
+          const halo = noteRollCtx.createRadialGradient(cx, cy, 0, cx, cy, glowR);
+          halo.addColorStop(0.00, `hsla(${glowHue.toFixed(1)}, 100%, 78%, ${(1.05 * contactIntensity).toFixed(3)})`);
+          halo.addColorStop(0.28, `hsla(${glowHue.toFixed(1)}, 98%, 64%, ${(0.78 * contactIntensity).toFixed(3)})`);
+          halo.addColorStop(0.62, `hsla(${edgeHue.toFixed(1)}, 96%, 52%, ${(0.36 * contactIntensity).toFixed(3)})`);
+          halo.addColorStop(1.00, `hsla(${glowHue.toFixed(1)}, 100%, 40%, 0.000)`);
+          noteRollCtx.fillStyle = halo;
+          noteRollCtx.beginPath();
+          noteRollCtx.arc(cx, cy, glowR, 0, Math.PI * 2);
+          noteRollCtx.fill();
+
+          // Crisp strike line right at the keyboard intersection point.
+          noteRollCtx.fillStyle = `hsla(${glowHue.toFixed(1)}, 100%, 76%, ${(0.95 * contactIntensity).toFixed(3)})`;
+          noteRollCtx.fillRect(x - 1, hitY - 2, barW + 2, 3);
+
+          // Contact tint on the bottom segment of the note body.
+          const flashTop = Math.max(yTop, hitY - Math.max(4, Math.min(24, barHeight * 0.30 + 5)));
+          const flashHeight = yBottom - flashTop;
+          if (flashHeight > 0) {
+            const flash = noteRollCtx.createLinearGradient(x, flashTop, x, yBottom);
+            flash.addColorStop(0.00, `hsla(${glowHue.toFixed(1)}, 100%, 62%, ${(0.15 * contactIntensity).toFixed(3)})`);
+            flash.addColorStop(1.00, `hsla(${glowHue.toFixed(1)}, 100%, 74%, ${(0.96 * contactIntensity).toFixed(3)})`);
+            noteRollCtx.fillStyle = flash;
+            roundedRectPath(noteRollCtx, x, flashTop, barW, flashHeight, Math.max(1, radius * 0.5));
+            noteRollCtx.fill();
+          }
+
+          // Impact burst particles when the note strikes the hit line.
+          const impactFactor = inApproach
+            ? Math.max(0, Math.min(1, 1 - (approachDistance / 11)))
+            : 0;
+          if (impactFactor > 0.02) {
+            const burstCount = Math.max(8, Math.min(34, Math.round((barW * 0.8) + (impactFactor * 24))));
+            for (let i = 0; i < burstCount; i++) {
+              const seed = (note.midi * 313) + (i * 911);
+              const t = (currentMs * 0.012) + (seed * 0.00017);
+              const phase = t - Math.floor(t);
+              const spread = (phase * 2) - 1;
+              const side = (seed % 2) === 0 ? -1 : 1;
+              const px = cx + (spread * spread * side * (10 + (barW * 0.55)));
+              const py = hitY - 1 - (phase * (14 + (impactFactor * 38)));
+              const pr = 0.9 + ((seed % 6) * 0.22) + ((1 - phase) * (1.8 + (impactFactor * 1.7)));
+              const pa = Math.max(0, Math.min(1, (0.20 + (0.62 * (1 - phase))) * impactFactor));
+              const particleHue = glowHue + ((seed % 13) - 6);
+
+              noteRollCtx.fillStyle = `hsla(${particleHue.toFixed(1)}, 100%, ${(66 + (16 * (1 - phase))).toFixed(1)}%, ${pa.toFixed(3)})`;
+              noteRollCtx.beginPath();
+              noteRollCtx.arc(px, py, pr, 0, Math.PI * 2);
+              noteRollCtx.fill();
+
+              if ((i % 3) === 0) {
+                noteRollCtx.strokeStyle = `hsla(${particleHue.toFixed(1)}, 100%, 76%, ${(pa * 0.85).toFixed(3)})`;
+                noteRollCtx.lineWidth = Math.max(0.6, pr * 0.45);
+                noteRollCtx.beginPath();
+                noteRollCtx.moveTo(px, py);
+                noteRollCtx.lineTo(px + (spread * 2.2), py - (2.8 + (impactFactor * 5.2)));
+                noteRollCtx.stroke();
+              }
+            }
+          }
+
+          // Sustained particle shimmer while the note is held.
+          if (isHeld) {
+            const particleCount = Math.max(4, Math.min(14, Math.round((barW / 4.3) + 2)));
+            for (let i = 0; i < particleCount; i++) {
+              const seed = (note.midi * 97) + (i * 131);
+              const t = (currentMs * 0.0027) + (seed * 0.00023);
+              const cycle = t - Math.floor(t);
+              const rise = cycle * cycle;
+              const drift = Math.sin((t * 20.2) + seed) * (barW * 0.36);
+              const px = cx + drift;
+              const py = hitY - 2 - (rise * (20 + (barW * 0.9)));
+              const pr = 0.9 + ((seed % 5) * 0.2) + ((1 - rise) * 1.45);
+              const pa = Math.max(0, Math.min(1, (0.16 + (0.32 * (1 - rise))) * contactIntensity));
+              noteRollCtx.fillStyle = `hsla(${(glowHue + ((seed % 9) - 4)).toFixed(1)}, 100%, ${(64 + (14 * (1 - rise))).toFixed(1)}%, ${pa.toFixed(3)})`;
+              noteRollCtx.beginPath();
+              noteRollCtx.arc(px, py, pr, 0, Math.PI * 2);
+              noteRollCtx.fill();
+            }
+          }
+
+          noteRollCtx.restore();
+        }
+      }
+    }
+
+    function startNoteRoll(events) {
+      captureRollKeyLayout();
+      rollNotes = buildRollNotes(events);
+      drawNoteRoll(playbackScoreMs);
+    }
+
+    function stopNoteRoll() {
+      rollNotes = [];
+      drawNoteRoll(-1);
+    }
+
+    async function startBackingTrack(pieceId) {
+      const piece = PIECES[pieceId];
+      if (!piece) throw new Error(`Unknown piece: ${pieceId}`);
+
+      if (backingTrack.getAttribute("src") !== piece.audioFile) {
+        backingTrack.src = piece.audioFile;
+      }
+
+      backingTrack.playbackRate = Math.max(0.5, Math.min(1.5, tempoMultiplier));
+      backingTrack.currentTime = 0;
+      await backingTrack.play();
+      useBackingTrackClock = true;
+    }
+
+    function stopBackingTrack() {
+      try {
+        backingTrack.pause();
+      } catch (e) {
+        // ignore pause errors
+      }
+      backingTrack.currentTime = 0;
+      useBackingTrackClock = false;
+    }
+
+    function runPlaybackFrame(nowMs) {
+      if (!playing) return;
+
+      const dtMs = Math.max(0, nowMs - playbackLastFrameMs);
+      playbackLastFrameMs = nowMs;
+      const liveTempo = Math.max(0.5, Math.min(1.5, tempoMultiplier));
+
+      if (useBackingTrackClock && !backingTrack.paused && backingTrack.readyState >= 2) {
+        playbackScoreMs = backingTrack.currentTime * 1000;
+      } else {
+        playbackScoreMs += dtMs * liveTempo;
+      }
+
+      while (playbackIndex < playbackEvents.length && playbackEvents[playbackIndex].tMs <= (playbackScoreMs + 0.5)) {
+        const ev = playbackEvents[playbackIndex++];
+        if (ev.type === "on") {
+          highlightOn(ev.midi, ev.hand ?? (ev.midi < 60 ? "left" : "right"));
+        } else {
+          highlightOff(ev.midi);
+        }
+      }
+
+      drawNoteRoll(playbackScoreMs);
+
+      if ((useBackingTrackClock && backingTrack.ended) ||
+          (playbackScoreMs >= (playbackEndMs + 300) && playbackIndex >= playbackEvents.length)) {
+        stopPlayback();
+        statusEl.textContent = "Finished.";
+        return;
+      }
+
+      rollAnimationId = requestAnimationFrame(runPlaybackFrame);
+    }
+
+    window.addEventListener("resize", resizeNoteRollCanvas);
+    resizeNoteRollCanvas();
+
+    function highlightOn(midi, hand = null) {
+      const el = midiToKeyDiv.get(midi);
+      if (!el) return;
+      el.classList.add("active");
+      if (hand === "left") el.classList.add("active-left");
+      if (hand === "right") el.classList.add("active-right");
+    }
+    function highlightOff(midi) {
+      const el = midiToKeyDiv.get(midi);
+      if (!el) return;
+      el.classList.remove("active");
+      el.classList.remove("active-left");
+      el.classList.remove("active-right");
+    }
+
+    // -----------------------------
+    // Simple event scheduler
+    // events: [{tMs, type:'on'|'off', midi, vel}]
+    // -----------------------------
+    function stopPlayback() {
+      if (rollAnimationId) cancelAnimationFrame(rollAnimationId);
+      rollAnimationId = 0;
+      for (const midi of Array.from(activeVoices.keys())) noteOff(midi);
+      stopBackingTrack();
+      // clear visuals
+      for (const el of document.querySelectorAll(".key.active, .key.active-left, .key.active-right")) {
+        el.classList.remove("active");
+        el.classList.remove("active-left");
+        el.classList.remove("active-right");
+      }
+      playbackEvents = [];
+      playbackIndex = 0;
+      playbackScoreMs = 0;
+      playbackLastFrameMs = 0;
+      playbackEndMs = 0;
+      stopNoteRoll();
+      playing = false;
+      playBtn.disabled = false;
+      stopBtn.disabled = true;
+      statusEl.textContent = "Stopped.";
+    }
+
+    async function playEvents(events, pieceId) {
+      stopPlayback();
+      if (!events || !events.length) return;
+
+      if (ctx.state === "suspended") ctx.resume();
+      await startBackingTrack(pieceId);
+
+      playing = true;
+      playBtn.disabled = true;
+      stopBtn.disabled = false;
+
+      statusEl.textContent = `Playing ${PIECES[pieceId]?.label ?? pieceId}...`;
+      playbackEvents = events;
+      playbackIndex = 0;
+      playbackScoreMs = 0;
+      playbackLastFrameMs = performance.now();
+      playbackEndMs = events[events.length - 1].tMs;
+
+      startNoteRoll(events);
+      rollAnimationId = requestAnimationFrame(runPlaybackFrame);
+    }
+
+    // -----------------------------
+    // Loading note data (MIDI/MusicXML) + OGG backing tracks
+    // -----------------------------
+    const pieceSelect = document.getElementById("pieceSelect");
+    const playBtn = document.getElementById("playBtn");
+    const stopBtn = document.getElementById("stopBtn");
+    const statusEl = document.getElementById("status");
+    const tempoSlider = document.getElementById("tempoSlider");
+    const tempoValueEl = document.getElementById("tempoValue");
+    const isFileProtocol = window.location.protocol === "file:";
+
+    function updateTempoFromSlider() {
+      tempoMultiplier = parseInt(tempoSlider.value, 10) / 100;
+      tempoValueEl.textContent = `${Math.round(tempoMultiplier * 100)}%`;
+      backingTrack.playbackRate = Math.max(0.5, Math.min(1.5, tempoMultiplier));
+    }
+
+    tempoSlider.addEventListener("input", updateTempoFromSlider);
+    updateTempoFromSlider();
+
+    pieceSelect.addEventListener("change", () => {
+      activePieceId = pieceSelect.value;
+      if (playing) stopPlayback();
+      statusEl.textContent = `Selected ${PIECES[activePieceId]?.label ?? activePieceId}.`;
+    });
+
+    stopBtn.addEventListener("click", stopPlayback);
+
+    playBtn.addEventListener("click", async () => {
+      try {
+        if (isFileProtocol) {
+          statusEl.textContent = "Open this page via http:// to load local MIDI/OGG files automatically.";
+          return;
+        }
+
+        activePieceId = pieceSelect.value;
+        const loaded = await loadPieceNoteData(activePieceId);
+        const events = loaded?.events ?? null;
+        if (!events || !events.length) {
+          statusEl.textContent = "Loaded file but found no playable notes.";
+          return;
+        }
+
+        cachedPieceEvents.set(activePieceId, loaded);
+        statusEl.textContent = `Loaded ${loaded.sourceName}`;
+        await playEvents(events, activePieceId);
+      } catch (err) {
+        console.error(err);
+        statusEl.textContent = "Could not start playback (see console).";
+      }
+    });
+
+    async function loadPieceNoteData(pieceId) {
+      const cached = cachedPieceEvents.get(pieceId);
+      if (cached?.events?.length) return cached;
+
+      const piece = PIECES[pieceId];
+      if (!piece) throw new Error(`Unknown piece: ${pieceId}`);
+      const noteDataFile = piece.noteDataFile;
+      const res = await fetch(noteDataFile, { cache: "no-store" });
+      if (!res.ok) {
+        throw new Error(`Failed to load ${noteDataFile}: HTTP ${res.status}`);
+      }
+      const lower = noteDataFile.toLowerCase();
+      if (lower.endsWith(".musicxml") || lower.endsWith(".xml")) {
+        return { events: musicXMLToEvents(await res.text()), sourceName: noteDataFile };
+      }
+      if (lower.endsWith(".mid") || lower.endsWith(".midi")) {
+        return { events: midiToEvents(await res.arrayBuffer()), sourceName: noteDataFile };
+      }
+      throw new Error(`Unsupported note data file type: ${noteDataFile}`);
+    }
+
+    // ----- MusicXML -----
+    // Handles score-partwise piano exports with multiple parts/voices, backup/forward, and tempo changes.
+    function musicXMLToEvents(xmlText) {
+      const parser = new DOMParser();
+      const xml = parser.parseFromString(xmlText, "application/xml");
+      const score = xml.querySelector("score-partwise, score-timewise");
+      if (!score) throw new Error("Not a MusicXML score.");
+
+      const partEls = Array.from(score.children).filter((el) => el.tagName === "part");
+      const parts = partEls.length ? partEls : Array.from(score.querySelectorAll("part"));
+      const partCount = parts.length;
+
+      const tempoByQn = new Map();
+      tempoByQn.set(0, 120); // default
+      const notesQn = [];
+
+      for (let partIndex = 0; partIndex < parts.length; partIndex++) {
+        const partEl = parts[partIndex];
+        let divisions = 1;
+        let cursorQn = 0;
+        let lastNoteStartQn = 0;
+
+        const measures = Array.from(partEl.children).filter((el) => el.tagName === "measure");
+        for (const measure of measures) {
+          for (const item of Array.from(measure.children)) {
+            const tag = item.tagName;
+
+            if (tag === "attributes") {
+              const divNode = item.querySelector("divisions");
+              if (divNode) {
+                const parsed = parseFloat(divNode.textContent ?? "");
+                if (Number.isFinite(parsed) && parsed > 0) divisions = parsed;
+              }
+              continue;
+            }
+
+            if (tag === "direction") {
+              const bpm = readTempoFromDirection(item);
+              if (Number.isFinite(bpm) && bpm > 0) {
+                tempoByQn.set(normQn(cursorQn), bpm);
+              }
+              continue;
+            }
+
+            if (tag === "backup" || tag === "forward") {
+              const durDiv = parseInt(item.querySelector("duration")?.textContent ?? "0", 10);
+              const durQn = durDiv / divisions;
+              cursorQn += (tag === "backup") ? -durQn : durQn;
+              continue;
+            }
+
+            if (tag !== "note") continue;
+
+            const isChord = !!item.querySelector("chord");
+            const isRest = !!item.querySelector("rest");
+            const durDiv = parseInt(item.querySelector("duration")?.textContent ?? "0", 10);
+            const durQn = durDiv / divisions;
+            const startQn = isChord ? lastNoteStartQn : cursorQn;
+            const endQn = startQn + durQn;
+
+            if (!isRest) {
+              const pitch = item.querySelector("pitch");
+              if (pitch) {
+                const step = pitch.querySelector("step")?.textContent?.trim();
+                const alter = parseInt(pitch.querySelector("alter")?.textContent ?? "0", 10);
+                const octave = parseInt(pitch.querySelector("octave")?.textContent ?? "4", 10);
+                const midi = pitchToMidi(step, alter, octave);
+
+                const staff = item.querySelector("staff")?.textContent?.trim();
+                let hand = null;
+                if (staff === "1") hand = "right";
+                else if (staff === "2") hand = "left";
+                else if (partCount >= 2) hand = (partIndex === 0) ? "right" : "left";
+
+                notesQn.push({ startQn, endQn, midi, hand, vel: 0.85 });
+              }
+            }
+
+            if (!isChord) {
+              lastNoteStartQn = startQn;
+              cursorQn += durQn;
+            }
+          }
+        }
+      }
+
+      const tempos = Array.from(tempoByQn.entries())
+        .map(([qn, bpm]) => ({ qn, bpm }))
+        .sort((a, b) => a.qn - b.qn);
+
+      const tempoSegments = [];
+      let prevQn = tempos[0].qn;
+      let prevBpm = tempos[0].bpm;
+      let msAtPrevQn = 0;
+      tempoSegments.push({ qn: prevQn, msAtQn: msAtPrevQn, bpm: prevBpm });
+
+      for (let i = 1; i < tempos.length; i++) {
+        const next = tempos[i];
+        msAtPrevQn += ((next.qn - prevQn) * 60000) / prevBpm;
+        prevQn = next.qn;
+        prevBpm = next.bpm;
+        tempoSegments.push({ qn: prevQn, msAtQn: msAtPrevQn, bpm: prevBpm });
+      }
+
+      function qnToMs(targetQn) {
+        let lo = 0;
+        let hi = tempoSegments.length - 1;
+        while (lo <= hi) {
+          const mid = (lo + hi) >> 1;
+          if (tempoSegments[mid].qn <= targetQn) lo = mid + 1;
+          else hi = mid - 1;
+        }
+        const seg = tempoSegments[Math.max(0, hi)];
+        return seg.msAtQn + ((targetQn - seg.qn) * 60000) / seg.bpm;
+      }
+
+      const events = [];
+      for (const n of notesQn) {
+        events.push({ tMs: qnToMs(n.startQn), type: "on", midi: n.midi, vel: n.vel, hand: n.hand });
+        events.push({ tMs: qnToMs(n.endQn), type: "off", midi: n.midi, hand: n.hand });
+      }
+
+      events.sort((a, b) => a.tMs - b.tMs || (a.type === "off" ? -1 : 1) - (b.type === "off" ? -1 : 1));
+      const t0 = events[0]?.tMs ?? 0;
+      for (const ev of events) ev.tMs -= t0;
+      return events;
+
+      function normQn(v) {
+        return Math.round(v * 1000000) / 1000000;
+      }
+
+      function readTempoFromDirection(directionEl) {
+        const soundTempo = directionEl.querySelector("sound[tempo]")?.getAttribute("tempo");
+        if (soundTempo != null) {
+          const bpm = parseFloat(soundTempo);
+          if (Number.isFinite(bpm) && bpm > 0) return bpm;
+        }
+
+        const perMinuteText = directionEl.querySelector("metronome > per-minute")?.textContent;
+        if (!perMinuteText) return NaN;
+        const perMinute = parseFloat(perMinuteText);
+        if (!Number.isFinite(perMinute) || perMinute <= 0) return NaN;
+
+        const beatUnit = directionEl.querySelector("metronome > beat-unit")?.textContent?.trim()?.toLowerCase();
+        const isDotted = !!directionEl.querySelector("metronome > beat-unit-dot");
+        const quarterFactor = beatUnitToQuarterFactor(beatUnit) * (isDotted ? 1.5 : 1);
+        return perMinute * quarterFactor;
+      }
+
+      function beatUnitToQuarterFactor(unit) {
+        switch (unit) {
+          case "whole": return 4;
+          case "half": return 2;
+          case "quarter": return 1;
+          case "eighth": return 0.5;
+          case "16th": return 0.25;
+          case "32nd": return 0.125;
+          case "64th": return 0.0625;
+          default: return 1;
+        }
+      }
+    }
+
+    function pitchToMidi(step, alter, octave) {
+      const base = { C:0, D:2, E:4, F:5, G:7, A:9, B:11 }[step] ?? 0;
+      const semitone = base + (alter || 0);
+      // MIDI: C4 = 60, and C0 = 12
+      return 12 + (octave * 12) + semitone;
+    }
+
+    // ----- MIDI (format 0 or 1, minimal) -----
+    // Supports: note-on/note-off, tempo meta, and format-1 tempo mapping.
+    function midiToEvents(arrayBuffer) {
+      const data = new DataView(arrayBuffer);
+      let p = 0;
+
+      function readStr(n) {
+        let s = "";
+        for (let i = 0; i < n; i++) s += String.fromCharCode(data.getUint8(p++));
+        return s;
+      }
+      function readU32() { const v = data.getUint32(p); p += 4; return v; }
+      function readU16() { const v = data.getUint16(p); p += 2; return v; }
+      function readU8() { return data.getUint8(p++); }
+      function readVar() {
+        let v = 0;
+        while (true) {
+          const b = readU8();
+          v = (v << 7) | (b & 0x7f);
+          if ((b & 0x80) === 0) break;
+        }
+        return v;
+      }
+
+      const header = readStr(4);
+      if (header !== "MThd") throw new Error("Not a MIDI file.");
+      const headerLen = readU32();
+      const format = readU16();
+      const nTracks = readU16();
+      const division = readU16();
+      p += (headerLen - 6);
+
+      if (division & 0x8000) {
+        throw new Error("SMPTE MIDI timebase is not supported.");
+      }
+
+      const ticksPerQuarter = division;
+      const tempoEvents = [{ tick: 0, tempoUSPerQuarter: 500000 }];
+      const noteEvents = [];
+      const trackStats = new Map(); // trackIndex -> { sum, count }
+
+      for (let tr = 0; tr < nTracks; tr++) {
+        const trk = readStr(4);
+        if (trk !== "MTrk") throw new Error("Bad MIDI track header.");
+        const trkLen = readU32();
+        const end = p + trkLen;
+
+        let tick = 0;
+        let runningStatus = null;
+
+        while (p < end) {
+          const delta = readVar();
+          tick += delta;
+
+          const statusByte = readU8();
+          let status = statusByte;
+          let firstData = null;
+
+          if (statusByte < 0x80) {
+            if (runningStatus === null) throw new Error("Invalid running status in MIDI track.");
+            status = runningStatus;
+            firstData = statusByte;
+          } else if (statusByte < 0xF0) {
+            runningStatus = status;
+          } else {
+            runningStatus = null;
+          }
+
+          if (status === 0xFF) {
+            const metaType = readU8();
+            const len = readVar();
+            if (metaType === 0x51 && len === 3) {
+              const tempoUSPerQuarter = (readU8() << 16) | (readU8() << 8) | readU8();
+              tempoEvents.push({ tick, tempoUSPerQuarter });
+            } else {
+              p += len;
+            }
+            continue;
+          }
+
+          if (status === 0xF0 || status === 0xF7) {
+            const len = readVar();
+            p += len;
+            continue;
+          }
+
+          const readDataByte = () => {
+            if (firstData !== null) {
+              const v = firstData;
+              firstData = null;
+              return v;
+            }
+            return readU8();
+          };
+
+          const type = status & 0xF0;
+          if (type === 0x90 || type === 0x80) {
+            const note = readDataByte();
+            const vel = readU8();
+
+            const isNoteOn = (type === 0x90) && vel > 0;
+            if (isNoteOn) {
+              noteEvents.push({ tick, type: "on", midi: note, vel: vel / 127, track: tr });
+              const stats = trackStats.get(tr) ?? { sum: 0, count: 0 };
+              stats.sum += note;
+              stats.count += 1;
+              trackStats.set(tr, stats);
+            } else {
+              noteEvents.push({ tick, type: "off", midi: note, track: tr });
+            }
+          } else if (type === 0xA0 || type === 0xB0 || type === 0xE0) {
+            // 2 data bytes
+            readDataByte();
+            readU8();
+          } else if (type === 0xC0 || type === 0xD0) {
+            // 1 data byte
+            readDataByte();
+          } else {
+            // unknown; try to not crash
+            p = end;
+          }
+        }
+      }
+
+      const tempoByTick = new Map();
+      tempoByTick.set(0, 500000);
+      for (const ev of tempoEvents) tempoByTick.set(ev.tick, ev.tempoUSPerQuarter);
+
+      const orderedTempos = Array.from(tempoByTick.entries())
+        .map(([tick, tempoUSPerQuarter]) => ({ tick, tempoUSPerQuarter }))
+        .sort((a, b) => a.tick - b.tick);
+
+      const tempoSegments = [];
+      let prevTick = orderedTempos[0].tick;
+      let prevTempo = orderedTempos[0].tempoUSPerQuarter;
+      let usAtPrevTick = 0;
+      tempoSegments.push({ tick: prevTick, usAtTick: usAtPrevTick, tempoUSPerQuarter: prevTempo });
+
+      for (let i = 1; i < orderedTempos.length; i++) {
+        const next = orderedTempos[i];
+        usAtPrevTick += ((next.tick - prevTick) * prevTempo) / ticksPerQuarter;
+        prevTick = next.tick;
+        prevTempo = next.tempoUSPerQuarter;
+        tempoSegments.push({ tick: prevTick, usAtTick: usAtPrevTick, tempoUSPerQuarter: prevTempo });
+      }
+
+      function tickToMs(targetTick) {
+        let lo = 0;
+        let hi = tempoSegments.length - 1;
+
+        while (lo <= hi) {
+          const mid = (lo + hi) >> 1;
+          if (tempoSegments[mid].tick <= targetTick) {
+            lo = mid + 1;
+          } else {
+            hi = mid - 1;
+          }
+        }
+
+        const seg = tempoSegments[Math.max(0, hi)];
+        const usAtTarget = seg.usAtTick + ((targetTick - seg.tick) * seg.tempoUSPerQuarter) / ticksPerQuarter;
+        return usAtTarget / 1000;
+      }
+
+      const allEvents = noteEvents
+        .sort((a, b) => a.tick - b.tick || (a.type === "off" ? -1 : 1) - (b.type === "off" ? -1 : 1))
+        .map((ev) => {
+          const hand = getHandForTrack(ev.track, ev.midi);
+          const base = { tMs: tickToMs(ev.tick), type: ev.type, midi: ev.midi, hand };
+          return ev.type === "on" ? { ...base, vel: ev.vel } : base;
+        });
+
+      const t0 = allEvents[0]?.tMs ?? 0;
+      for (const ev of allEvents) ev.tMs -= t0;
+      return allEvents;
+
+      function getHandForTrack(trackIndex, midi) {
+        if (trackStats.size <= 1) {
+          return midi < 60 ? "left" : "right";
+        }
+
+        const ranked = Array.from(trackStats.entries())
+          .map(([track, stats]) => ({
+            track,
+            avg: stats.count ? (stats.sum / stats.count) : 60,
+          }))
+          .sort((a, b) => a.avg - b.avg);
+
+        const leftTrack = ranked[0]?.track;
+        const rightTrack = ranked[ranked.length - 1]?.track;
+
+        if (trackIndex === leftTrack) return "left";
+        if (trackIndex === rightTrack) return "right";
+        return midi < 60 ? "left" : "right";
+      }
+    }
+  </script>
+</body>
+</html>
