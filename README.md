@@ -44,3 +44,9 @@ public/
 - The Angular router uses hash-based URLs to avoid deep-link refresh issues on static hosting.
 - `public/legacy` preserves the original HTML, JS, CSS, images, audio, and MIDI files for each demo.
 - Production output is written to `dist/dsbissett-github-io/browser`.
+
+## GitHub Pages deployment
+
+- This repo deploys through GitHub Actions.
+- In GitHub, set `Settings -> Pages -> Build and deployment -> Source` to `GitHub Actions`.
+- Pushes to `master` will build the app and publish `dist/dsbissett-github-io/browser`.
