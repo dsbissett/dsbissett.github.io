@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Drake Bissett's Projects</title>
+  <base href="/">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta
+    name="description"
+    content="Interactive experiments, simulations, and games by Drake Bissett."
+  >
+  <meta name="color-scheme" content="dark">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@300;500;700&family=Press+Start+2P&family=Righteous&display=swap"
+    rel="stylesheet"
+  >
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <script>
+    (() => {
+      const url = new URL(window.location.href);
+      const redirect = url.searchParams.get('redirect');
+      if (!redirect) {
+        return;
+      }
+
+      history.replaceState(null, '', redirect);
+    })();
+  </script>
+</head>
+<body>
+  <app-root></app-root>
+</body>
+</html>

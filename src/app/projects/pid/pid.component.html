@@ -1,0 +1,194 @@
+<header>
+  <div>
+    <h1>PID Controller Demo - 1D Mass-Spring-Damper (Position Control)</h1>
+    <p class="sub">
+      Drag the target. Tune Kp/Ki/Kd. Toggle saturation, delay, noise, and anti-windup.
+    </p>
+  </div>
+  <div class="legend" aria-label="Legend">
+    <span><span class="dot accent"></span>Setpoint</span>
+    <span><span class="dot good"></span>Position</span>
+    <span><span class="dot cyan"></span>Control u</span>
+    <span><span class="dot violet"></span>P/I/D terms</span>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="row">
+    <section class="card">
+      <div class="hd">
+        <div class="title">Plant Visualization (drag setpoint)</div>
+        <div class="legend">
+          <span><span class="dot accent"></span>r(t)</span>
+          <span><span class="dot good"></span>y(t)</span>
+        </div>
+      </div>
+      <div class="simArea">
+        <div class="simCanvasWrap">
+          <canvas
+            #simulationCanvas
+            width="1000"
+            height="420"
+            aria-label="PID plant visualization"
+            (pointerdown)="handlePointerDown($event)"
+            (pointermove)="handlePointerMove($event)"
+            (pointerup)="handlePointerUp($event)"
+          ></canvas>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="hd">
+        <div class="title">Time Domain</div>
+        <div class="legend">
+          <span><span class="dot accent"></span>Setpoint</span>
+          <span><span class="dot good"></span>Position</span>
+          <span><span class="dot bad"></span>Error</span>
+        </div>
+      </div>
+      <div class="charts">
+        <div class="chart">
+          <canvas #timeCanvas width="900" height="520" aria-label="PID time chart"></canvas>
+        </div>
+        <div class="chart">
+          <canvas #controlCanvas width="900" height="520" aria-label="PID control chart"></canvas>
+        </div>
+      </div>
+      <div class="note">
+        Left chart: setpoint, position, and error. Right chart: control output u and P/I/D contributions.
+      </div>
+    </section>
+  </div>
+
+  <aside class="card">
+    <div class="hd">
+      <div class="title">Controls</div>
+      <div class="btnRow">
+        <button type="button" [class.primary]="running()" (click)="toggleRunning()">
+          {{ running() ? 'Pause' : 'Run' }}
+        </button>
+        <button type="button" class="danger" (click)="reset()">Reset</button>
+      </div>
+    </div>
+
+    <div class="controls">
+      <div class="grid2">
+        <div class="ctrlGroup">
+          <div class="lbl"><span>Preset</span></div>
+          <select [value]="parameters().presetName" (change)="applyPreset($event)">
+            <option value="balanced">Balanced (PID)</option>
+            <option value="p_only">P-only (oscillatory)</option>
+            <option value="pi">PI (no SSE)</option>
+            <option value="pd">PD (damped)</option>
+            <option value="aggressive">Aggressive (fast/overshoot)</option>
+            <option value="noisy_sensor">Noisy Sensor (D hurts)</option>
+            <option value="has_delay">Has Delay (harder)</option>
+          </select>
+        </div>
+        <div class="ctrlGroup">
+          <div class="lbl"><span>Setpoint Mode</span></div>
+          <select [value]="parameters().setpointMode" (change)="handleSetpointMode($event)">
+            <option value="drag">Drag</option>
+            <option value="step">Step</option>
+            <option value="sine">Sine</option>
+            <option value="random">Random</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="ctrlGroup">
+        <div class="lbl"><span><b>Kp</b></span><span>{{ displayValues().kp }}</span></div>
+        <input type="range" min="0" max="300" step="1" [value]="parameters().controller.kp" (input)="handleControllerInput('kp', $event)">
+        <div class="lbl"><span><b>Ki</b></span><span>{{ displayValues().ki }}</span></div>
+        <input type="range" min="0" max="80" step="0.5" [value]="parameters().controller.ki" (input)="handleControllerInput('ki', $event)">
+        <div class="lbl"><span><b>Kd</b></span><span>{{ displayValues().kd }}</span></div>
+        <input type="range" min="0" max="80" step="0.5" [value]="parameters().controller.kd" (input)="handleControllerInput('kd', $event)">
+      </div>
+
+      <div class="ctrlGroup">
+        <div class="lbl">
+          <span>Plant params</span>
+          <span class="small">(m, c, k)</span>
+        </div>
+        <div class="lbl"><span><b>Mass m</b></span><span>{{ displayValues().mass }}</span></div>
+        <input type="range" min="0.2" max="8" step="0.1" [value]="parameters().plant.mass" (input)="handlePlantInput('mass', $event)">
+        <div class="lbl"><span><b>Damping c</b></span><span>{{ displayValues().damping }}</span></div>
+        <input type="range" min="0" max="8" step="0.05" [value]="parameters().plant.damping" (input)="handlePlantInput('damping', $event)">
+        <div class="lbl"><span><b>Spring k</b></span><span>{{ displayValues().spring }}</span></div>
+        <input type="range" min="0" max="30" step="0.1" [value]="parameters().plant.spring" (input)="handlePlantInput('spring', $event)">
+      </div>
+
+      <div class="ctrlGroup">
+        <div class="lbl"><span>Non-idealities</span></div>
+
+        <label class="tog">
+          <span>Actuator saturation (|u| &lt;= umax)</span>
+          <input type="checkbox" [checked]="parameters().nonIdeal.saturationEnabled" (change)="handleNonIdealToggle('saturationEnabled', $event)">
+        </label>
+        <div class="lbl"><span><b>u max</b></span><span>{{ displayValues().actuatorLimit }}</span></div>
+        <input type="range" min="1" max="50" step="0.5" [value]="parameters().nonIdeal.actuatorLimit" (input)="handleNonIdealNumberInput('actuatorLimit', $event)">
+
+        <label class="tog">
+          <span>Anti-windup (integrator clamp)</span>
+          <input type="checkbox" [checked]="parameters().nonIdeal.antiWindupEnabled" (change)="handleNonIdealToggle('antiWindupEnabled', $event)">
+        </label>
+
+        <label class="tog">
+          <span>Sensor noise</span>
+          <input type="checkbox" [checked]="parameters().nonIdeal.noiseEnabled" (change)="handleNonIdealToggle('noiseEnabled', $event)">
+        </label>
+        <div class="lbl"><span><b>Noise sigma</b></span><span>{{ displayValues().noiseSigma }}</span></div>
+        <input type="range" min="0" max="0.25" step="0.005" [value]="parameters().nonIdeal.noiseSigma" [disabled]="!parameters().nonIdeal.noiseEnabled" (input)="handleNonIdealNumberInput('noiseSigma', $event)">
+
+        <label class="tog">
+          <span>Measurement delay</span>
+          <input type="checkbox" [checked]="parameters().nonIdeal.delayEnabled" (change)="handleNonIdealToggle('delayEnabled', $event)">
+        </label>
+        <div class="lbl"><span><b>Delay</b></span><span>{{ displayValues().delay }}</span></div>
+        <input type="range" min="0" max="350" step="10" [value]="parameters().nonIdeal.delayMs" [disabled]="!parameters().nonIdeal.delayEnabled" (input)="handleNonIdealNumberInput('delayMs', $event)">
+
+        <label class="tog">
+          <span>D-term low-pass filter</span>
+          <input type="checkbox" [checked]="parameters().nonIdeal.derivativeFilterEnabled" (change)="handleNonIdealToggle('derivativeFilterEnabled', $event)">
+        </label>
+        <div class="lbl"><span><b>D filter tau</b></span><span>{{ displayValues().derivativeTau }}</span></div>
+        <input type="range" min="0.001" max="0.25" step="0.001" [value]="parameters().nonIdeal.derivativeTau" (input)="handleNonIdealNumberInput('derivativeTau', $event)">
+      </div>
+
+      <div class="btnRow">
+        <button type="button" class="good" (click)="kick()">Disturbance "Kick"</button>
+        <button type="button" (click)="centerSetpoint()">Center Setpoint</button>
+      </div>
+
+      <section class="card metricsCard">
+        <div class="hd metricsHeader">
+          <div class="title">Live Metrics</div>
+        </div>
+        <div class="metrics">
+          <div class="metric">
+            <div class="k">Rise time (10-90%)</div>
+            <div class="v">{{ metricsDisplay().riseTime }}</div>
+          </div>
+          <div class="metric">
+            <div class="k">Overshoot</div>
+            <div class="v">{{ metricsDisplay().overshoot }}</div>
+          </div>
+          <div class="metric">
+            <div class="k">Settling time (+/-2%)</div>
+            <div class="v">{{ metricsDisplay().settlingTime }}</div>
+          </div>
+          <div class="metric">
+            <div class="k">Steady-state error</div>
+            <div class="v">{{ metricsDisplay().steadyStateError }}</div>
+          </div>
+        </div>
+      </section>
+
+      <div class="note">
+        Model: <span class="bright">m*x'' + c*x' + k*x = u</span> (position control).<br>
+        PID: <span class="bright">u = Kp*e + Ki*integral(e dt) + Kd*de/dt</span> (discrete-time, optional D filter).
+      </div>
+    </div>
+  </aside>
+</div>

@@ -1,0 +1,63 @@
+:host {
+  display: flex;
+  margin: 0;
+  height: 100vh;
+  justify-content: center;
+  align-items: center;
+  background: #0f0c29;
+  position: relative;
+  overflow: hidden;
+}
+
+.background-layer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 0;
+}
+
+.game-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  z-index: 1;
+}
+
+.game-canvas {
+  border: 2px solid rgba(100, 140, 255, 0.4);
+  border-radius: 4px;
+  box-shadow:
+    0 0 15px rgba(80, 120, 255, 0.2),
+    0 0 40px rgba(80, 120, 255, 0.08),
+    inset 0 0 20px rgba(0, 0, 0, 0.3);
+  max-width: 100%;
+  height: auto;
+}
+
+.preview-container {
+  display: flex;
+  justify-content: center;
+  margin-top: 16px;
+  gap: 12px;
+}
+
+.preview {
+  max-width: 20%;
+  height: auto;
+  border: 1px solid rgba(100, 140, 255, 0.25);
+  border-radius: 4px;
+  box-shadow: 0 0 8px rgba(80, 120, 255, 0.1);
+}
+
+.effects-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 10;
+}

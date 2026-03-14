@@ -1,0 +1,40 @@
+@font-face {
+  font-family: 'FlappyBirdy';
+  src: url('/legacy/flappy-bird/lib/FlappyBirdy.woff') format('woff');
+  font-display: swap;
+}
+
+:host {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+}
+
+:host,
+:host * {
+  touch-action: manipulation;
+}
+
+.flappy-bird-shell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background-color: #000;
+}
+
+.flappy-bird-canvas {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+}
+
+.flappy-bird-message {
+  position: absolute;
+  margin: 0;
+  color: #fff;
+  font-family: 'FlappyBirdy', sans-serif;
+  font-size: 2rem;
+}

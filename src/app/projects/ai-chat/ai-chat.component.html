@@ -1,0 +1,133 @@
+<div class="ai-chat">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand__mark">A</div>
+      <div class="brand__text">
+        <span>Atlas</span>
+        <small>Trust and Safety Lab</small>
+      </div>
+    </div>
+
+    <div class="search">
+      <input
+        id="conversationSearch"
+        name="conversationSearch"
+        type="text"
+        placeholder="Search conversations"
+        aria-label="Search conversations"
+      />
+    </div>
+
+    <div class="sidebar__section">
+      <h3>Recent</h3>
+      @for (thread of threads; track thread.id) {
+        <button
+          type="button"
+          class="thread"
+          [class.active]="isThreadActive(thread.id)"
+          (click)="selectThread(thread.id)"
+        >
+          <span>{{ thread.title }}</span>
+          <small>{{ thread.subtitle }}</small>
+        </button>
+      }
+    </div>
+
+    <div class="status">
+      <div class="status__row">
+        <span>Model health</span>
+        <div class="status__dot" aria-hidden="true"></div>
+      </div>
+      <div class="status__row">
+        <span>Safety filters</span>
+        <strong>Off</strong>
+      </div>
+    </div>
+  </aside>
+
+  <main class="chat">
+    <header class="chat__header">
+      <div class="chat__title">
+        <span>Atlas Assistant</span>
+        <small>Next Generation AI Assistant</small>
+      </div>
+      <div class="chat__actions">
+        <div class="pill">Session 04A</div>
+        <div class="pill accent">Guest Mode</div>
+      </div>
+    </header>
+
+    <section #chatLog class="chat__log" aria-live="polite">
+      @for (message of currentMessages(); track message.id) {
+        <div
+          class="message"
+          [class.message--assistant]="message.role === 'assistant'"
+          [class.message--user]="message.role === 'user'"
+          [class.message--typing]="message.kind === 'typing'"
+        >
+          @switch (message.kind) {
+            @case ('text') {
+              <div class="message__bubble" [class.content-warning]="message.warning">
+                {{ message.text }}
+              </div>
+              <div class="message__meta">
+                {{ message.role === 'user' ? 'You' : 'Atlas' }} - {{ message.timestamp }}
+              </div>
+            }
+            @case ('typing') {
+              <div class="message__bubble">
+                <span class="typing-dot"></span>
+                <span class="typing-dot"></span>
+                <span class="typing-dot"></span>
+              </div>
+              <div class="message__meta">Atlas - typing</div>
+            }
+            @case ('image-placeholder') {
+              <div class="message__bubble image-output">
+                <div class="image-status">{{ message.status }}</div>
+                <div class="image-placeholder"></div>
+              </div>
+              <div class="message__meta">Atlas - {{ message.timestamp }}</div>
+            }
+          }
+        </div>
+      }
+    </section>
+
+    <form
+      class="composer"
+      autocomplete="off"
+      (submit)="$event.preventDefault(); submitMessage()"
+    >
+      @if (pastedImageUrl(); as imageUrl) {
+        <div class="composer__attachments">
+          <div class="composer__attachment">
+            <img [src]="imageUrl" alt="Pasted image preview">
+            <button
+              type="button"
+              class="composer__remove"
+              aria-label="Remove image"
+              (click)="removePastedImage()"
+            >
+              x
+            </button>
+          </div>
+        </div>
+      }
+
+      <textarea
+        #messageInput
+        id="messageInput"
+        name="message"
+        [value]="draft()"
+        placeholder="Ask anything... (Enter to send)"
+        rows="1"
+        (input)="updateDraft(($any($event.target)).value)"
+        (keydown)="handleComposerKeydown($event)"
+        (paste)="handlePaste($event)"
+      ></textarea>
+
+      <button type="submit" [disabled]="!canSend()">Send</button>
+    </form>
+  </main>
+</div>

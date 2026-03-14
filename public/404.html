@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Redirecting...</title>
+  <script>
+    const redirect = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    const url = new URL('/', window.location.origin);
+    url.searchParams.set('redirect', redirect);
+    window.location.replace(url.toString());
+  </script>
+</head>
+<body></body>
+</html>

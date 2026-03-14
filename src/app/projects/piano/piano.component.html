@@ -1,0 +1,79 @@
+<div class="piano-shell">
+  <h1>Web Audio Piano</h1>
+  <p class="subtitle">Range: A0 to C8 (88 Keys). Click/Tap to play.</p>
+
+  <div class="controls">
+    <select
+      [value]="activePieceId()"
+      (change)="handlePieceChange($event)"
+    >
+      @for (entry of pieceEntries; track entry[0]) {
+        <option [value]="entry[0]">{{ entry[1].label }}</option>
+      }
+    </select>
+
+    <button
+      type="button"
+      [disabled]="playing()"
+      (click)="handlePlay()"
+    >
+      Play
+    </button>
+
+    <button
+      type="button"
+      [disabled]="!playing()"
+      (click)="handleStop()"
+    >
+      Stop
+    </button>
+
+    <label class="tempo-control" for="tempoSlider">
+      Tempo
+      <input
+        id="tempoSlider"
+        type="range"
+        min="50"
+        max="150"
+        step="1"
+        [value]="tempoPercent()"
+        (input)="handleTempoChange($event)"
+      />
+      <span class="tempo-value">{{ tempoPercent() }}%</span>
+    </label>
+
+    <span class="status">{{ statusText() }}</span>
+  </div>
+
+  <div class="roll-container">
+    <div class="note-roll">
+      <canvas #noteRollCanvas></canvas>
+      <canvas #impactFxCanvas class="impact-fx-canvas"></canvas>
+      <div class="note-roll-hitline"></div>
+    </div>
+  </div>
+
+  <div class="piano-container">
+    <div class="keyboard" #keyboard>
+      @for (key of keys; track key.midi) {
+        <div
+          #pianoKey
+          class="key"
+          [class.white]="!key.isBlack"
+          [class.black]="key.isBlack"
+          [class.active]="isKeyActive(key.midi)"
+          [class.active-left]="isKeyActiveLeft(key.midi)"
+          [class.active-right]="isKeyActiveRight(key.midi)"
+          [style.left]="key.isBlack ? 'calc(' + key.precedingWhiteKeys + ' * var(--white-key-width) - (var(--black-key-width) / 2))' : null"
+          [attr.data-note]="key.noteName + key.octave"
+          (pointerdown)="handleKeyPointerDown($event, key.midi)"
+          (pointerenter)="handleKeyPointerEnter($event, key.midi)"
+        >
+          @if (key.label) {
+            <span>{{ key.label }}</span>
+          }
+        </div>
+      }
+    </div>
+  </div>
+</div>

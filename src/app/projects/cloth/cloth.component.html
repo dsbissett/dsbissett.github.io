@@ -1,0 +1,46 @@
+<div class="cloth-stage">
+  <canvas
+    #clothCanvas
+    class="cloth-canvas"
+    aria-label="Interactive cloth simulation spelling Drake"
+    aria-describedby="cloth-instructions"
+    (pointercancel)="handlePointerCancel($event)"
+    (pointerdown)="handlePointerDown($event)"
+    (pointermove)="handlePointerMove($event)"
+    (pointerup)="handlePointerUp($event)"
+    (contextmenu)="preventContextMenu($event)"
+  ></canvas>
+
+  <section
+    #controlDeck
+    class="control-deck"
+    [class.control-deck-dragging]="isDragging()"
+    [style.left.px]="controlDeckLeft()"
+    [style.top.px]="controlDeckTop()"
+    aria-label="Simulation controls"
+  >
+    <button
+      type="button"
+      class="drag-handle"
+      [attr.aria-label]="dragHandleLabel()"
+      (pointerdown)="handleControlDeckPointerDown($event)"
+    >
+      <span class="drag-handle__dots" aria-hidden="true"></span>
+      Move Panel
+    </button>
+
+    <p class="eyebrow">Physics Study</p>
+    <h1>Cloth</h1>
+    <p id="cloth-instructions" class="description">
+      Drag to pull the mesh. Use secondary click to tear constraints. Press
+      <kbd>R</kbd> or rebuild the wordmark with reset.
+    </p>
+
+    <div class="actions">
+      <button type="button" class="action action-primary" (click)="reset()">
+        Reset Mesh
+      </button>
+      <a class="action action-secondary" routerLink="/">Back Home</a>
+    </div>
+  </section>
+</div>

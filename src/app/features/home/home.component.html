@@ -1,0 +1,67 @@
+<div class="cosmic-bg" aria-hidden="true"></div>
+<div class="stars" aria-hidden="true"></div>
+<div class="boomerang boomerang-left" aria-hidden="true"></div>
+<div class="boomerang boomerang-right" aria-hidden="true"></div>
+
+<div id="top" class="wrap" (window:keydown)="handleWindowKeydown($event)">
+  <header class="hero">
+    <div class="googie-sign">
+      <div class="noise" aria-hidden="true"></div>
+      <h1>Drake Bissett's Projects</h1>
+      <p class="subtitle">
+        A collection of experiments, simulations, and games.
+      </p>
+    </div>
+
+    <label class="search-wrapper" for="project-filter">
+      <input
+        #filterInput
+        id="project-filter"
+        type="text"
+        [value]="query()"
+        (input)="updateQuery(($any($event.target)).value)"
+        placeholder="SEARCH PROJECTS..."
+        autocomplete="off"
+      >
+      <span class="search-hint">PRESS /</span>
+    </label>
+  </header>
+
+  <main>
+    <section class="grid" aria-label="Project list">
+      @for (project of filteredProjects(); track project.path) {
+        <article class="card project" [attr.data-accent]="project.accent">
+          <div class="fin"></div>
+          <div class="starburst"></div>
+          <a [routerLink]="['/', project.path]">
+            <div class="card-header">
+              <div class="icon-box">{{ project.icon }}</div>
+              <div class="arrow">-&gt;</div>
+            </div>
+
+            <h2>{{ project.title }}</h2>
+            <p>{{ project.summary }}</p>
+
+            <div class="meta">
+              <div class="tags" aria-label="Tags">
+                @for (tag of project.tags; track tag) {
+                  <span class="tag">{{ tag }}</span>
+                }
+              </div>
+            </div>
+          </a>
+        </article>
+      } @empty {
+        <article class="empty-state">
+          <h2>No matches</h2>
+          <p>Try a broader term like <code>game</code>, <code>physics</code>, or <code>music</code>.</p>
+        </article>
+      }
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>&copy; {{ year }} Drake Bissett. Architected for the Future.</p>
+    <p><button type="button" class="orbit-link" (click)="scrollToTop()">Return to Orbit</button></p>
+  </footer>
+</div>

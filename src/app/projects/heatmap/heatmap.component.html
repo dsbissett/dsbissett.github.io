@@ -1,0 +1,149 @@
+<div class="app">
+  <section class="panel">
+    <header>
+      <p class="title">Demo</p>
+      <p id="heatmap-title" class="subtitle">Severity-Weighted KDE Heatmap</p>
+    </header>
+
+    <div class="content">
+      <div class="row">
+        <div class="control">
+          <label for="gridStep">
+            <span>Grid step (px)</span>
+            <span class="value">{{ parameters().gridStep }}</span>
+          </label>
+          <input
+            id="gridStep"
+            type="range"
+            min="3"
+            max="18"
+            step="1"
+            [value]="parameters().gridStep"
+            (input)="handleParameterInput('gridStep', $event)"
+          >
+        </div>
+
+        <div class="control">
+          <label for="felonyWeight">
+            <span>Felony weight (w)</span>
+            <span class="value">{{ parameters().felonyWeight }}</span>
+          </label>
+          <input
+            id="felonyWeight"
+            type="range"
+            min="1"
+            max="20"
+            step="1"
+            [value]="parameters().felonyWeight"
+            (input)="handleParameterInput('felonyWeight', $event)"
+          >
+        </div>
+
+        <div class="control">
+          <label for="misdemeanorWeight">
+            <span>Misdemeanor weight (w)</span>
+            <span class="value">{{ parameters().misdemeanorWeight }}</span>
+          </label>
+          <input
+            id="misdemeanorWeight"
+            type="range"
+            min="1"
+            max="10"
+            step="1"
+            [value]="parameters().misdemeanorWeight"
+            (input)="handleParameterInput('misdemeanorWeight', $event)"
+          >
+        </div>
+
+        <div class="control">
+          <label for="felonySigma">
+            <span>Felony sigma (px)</span>
+            <span class="value">{{ parameters().felonySigma }}</span>
+          </label>
+          <input
+            id="felonySigma"
+            type="range"
+            min="18"
+            max="180"
+            step="2"
+            [value]="parameters().felonySigma"
+            (input)="handleParameterInput('felonySigma', $event)"
+          >
+        </div>
+
+        <div class="control">
+          <label for="misdemeanorSigma">
+            <span>Misdemeanor sigma (px)</span>
+            <span class="value">{{ parameters().misdemeanorSigma }}</span>
+          </label>
+          <input
+            id="misdemeanorSigma"
+            type="range"
+            min="18"
+            max="180"
+            step="2"
+            [value]="parameters().misdemeanorSigma"
+            (input)="handleParameterInput('misdemeanorSigma', $event)"
+          >
+        </div>
+
+        <div class="control">
+          <label for="opacity">
+            <span>Opacity</span>
+            <span class="value">{{ parameters().opacity.toFixed(2) }}</span>
+          </label>
+          <input
+            id="opacity"
+            type="range"
+            min="0.15"
+            max="1"
+            step="0.05"
+            [value]="parameters().opacity"
+            (input)="handleParameterInput('opacity', $event)"
+          >
+        </div>
+
+        <div class="btnrow">
+          <button type="button" id="regen" class="primary" (click)="regeneratePoints()">
+            Regenerate Points
+          </button>
+          <button type="button" id="clear" (click)="clearPoints()">Clear Points</button>
+        </div>
+
+        <p id="heatmap-instructions" class="hint">
+          Click to add incidents: <b>Shift+Click</b> adds a felony (high severity), normal click adds a misdemeanor.
+          Drag to pan points? (Not implemented.) The heat is computed on a grid using:
+          <span class="k">R(x)=sum_i w_i*exp( - d(x,x_i)^2 / (2sigma_i^2) )</span>.
+        </p>
+
+        <div class="mono">{{ formulaText() }}</div>
+
+        <div class="legend">
+          <div class="swatch swatch-low"></div>
+          <div>Low / safe</div>
+          <div class="swatch swatch-elevated"></div>
+          <div>Elevated</div>
+          <div class="swatch swatch-high"></div>
+          <div>High</div>
+          <div class="swatch swatch-severe"></div>
+          <div>Severe</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="canvasWrap" aria-labelledby="heatmap-title">
+    <canvas
+      #canvas
+      class="heatmap-canvas"
+      aria-label="Severity-weighted heatmap canvas"
+      aria-describedby="heatmap-instructions"
+      (click)="handleCanvasClick($event)"
+    ></canvas>
+    <div class="overlay">
+      <div><b>Points:</b> {{ pointCount() }}</div>
+      <div><b>Add:</b> click = misdemeanor, <span class="k">Shift+Click</span> = felony</div>
+      <div><b>Formula:</b> <span class="k">R(x)=sum_i w_i*exp(-d^2/(2sigma_i^2))</span></div>
+    </div>
+  </section>
+</div>

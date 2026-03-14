@@ -1,0 +1,37 @@
+export interface TetrisGameConfig {
+  gridWidth: number;
+  gridHeight: number;
+  initialDropIntervalMs: number;
+  previewBlockSize: number;
+  previewCanvasCells: number;
+  scoreFont: string;
+  scoreFontSize: number;
+  gameOverFont: string;
+  gameOverFontSize: number;
+  gameOverSubFont: string;
+  gameOverSubFontSize: number;
+  blockStrokeColor: string;
+  blockHighlightAlpha: number;
+  blockShadowAlpha: number;
+  canvasBackgroundColor: string;
+  gridLineColor: string;
+  previewBackgroundColor: string;
+  scoreFontColor: string;
+  gameOverOverlayColor: string;
+  gameOverFontColor: string;
+  scoreX: number;
+  scoreY: number;
+  linePoints: readonly number[];
+  speedUpThreshold: number;
+  speedUpDivisor: number;
+  musicSpeedIncrement: number;
+  musicMaxSpeed: number;
+  musicVolume: number;
+  touchSwipeThreshold: number;
+  touchTapThreshold: number;
+  blockEffectGravity: number;
+  blockEffectMinSpeedX: number;
+  blockEffectMaxSpeedX: number;
+  blockEffectMinSpeedY: number;
+  blockEffectMaxSpeedY: number;
+}

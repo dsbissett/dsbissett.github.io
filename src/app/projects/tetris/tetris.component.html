@@ -1,0 +1,17 @@
+<canvas #backgroundCanvas class="background-layer"></canvas>
+<div class="game-container">
+  <canvas
+    #gameCanvas
+    class="game-canvas"
+    aria-label="Tetris game"
+    (touchstart)="handleTouchStart($event)"
+    (touchmove)="handleTouchMove($event)"
+    (touchend)="handleTouchEnd($event)"
+  ></canvas>
+  <div class="preview-container">
+    <canvas #previewCanvas1 class="preview"></canvas>
+    <canvas #previewCanvas2 class="preview"></canvas>
+    <canvas #previewCanvas3 class="preview"></canvas>
+  </div>
+</div>
+<canvas #effectsCanvas class="effects-overlay"></canvas>

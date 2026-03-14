@@ -1,0 +1,14 @@
+<div class="flappy-bird-shell">
+  <canvas
+    #gameCanvas
+    class="flappy-bird-canvas"
+    aria-label="Flappy Bird game"
+    (pointerdown)="handlePointerDown($event)"
+  ></canvas>
+
+  @if (initializationFailed()) {
+    <p class="flappy-bird-message">Unable to load the Flappy Bird assets.</p>
+  } @else if (!assetsReady()) {
+    <p class="flappy-bird-message">Loading...</p>
+  }
+</div>
