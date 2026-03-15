@@ -162,4 +162,53 @@ export const PARTICLE_LIFE_PRESETS: readonly ParticleLifePreset[] = [
       [-0.1,  0.05,-0.05, 0.1,  0.4],
     ],
   },
+  {
+    name: 'Lava Lamp',
+    speciesCount: 4,
+    particleCount: 2500,
+    friction: 0.96,
+    forceScale: 2.5,
+    interactionRadius: 150,
+    wrapEdges: true,
+    attractionMatrix: [
+      // Strong self-attraction, gentle cross-repulsion → slow drifting blobs
+      [ 0.6, -0.15, -0.2,  -0.1 ],
+      [-0.15,  0.6,  -0.1, -0.2 ],
+      [-0.2,  -0.1,   0.6, -0.15],
+      [-0.1,  -0.2,  -0.15, 0.6 ],
+    ],
+  },
+  {
+    name: 'Pinwheels',
+    speciesCount: 3,
+    particleCount: 1200,
+    friction: 0.8,
+    forceScale: 8,
+    interactionRadius: 75,
+    wrapEdges: true,
+    attractionMatrix: [
+      // Cyclic chase with strong asymmetry → small scattered spinning structures
+      [ 0.3,  0.9, -0.4],
+      [-0.4,  0.3,  0.9],
+      [ 0.9, -0.4,  0.3],
+    ],
+  },
+  {
+    name: 'Galaxies',
+    speciesCount: 6,
+    particleCount: 3000,
+    friction: 0.91,
+    forceScale: 2.5,
+    interactionRadius: 180,
+    wrapEdges: true,
+    attractionMatrix: [
+      // Universal broad attraction with slight self-preference → large rainbow spheres
+      [ 0.5,  0.3,  0.25, 0.2,  0.25, 0.3 ],
+      [ 0.3,  0.5,  0.3,  0.25, 0.2,  0.25],
+      [ 0.25, 0.3,  0.5,  0.3,  0.25, 0.2 ],
+      [ 0.2,  0.25, 0.3,  0.5,  0.3,  0.25],
+      [ 0.25, 0.2,  0.25, 0.3,  0.5,  0.3 ],
+      [ 0.3,  0.25, 0.2,  0.25, 0.3,  0.5 ],
+    ],
+  },
 ] as const;
