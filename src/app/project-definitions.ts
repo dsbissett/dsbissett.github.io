@@ -76,6 +76,15 @@ export const projectDefinitions: readonly ProjectDefinition[] = [
     icon: 'PN',
   },
   {
+    path: 'particle-life',
+    title: 'Particle Life',
+    summary:
+      'Emergent behavior from simple attraction and repulsion rules between particle species.',
+    tags: ['Sim', 'Emergence'],
+    accent: 'vio',
+    icon: '::',
+  },
+  {
     path: 'tetris',
     title: 'Tetris',
     summary: 'Classic block stacking with ghost pieces, wall kicks, and scoring.',

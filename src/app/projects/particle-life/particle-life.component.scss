@@ -1,0 +1,471 @@
+:host {
+  display: block;
+  min-height: 100vh;
+  overflow: hidden;
+  color: #f7f0e5;
+  background: linear-gradient(160deg, #12101a 0%, #0a0a14 54%, #09090a 100%);
+}
+
+.bg-glow {
+  position: fixed;
+  inset: -30%;
+  width: 160%;
+  height: 160%;
+  background:
+    radial-gradient(ellipse 60% 50% at 25% 30%, rgb(187 154 247 / 18%), transparent),
+    radial-gradient(ellipse 50% 60% at 75% 65%, rgb(0 255 245 / 10%), transparent),
+    radial-gradient(ellipse 45% 40% at 50% 80%, rgb(255 46 99 / 8%), transparent);
+  animation: bg-drift 40s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+
+@keyframes bg-drift {
+  0% {
+    transform: translate(0, 0);
+    filter: hue-rotate(0deg);
+  }
+  25% {
+    transform: translate(-5%, 4%);
+    filter: hue-rotate(25deg);
+  }
+  50% {
+    transform: translate(4%, -3%);
+    filter: hue-rotate(-15deg);
+  }
+  75% {
+    transform: translate(-3%, -5%);
+    filter: hue-rotate(35deg);
+  }
+  100% {
+    transform: translate(2%, 3%);
+    filter: hue-rotate(50deg);
+  }
+}
+
+.particle-life-stage {
+  position: relative;
+  min-height: 100vh;
+}
+
+.particle-life-stage::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background:
+    linear-gradient(rgb(255 255 255 / 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 255 255 / 0.03) 1px, transparent 1px);
+  background-size: 42px 42px;
+  -webkit-mask-image: linear-gradient(180deg, rgb(0 0 0 / 0.5), transparent 85%);
+  mask-image: linear-gradient(180deg, rgb(0 0 0 / 0.5), transparent 85%);
+  pointer-events: none;
+}
+
+.particle-canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.particle-canvas:active {
+  cursor: grabbing;
+}
+
+// --- Control Deck ---
+
+.control-deck {
+  position: absolute;
+  z-index: 3;
+  width: min(380px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  padding: 24px 26px 28px;
+  border: 1px solid rgb(255 240 220 / 0.18);
+  border-radius: 24px;
+  background: linear-gradient(180deg, rgb(20 16 30 / 0.9), rgb(10 10 11 / 0.75));
+  box-shadow:
+    0 20px 60px rgb(0 0 0 / 0.35),
+    inset 0 1px 0 rgb(255 255 255 / 0.08);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+}
+
+.control-deck-collapsed {
+  width: auto !important;
+  max-height: none;
+  padding: 12px 16px;
+}
+
+.control-deck-dragging {
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: grabbing;
+}
+
+.deck-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 18px;
+
+  .control-deck-collapsed & {
+    margin-bottom: 0;
+  }
+}
+
+.collapse-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 1px solid rgb(255 240 220 / 0.14);
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.05);
+  color: rgb(247 240 229 / 0.82);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 140ms ease;
+
+  &:hover {
+    background: rgb(255 255 255 / 0.1);
+  }
+
+  &:focus-visible {
+    outline: 2px solid #c8a2ff;
+    outline-offset: 2px;
+  }
+}
+
+.drag-handle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 0.45rem 0.8rem;
+  border: 1px solid rgb(255 240 220 / 0.14);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.05);
+  color: rgb(247 240 229 / 0.82);
+  font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: grab;
+  touch-action: none;
+}
+
+.drag-handle:focus-visible {
+  outline: 2px solid #c8a2ff;
+  outline-offset: 3px;
+}
+
+.drag-handle__dots {
+  width: 0.9rem;
+  height: 0.9rem;
+  background:
+    radial-gradient(circle, currentcolor 1.2px, transparent 1.3px) 0 0 / 50% 50%;
+  opacity: 0.7;
+}
+
+.eyebrow {
+  margin: 0 0 10px;
+  color: #bb9af7;
+  font-family: 'Avenir Next Condensed', 'Franklin Gothic Medium', sans-serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0;
+  font-family: 'Avenir Next Condensed', 'Franklin Gothic Heavy', sans-serif;
+  font-size: clamp(2.4rem, 8vw, 4.2rem);
+  line-height: 0.9;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.description {
+  max-width: 28rem;
+  margin: 14px 0 0;
+  color: rgb(247 240 229 / 0.78);
+  font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
+  font-size: 0.92rem;
+  line-height: 1.6;
+}
+
+kbd {
+  padding: 0.1rem 0.45rem;
+  border: 1px solid rgb(255 255 255 / 0.18);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.08);
+  font-size: 0.82em;
+}
+
+// --- Controls ---
+
+select {
+  width: 100%;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid rgb(255 240 220 / 0.14);
+  border-radius: 10px;
+  background: rgb(255 255 255 / 0.06);
+  color: #f7f0e5;
+  font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23bb9af7' stroke-width='1.5' fill='none'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 28px;
+
+  &:focus-visible {
+    outline: 2px solid #c8a2ff;
+    outline-offset: 3px;
+  }
+
+  option {
+    background: #1a1428;
+    color: #f7f0e5;
+  }
+}
+
+.ctrl-group {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid rgb(255 255 255 / 0.08);
+}
+
+.lbl {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
+  font-size: 0.85rem;
+  color: rgb(247 240 229 / 0.78);
+
+  & + input[type='range'] {
+    margin-bottom: 12px;
+  }
+}
+
+input[type='range'] {
+  width: 100%;
+  height: 6px;
+  appearance: none;
+  border-radius: 3px;
+  background: rgb(255 255 255 / 0.1);
+  outline: none;
+  cursor: pointer;
+
+  &::-webkit-slider-thumb {
+    width: 16px;
+    height: 16px;
+    appearance: none;
+    border: 2px solid rgb(187 154 247 / 0.8);
+    border-radius: 50%;
+    background: #1a1428;
+    cursor: pointer;
+    transition: border-color 140ms ease;
+  }
+
+  &:hover::-webkit-slider-thumb,
+  &:focus-visible::-webkit-slider-thumb {
+    border-color: #bb9af7;
+  }
+
+  &:focus-visible {
+    outline: 2px solid #c8a2ff;
+    outline-offset: 3px;
+  }
+}
+
+.tog {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+  font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
+  font-size: 0.85rem;
+  color: rgb(247 240 229 / 0.78);
+  cursor: pointer;
+
+  input[type='checkbox'] {
+    width: 18px;
+    height: 18px;
+    accent-color: #bb9af7;
+    cursor: pointer;
+  }
+}
+
+.zoom-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
+  font-size: 0.85rem;
+  color: rgb(247 240 229 / 0.78);
+}
+
+.zoom-label {
+  font-weight: 600;
+}
+
+.zoom-reset {
+  padding: 0.25rem 0.7rem;
+  border: 1px solid rgb(255 240 220 / 0.14);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.05);
+  color: rgb(247 240 229 / 0.78);
+  font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: background-color 140ms ease;
+
+  &:hover {
+    background: rgb(255 255 255 / 0.1);
+  }
+
+  &:focus-visible {
+    outline: 2px solid #c8a2ff;
+    outline-offset: 2px;
+  }
+}
+
+// --- Attraction Matrix ---
+
+.matrix-grid {
+  display: grid;
+  grid-template-columns: 28px repeat(var(--species, 5), 1fr);
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.matrix-corner {
+  width: 28px;
+  height: 28px;
+}
+
+.matrix-header,
+.matrix-row-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+}
+
+.species-dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+.matrix-cell {
+  width: 100%;
+  height: 4px;
+  appearance: none;
+  border-radius: 2px;
+  background: linear-gradient(
+    90deg,
+    rgb(255 46 99 / 0.6) 0%,
+    rgb(255 255 255 / 0.1) 50%,
+    rgb(168 255 53 / 0.6) 100%
+  );
+  outline: none;
+  cursor: pointer;
+
+  &::-webkit-slider-thumb {
+    width: 12px;
+    height: 12px;
+    appearance: none;
+    border: 2px solid rgb(255 255 255 / 0.5);
+    border-radius: 50%;
+    background: #1a1428;
+    cursor: pointer;
+  }
+
+  &:focus-visible {
+    outline: 2px solid #c8a2ff;
+    outline-offset: 2px;
+  }
+}
+
+// --- Actions ---
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 22px;
+}
+
+.action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 46px;
+  padding: 0.8rem 1.1rem;
+  border-radius: 999px;
+  font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
+  font-size: 0.95rem;
+  font-weight: 700;
+  text-decoration: none;
+  transition:
+    transform 160ms ease,
+    background-color 160ms ease,
+    border-color 160ms ease;
+}
+
+.action:hover,
+.action:focus-visible {
+  transform: translateY(-1px);
+}
+
+.action-primary {
+  border: none;
+  background: linear-gradient(135deg, #c8a2ff, #7c5cbf);
+  color: #0e0a18;
+  box-shadow: 0 12px 26px rgb(187 154 247 / 0.28);
+}
+
+.action-secondary {
+  border: 1px solid rgb(255 240 220 / 0.18);
+  background: rgb(255 255 255 / 0.04);
+  color: #f7f0e5;
+}
+
+.action:focus-visible {
+  outline: 2px solid #c8a2ff;
+  outline-offset: 3px;
+}
+
+@media (max-width: 720px) {
+  .control-deck {
+    padding: 20px;
+  }
+
+  .description {
+    font-size: 0.88rem;
+  }
+
+  h1 {
+    font-size: clamp(2rem, 7vw, 3rem);
+  }
+}

@@ -1,0 +1,193 @@
+<div class="particle-life-stage">
+  <div class="bg-glow" aria-hidden="true"></div>
+  <canvas
+    #particleCanvas
+    class="particle-canvas"
+    aria-label="Particle Life emergent behavior simulation"
+    aria-describedby="particle-life-instructions"
+    (pointercancel)="handlePointerCancel($event)"
+    (pointerdown)="handlePointerDown($event)"
+    (pointermove)="handlePointerMove($event)"
+    (pointerup)="handlePointerUp($event)"
+    (wheel)="handleWheel($event)"
+    (contextmenu)="preventContextMenu($event)"
+  ></canvas>
+
+  <section
+    #controlDeck
+    class="control-deck"
+    [class.control-deck-dragging]="isDragging()"
+    [class.control-deck-collapsed]="collapsed()"
+    [style.left.px]="controlDeckLeft()"
+    [style.top.px]="controlDeckTop()"
+    aria-label="Simulation controls"
+  >
+    <div class="deck-header">
+      <button
+        type="button"
+        class="drag-handle"
+        [attr.aria-label]="dragHandleLabel()"
+        (pointerdown)="handleControlDeckPointerDown($event)"
+      >
+        <span class="drag-handle__dots" aria-hidden="true"></span>
+        Move Panel
+      </button>
+      <button
+        type="button"
+        class="collapse-toggle"
+        [attr.aria-label]="collapsed() ? 'Expand controls' : 'Collapse controls'"
+        (click)="toggleCollapsed()"
+      >
+        {{ collapsed() ? '＋' : '−' }}
+      </button>
+    </div>
+
+    @if (!collapsed()) {
+    <p class="eyebrow">Emergent Sim</p>
+    <h1>Particle Life</h1>
+    <p id="particle-life-instructions" class="description">
+      Click to explode. Scroll to zoom. Press
+      <kbd>R</kbd> to randomize, <kbd>Space</kbd> to pause.
+    </p>
+
+    <div class="ctrl-group">
+      <div class="lbl"><span><b>Preset</b></span></div>
+      <select
+        title="Preset"
+        [value]="presetName()"
+        (change)="handlePreset($event)"
+      >
+        <option value="">Custom</option>
+        @for (preset of presets; track preset.name) {
+          <option [value]="preset.name">{{ preset.name }}</option>
+        }
+      </select>
+    </div>
+
+    <div class="ctrl-group">
+      <div class="lbl">
+        <span><b>Particles</b></span><span>{{ particleCount() }}</span>
+      </div>
+      <input
+        type="range"
+        min="100"
+        max="10000"
+        step="50"
+        title="Particle count"
+        [value]="particleCount()"
+        (input)="handleParticleCount($event)"
+      />
+      <div class="lbl">
+        <span><b>Species</b></span><span>{{ speciesCount() }}</span>
+      </div>
+      <input
+        type="range"
+        min="2"
+        max="8"
+        step="1"
+        title="Species count"
+        [value]="speciesCount()"
+        (input)="handleSpeciesCount($event)"
+      />
+    </div>
+
+    <div class="ctrl-group">
+      <div class="lbl">
+        <span><b>Friction</b></span><span>{{ frictionDisplay() }}</span>
+      </div>
+      <input
+        type="range"
+        min="0"
+        max="1"
+        step="0.01"
+        title="Friction"
+        [value]="friction()"
+        (input)="handleFriction($event)"
+      />
+      <div class="lbl">
+        <span><b>Force Scale</b></span><span>{{ forceScaleDisplay() }}</span>
+      </div>
+      <input
+        type="range"
+        min="0.5"
+        max="20"
+        step="0.5"
+        title="Force scale"
+        [value]="forceScale()"
+        (input)="handleForceScale($event)"
+      />
+      <div class="lbl">
+        <span><b>Range</b></span><span>{{ interactionRadius() }}px</span>
+      </div>
+      <input
+        type="range"
+        min="20"
+        max="200"
+        step="5"
+        title="Interaction radius"
+        [value]="interactionRadius()"
+        (input)="handleInteractionRadius($event)"
+      />
+      <label class="tog">
+        <span>Wrap edges</span>
+        <input
+          type="checkbox"
+          [checked]="wrapEdges()"
+          (change)="handleWrapToggle($event)"
+        />
+      </label>
+      <div class="zoom-row">
+        <span class="zoom-label">Zoom {{ zoomDisplay() }}</span>
+        <button type="button" class="zoom-reset" (click)="resetZoom()">
+          Reset
+        </button>
+      </div>
+    </div>
+
+    <div class="ctrl-group">
+      <div class="lbl"><span><b>Attraction Matrix</b></span></div>
+      <div class="matrix-grid" [style.--species]="speciesCount()">
+        <div class="matrix-corner"></div>
+        @for (col of speciesColors(); track $index) {
+          <div class="matrix-header">
+            <span class="species-dot" [style.background]="col"></span>
+          </div>
+        }
+        @for (row of attractionMatrix(); track $index; let ri = $index) {
+          <div class="matrix-row-label">
+            <span class="species-dot" [style.background]="speciesColors()[ri]"></span>
+          </div>
+          @for (cell of row; track $index; let ci = $index) {
+            <input
+              type="range"
+              class="matrix-cell"
+              min="-1"
+              max="1"
+              step="0.05"
+              [title]="'Species ' + ri + ' to ' + ci"
+              [value]="cell"
+              [style.--v]="cell"
+              [attr.aria-label]="'Species ' + ri + ' to ' + ci + ': ' + cell"
+              (input)="handleMatrixCell(ri, ci, $event)"
+            />
+          }
+        }
+      </div>
+    </div>
+
+    <div class="actions">
+      <button type="button" class="action action-primary" (click)="randomize()">
+        Randomize
+      </button>
+      <button
+        type="button"
+        class="action action-secondary"
+        (click)="toggleRunning()"
+      >
+        {{ running() ? 'Pause' : 'Play' }}
+      </button>
+      <a class="action action-secondary" routerLink="/">Back Home</a>
+    </div>
+    }
+  </section>
+</div>

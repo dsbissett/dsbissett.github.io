@@ -62,6 +62,14 @@ export const routes: Routes = [
       ),
   },
   {
+    path: 'particle-life',
+    title: 'Particle Life',
+    loadComponent: () =>
+      import('./projects/particle-life/particle-life.component').then(
+        (m) => m.ParticleLifeComponent
+      ),
+  },
+  {
     path: 'tetris',
     title: 'Tetris',
     loadComponent: () =>
@@ -78,6 +86,7 @@ export const routes: Routes = [
         project.path !== 'fluid-motion' &&
         project.path !== 'heatmap' &&
         project.path !== 'pid' &&
+        project.path !== 'particle-life' &&
         project.path !== 'piano' &&
         project.path !== 'tetris'
     )
