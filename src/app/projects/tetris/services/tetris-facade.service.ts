@@ -1,11 +1,13 @@
 import { Injectable, inject } from '@angular/core';
 
+import { TETRIS_AI_CONFIG } from '../constants/tetris-ai-config.constant';
 import { TETRIS_GAME_CONFIG } from '../constants/tetris-game-config.constant';
 import { TetrisActivePiece } from '../classes/tetris-active-piece.class';
 import { TetrisMatrix } from '../classes/tetris-matrix.class';
 import { TetrisCanvasSize } from '../interfaces/tetris-canvas-size.interface';
 import { TetrisGameState } from '../interfaces/tetris-game-state.interface';
 import { TetrisAnimationFrameService } from './tetris-animation-frame.service';
+import { TetrisAiControllerService } from './tetris-ai-controller.service';
 import { TetrisAudioService } from './tetris-audio.service';
 import { TetrisBackgroundService } from './tetris-background.service';
 import { TetrisBlockEffectManagerService } from './tetris-block-effect-manager.service';
@@ -22,6 +24,7 @@ import { TetrisStateService } from './tetris-state.service';
 @Injectable()
 export class TetrisFacadeService {
   private readonly animationFrame = inject(TetrisAnimationFrameService);
+  private readonly aiController = inject(TetrisAiControllerService);
   private readonly audioService = inject(TetrisAudioService);
   private readonly backgroundService = inject(TetrisBackgroundService);
   private readonly blockEffects = inject(TetrisBlockEffectManagerService);
@@ -40,25 +43,30 @@ export class TetrisFacadeService {
   private previewCanvases: HTMLCanvasElement[] = [];
   private previewContexts: CanvasRenderingContext2D[] = [];
   private canvasSize: TetrisCanvasSize | null = null;
+  private aiRestartCounterMs = 0;
+
+  public readonly aiEnabled = this.aiController.isEnabled;
+  public readonly aiReady = this.aiController.isReady;
+  public readonly demonstrationRecordingEnabled = this.aiController.isRecordingDemonstrations;
+  public readonly aiStats = this.aiController.stats;
 
   public initialize(
     gameCanvas: HTMLCanvasElement,
     previewCanvases: HTMLCanvasElement[],
     effectsCanvas: HTMLCanvasElement,
-    backgroundCanvas: HTMLCanvasElement
+    backgroundCanvas: HTMLCanvasElement,
   ): void {
     this.gameCanvas = gameCanvas;
     this.gameContext = this.canvasService.createContext(gameCanvas);
     this.previewCanvases = previewCanvases;
-    this.previewContexts = previewCanvases.map((c) =>
-      this.canvasService.createContext(c)
-    );
+    this.previewContexts = previewCanvases.map((c) => this.canvasService.createContext(c));
 
     this.audioService.initialize();
     this.setupCanvasSizes();
     this.backgroundService.initialize(backgroundCanvas);
     this.blockEffects.initialize(effectsCanvas, gameCanvas.getBoundingClientRect());
     this.startNewGame();
+    void this.initializeAi();
     this.animationFrame.start((deltaMs) => this.gameLoop(deltaMs));
   }
 
@@ -79,6 +87,10 @@ export class TetrisFacadeService {
       return;
     }
 
+    if (this.aiController.isActive()) {
+      return;
+    }
+
     const state = this.stateService.getState();
 
     if (state.status === 'gameOver') {
@@ -91,6 +103,11 @@ export class TetrisFacadeService {
 
   public handleTouchStart(event: TouchEvent): void {
     event.preventDefault();
+
+    if (this.aiController.isActive()) {
+      return;
+    }
+
     this.audioService.startMusic();
     this.inputService.handleTouchStart(event);
   }
@@ -98,14 +115,15 @@ export class TetrisFacadeService {
   public handleTouchMove(event: TouchEvent): void {
     event.preventDefault();
 
+    if (this.aiController.isActive()) {
+      return;
+    }
+
     if (!this.canvasSize || !this.stateService.hasState()) {
       return;
     }
 
-    const action = this.inputService.handleTouchMove(
-      event,
-      this.canvasSize.blockSize
-    );
+    const action = this.inputService.handleTouchMove(event, this.canvasSize.blockSize);
 
     if (action) {
       this.executeTouchAction(action);
@@ -115,15 +133,16 @@ export class TetrisFacadeService {
   public handleTouchEnd(event: TouchEvent): void {
     event.preventDefault();
 
+    if (this.aiController.isActive()) {
+      return;
+    }
+
     if (!this.canvasSize || !this.stateService.hasState()) {
       return;
     }
 
     const state = this.stateService.getState();
-    const isTap = this.inputService.handleTouchEnd(
-      event,
-      this.canvasSize.blockSize
-    );
+    const isTap = this.inputService.handleTouchEnd(event, this.canvasSize.blockSize);
 
     if (isTap && state.status === 'playing') {
       this.attemptRotation(state);
@@ -136,10 +155,7 @@ export class TetrisFacadeService {
     }
 
     const blockSize = this.canvasService.calculateBlockSize();
-    this.canvasSize = this.canvasService.resizeGameCanvas(
-      this.gameCanvas,
-      blockSize
-    );
+    this.canvasSize = this.canvasService.resizeGameCanvas(this.gameCanvas, blockSize);
 
     this.previewCanvases.forEach((canvas) => {
       this.canvasService.resizePreviewCanvas(canvas, blockSize);
@@ -166,7 +182,13 @@ export class TetrisFacadeService {
     this.stateService.setState(state);
     this.blockEffects.reset();
     this.audioService.resetMusicSpeed();
+    this.aiRestartCounterMs = 0;
+    this.aiController.onEpisodeStart();
     this.renderAllPreviews(state);
+
+    if (this.aiController.isActive() || this.aiController.isRecordingDemonstrations()) {
+      this.aiController.onNewPiece(state);
+    }
   }
 
   private gameLoop(deltaMs: number): void {
@@ -179,7 +201,17 @@ export class TetrisFacadeService {
     const state = this.stateService.getState();
 
     if (state.status === 'playing') {
-      this.updatePlaying(state, deltaMs);
+      const didHardDrop = this.aiController.tick(state, deltaMs);
+
+      if (didHardDrop && state.status === 'playing') {
+        this.lockPiece(state);
+      }
+
+      if (state.status === 'playing' && !didHardDrop) {
+        this.updatePlaying(state, deltaMs);
+      }
+    } else if (this.aiController.isActive()) {
+      this.handleAiRestart(deltaMs);
     }
 
     this.renderer.render(this.gameContext, state, this.canvasSize);
@@ -207,7 +239,7 @@ export class TetrisFacadeService {
       piece.matrix,
       state.grid,
       piece.x,
-      piece.y + 1
+      piece.y + 1,
     );
 
     if (canDrop) {
@@ -219,34 +251,44 @@ export class TetrisFacadeService {
   }
 
   private lockPiece(state: TetrisGameState): void {
+    const lockedMatrix = TetrisMatrix.deepCopy(state.activePiece.matrix);
+    const lockedX = state.activePiece.x;
     this.gridService.merge(state.grid, state.activePiece);
     this.audioService.playLand();
-    this.handleLineClear(state);
+    this.aiController.onHumanPieceLocked(lockedMatrix, lockedX);
+    const clearedLines = this.handleLineClear(state);
     this.spawnNextPiece(state);
     this.checkGameOver(state);
+    this.aiController.onPieceLocked(state, clearedLines, state.status === 'gameOver');
+
+    if (
+      state.status === 'playing' &&
+      (this.aiController.isActive() || this.aiController.isRecordingDemonstrations())
+    ) {
+      this.aiController.onNewPiece(state);
+    }
   }
 
-  private handleLineClear(state: TetrisGameState): void {
+  private handleLineClear(state: TetrisGameState): number {
     const result = this.gridService.clearLines(state.grid);
 
     if (result.clearedCount === 0) {
-      return;
+      return 0;
     }
 
     this.audioService.playClear();
     this.scoringService.applyLineClear(state, result.clearedCount);
 
     if (this.canvasSize) {
-      this.blockEffects.createFromClearedCells(
-        result.clearedCells,
-        this.canvasSize.blockSize
-      );
+      this.blockEffects.createFromClearedCells(result.clearedCells, this.canvasSize.blockSize);
     }
 
     if (this.scoringService.shouldSpeedUp(state.totalClearedRows)) {
       this.scoringService.applySpeedUp(state);
       this.audioService.increaseMusicSpeed();
     }
+
+    return result.clearedCount;
   }
 
   private spawnNextPiece(state: TetrisGameState): void {
@@ -262,7 +304,7 @@ export class TetrisFacadeService {
       state.activePiece.matrix,
       state.grid,
       state.activePiece.x,
-      state.activePiece.y
+      state.activePiece.y,
     );
 
     if (hasCollision) {
@@ -270,10 +312,7 @@ export class TetrisFacadeService {
     }
   }
 
-  private handlePlayingKeydown(
-    event: KeyboardEvent,
-    state: TetrisGameState
-  ): void {
+  private handlePlayingKeydown(event: KeyboardEvent, state: TetrisGameState): void {
     this.audioService.startMusic();
 
     switch (event.key) {
@@ -302,7 +341,7 @@ export class TetrisFacadeService {
       piece.matrix,
       state.grid,
       piece.x + dx,
-      piece.y + dy
+      piece.y + dy,
     );
 
     if (!blocked) {
@@ -318,7 +357,7 @@ export class TetrisFacadeService {
       piece.matrix,
       state.grid,
       piece.x,
-      piece.y + 1
+      piece.y + 1,
     );
 
     if (!blocked) {
@@ -333,12 +372,7 @@ export class TetrisFacadeService {
   private attemptRotation(state: TetrisGameState): void {
     const piece = state.activePiece;
     const rotated = TetrisMatrix.rotate(piece.matrix);
-    const blocked = this.collisionService.hasCollision(
-      rotated,
-      state.grid,
-      piece.x,
-      piece.y
-    );
+    const blocked = this.collisionService.hasCollision(rotated, state.grid, piece.x, piece.y);
 
     if (!blocked) {
       piece.matrix = rotated;
@@ -369,18 +403,127 @@ export class TetrisFacadeService {
   private renderAllPreviews(state: TetrisGameState): void {
     state.previewQueue.forEach((matrix, i) => {
       if (this.previewContexts[i] && this.previewCanvases[i]) {
-        this.previewRenderer.render(
-          this.previewContexts[i],
-          this.previewCanvases[i],
-          matrix
-        );
+        this.previewRenderer.render(this.previewContexts[i], this.previewCanvases[i], matrix);
       }
     });
   }
 
   private calculateStartX(matrix: number[][]): number {
-    return Math.floor(
-      TETRIS_GAME_CONFIG.gridWidth / 2 - Math.ceil(matrix[0].length / 2)
-    );
+    return Math.floor(TETRIS_GAME_CONFIG.gridWidth / 2 - Math.ceil(matrix[0].length / 2));
+  }
+
+  public async setAiEnabled(enabled: boolean): Promise<void> {
+    if (!this.aiReady()) {
+      await this.aiController.initialize();
+    }
+
+    if (enabled) {
+      this.aiController.setDemonstrationRecordingEnabled(false);
+    }
+
+    this.aiController.setEnabled(enabled);
+    this.aiRestartCounterMs = 0;
+
+    if (!enabled || !this.stateService.hasState()) {
+      return;
+    }
+
+    this.audioService.startMusic();
+    const state = this.stateService.getState();
+
+    if (state.status === 'gameOver') {
+      this.startNewGame();
+      return;
+    }
+
+    this.aiController.onNewPiece(state);
+  }
+
+  public resetAiTraining(): void {
+    this.aiController.reset();
+
+    if (!this.stateService.hasState()) {
+      return;
+    }
+
+    const state = this.stateService.getState();
+    if (this.aiController.isActive() && state.status === 'playing') {
+      this.aiController.onNewPiece(state);
+    }
+  }
+
+  public async exportTrainingData(): Promise<string> {
+    if (!this.aiReady()) {
+      await this.aiController.initialize();
+    }
+
+    return this.aiController.exportTrainingData();
+  }
+
+  public async importTrainingData(json: string): Promise<void> {
+    if (!this.aiReady()) {
+      await this.aiController.initialize();
+    }
+
+    await this.aiController.importTrainingData(json);
+
+    if (!this.stateService.hasState()) {
+      return;
+    }
+
+    const state = this.stateService.getState();
+    if (
+      state.status === 'playing' &&
+      (this.aiController.isActive() || this.aiController.isRecordingDemonstrations())
+    ) {
+      this.aiController.onNewPiece(state);
+    }
+  }
+
+  private async initializeAi(): Promise<void> {
+    await this.aiController.initialize();
+
+    if (
+      (!this.aiController.isActive() && !this.aiController.isRecordingDemonstrations()) ||
+      !this.stateService.hasState()
+    ) {
+      return;
+    }
+
+    this.audioService.startMusic();
+    const state = this.stateService.getState();
+
+    if (state.status === 'playing') {
+      this.aiController.onNewPiece(state);
+    }
+  }
+
+  public async setDemonstrationRecordingEnabled(enabled: boolean): Promise<void> {
+    if (!this.aiReady()) {
+      await this.aiController.initialize();
+    }
+
+    if (enabled) {
+      this.aiController.setEnabled(false);
+    }
+
+    this.aiController.setDemonstrationRecordingEnabled(enabled);
+
+    if (!enabled || !this.stateService.hasState()) {
+      return;
+    }
+
+    const state = this.stateService.getState();
+    if (state.status === 'playing') {
+      this.aiController.onNewPiece(state);
+    }
+  }
+
+  private handleAiRestart(deltaMs: number): void {
+    this.aiRestartCounterMs += deltaMs;
+
+    if (this.aiRestartCounterMs >= TETRIS_AI_CONFIG.autoRestartDelayMs) {
+      this.startNewGame();
+    }
   }
 }

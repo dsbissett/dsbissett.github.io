@@ -23,6 +23,14 @@
             "browser": "src/main.ts",
             "tsConfig": "tsconfig.app.json",
             "inlineStyleLanguage": "scss",
+            "allowedCommonJsDependencies": [
+              "@tensorflow/tfjs",
+              "@tensorflow/tfjs-core",
+              "@tensorflow/tfjs-layers",
+              "@tensorflow/tfjs-converter",
+              "@tensorflow/tfjs-backend-webgl",
+              "@tensorflow/tfjs-backend-cpu"
+            ],
             "assets": [
               {
                 "glob": "**/*",
