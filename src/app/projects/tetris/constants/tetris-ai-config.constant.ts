@@ -1,6 +1,6 @@
 export const TETRIS_AI_CONFIG = {
   // Network architecture
-  featureCount: 24,
+  featureCount: 26,
   hiddenLayer1: 128,
   hiddenLayer2: 64,
 
@@ -42,8 +42,11 @@ export const TETRIS_AI_CONFIG = {
   rewardGameOverLengthBonusPerPiece: 0.06,
   rewardGameOverLengthBonusCap: 11.5,
   scoreRewardDivisor: 100,
-  holePenaltyWeight: 1.6,
+  holePenaltyWeight: 2.4,
+  coveredCellsPenaltyWeight: 1.4,
   maxHeightPenaltyWeight: 1.25,
   aggregateHeightPenaltyWeight: 0.3,
   bumpinessPenaltyWeight: 0.18,
+  pillarPenaltyWeight: 1.8,
+  placementHeightRewardWeight: 0.6,
 } as const;

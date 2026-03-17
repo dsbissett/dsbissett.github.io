@@ -1,5 +1,82 @@
 <canvas #backgroundCanvas class="background-layer"></canvas>
 <div class="experience-shell">
+  <div class="panel-slot">
+    <aside class="side-panel" [class.side-panel--collapsed]="leftPanelCollapsed()">
+      <button
+        type="button"
+        class="panel-toggle"
+        [attr.aria-expanded]="!leftPanelCollapsed()"
+        aria-controls="left-panel-content"
+        (click)="leftPanelCollapsed.set(!leftPanelCollapsed())"
+      >
+        <span class="panel-toggle__icon">{{ leftPanelCollapsed() ? '\u25B6' : '\u25C0' }}</span>
+        <span class="panel-toggle__label">{{ leftPanelCollapsed() ? 'AI Controls' : '' }}</span>
+      </button>
+      <div id="left-panel-content" class="panel-content" aria-labelledby="ai-panel-title">
+        <p class="ai-kicker">TensorFlow.js Agent</p>
+        <h2 id="ai-panel-title" class="ai-title">Play with AI?</h2>
+        <p class="ai-copy">
+          Training stats and the learned model stay in this browser using
+          <code>localStorage</code>.
+        </p>
+
+        <button
+          type="button"
+          class="ai-toggle"
+          [class.ai-toggle--active]="aiEnabled()"
+          [disabled]="!aiReady()"
+          [attr.aria-pressed]="aiEnabled()"
+          (click)="toggleAi()"
+        >
+          {{ aiToggleLabel() }}
+        </button>
+
+        <p class="ai-status" aria-live="polite">{{ aiStatusText() }}</p>
+
+        <button
+          type="button"
+          class="demo-toggle"
+          [class.demo-toggle--active]="demonstrationRecordingEnabled()"
+          [disabled]="!aiReady()"
+          [attr.aria-pressed]="demonstrationRecordingEnabled()"
+          (click)="toggleDemonstrationRecording()"
+        >
+          {{ demonstrationToggleLabel() }}
+        </button>
+
+        <p class="demo-status" aria-live="polite">{{ demonstrationStatusText() }}</p>
+
+        <input
+          #trainingDataInput
+          class="visually-hidden"
+          type="file"
+          accept="application/json,.json"
+          aria-label="Import training data file"
+          (change)="handleTrainingDataFile($event)"
+        />
+
+        @if (aiReady()) {
+          <div class="training-data-actions">
+            <button type="button" class="utility-button" (click)="exportTrainingData()">
+              Export training data
+            </button>
+            <button type="button" class="utility-button" (click)="triggerTrainingDataImport()">
+              Import training data
+            </button>
+          </div>
+
+          <p class="training-data-status" aria-live="polite">
+            {{ trainingDataStatusText() }}
+          </p>
+
+          <button type="button" class="reset-button" (click)="resetAiTraining()">
+            Reset AI training
+          </button>
+        }
+      </div>
+    </aside>
+  </div>
+
   <div class="game-container">
     <canvas
       #gameCanvas
@@ -16,93 +93,52 @@
     </div>
   </div>
 
-  <aside class="ai-panel" aria-labelledby="ai-panel-title">
-    <p class="ai-kicker">TensorFlow.js Agent</p>
-    <h2 id="ai-panel-title" class="ai-title">Play with AI?</h2>
-    <p class="ai-copy">
-      Training stats and the learned model stay in this browser using
-      <code>localStorage</code>.
-    </p>
-
-    <button
-      type="button"
-      class="ai-toggle"
-      [class.ai-toggle--active]="aiEnabled()"
-      [disabled]="!aiReady()"
-      [attr.aria-pressed]="aiEnabled()"
-      (click)="toggleAi()"
-    >
-      {{ aiToggleLabel() }}
-    </button>
-
-    <p class="ai-status" aria-live="polite">{{ aiStatusText() }}</p>
-
-    <button
-      type="button"
-      class="demo-toggle"
-      [class.demo-toggle--active]="demonstrationRecordingEnabled()"
-      [disabled]="!aiReady()"
-      [attr.aria-pressed]="demonstrationRecordingEnabled()"
-      (click)="toggleDemonstrationRecording()"
-    >
-      {{ demonstrationToggleLabel() }}
-    </button>
-
-    <p class="demo-status" aria-live="polite">{{ demonstrationStatusText() }}</p>
-
-    <input
-      #trainingDataInput
-      class="visually-hidden"
-      type="file"
-      accept="application/json,.json"
-      (change)="handleTrainingDataFile($event)"
-    />
-
-    @if (aiReady()) {
-      <dl class="stats-grid">
-        <div class="stat-card">
-          <dt>Episodes</dt>
-          <dd>{{ aiStats().totalEpisodes }}</dd>
-        </div>
-        <div class="stat-card">
-          <dt>Steps</dt>
-          <dd>{{ aiStats().totalSteps }}</dd>
-        </div>
-        <div class="stat-card">
-          <dt>Best score</dt>
-          <dd>{{ aiStats().bestScore }}</dd>
-        </div>
-        <div class="stat-card">
-          <dt>Avg. score</dt>
-          <dd>{{ averageScoreText() }}</dd>
-        </div>
-        <div class="stat-card stat-card--wide">
-          <dt>Exploration rate</dt>
-          <dd>{{ epsilonText() }}</dd>
-        </div>
-        <div class="stat-card stat-card--wide">
-          <dt>Human demonstrations</dt>
-          <dd>{{ demonstrationSamplesText() }}</dd>
-        </div>
-      </dl>
-
-      <div class="training-data-actions">
-        <button type="button" class="utility-button" (click)="exportTrainingData()">
-          Export training data
-        </button>
-        <button type="button" class="utility-button" (click)="triggerTrainingDataImport()">
-          Import training data
-        </button>
-      </div>
-
-      <p class="training-data-status" aria-live="polite">
-        {{ trainingDataStatusText() }}
-      </p>
-
-      <button type="button" class="reset-button" (click)="resetAiTraining()">
-        Reset AI training
+  <div class="panel-slot">
+    <aside class="side-panel side-panel--right" [class.side-panel--collapsed]="rightPanelCollapsed()">
+      <button
+        type="button"
+        class="panel-toggle panel-toggle--right"
+        [attr.aria-expanded]="!rightPanelCollapsed()"
+        aria-controls="right-panel-content"
+        (click)="rightPanelCollapsed.set(!rightPanelCollapsed())"
+      >
+        <span class="panel-toggle__icon">{{ rightPanelCollapsed() ? '\u25C0' : '\u25B6' }}</span>
+        <span class="panel-toggle__label">{{ rightPanelCollapsed() ? 'Stats' : '' }}</span>
       </button>
-    }
-  </aside>
+      <div id="right-panel-content" class="panel-content" aria-label="Training statistics">
+        @if (aiReady()) {
+          <h2 class="stats-title">Training Stats</h2>
+          <dl class="stats-grid">
+            <div class="stat-card">
+              <dt>Episodes</dt>
+              <dd>{{ aiStats().totalEpisodes }}</dd>
+            </div>
+            <div class="stat-card">
+              <dt>Steps</dt>
+              <dd>{{ aiStats().totalSteps }}</dd>
+            </div>
+            <div class="stat-card">
+              <dt>Best score</dt>
+              <dd>{{ aiStats().bestScore }}</dd>
+            </div>
+            <div class="stat-card">
+              <dt>Avg. score</dt>
+              <dd>{{ averageScoreText() }}</dd>
+            </div>
+            <div class="stat-card stat-card--wide">
+              <dt>Exploration rate</dt>
+              <dd>{{ epsilonText() }}</dd>
+            </div>
+            <div class="stat-card stat-card--wide">
+              <dt>Human demonstrations</dt>
+              <dd>{{ demonstrationSamplesText() }}</dd>
+            </div>
+          </dl>
+        } @else {
+          <p class="stats-loading">Waiting for AI model to load...</p>
+        }
+      </div>
+    </aside>
+  </div>
 </div>
 <canvas #effectsCanvas class="effects-overlay"></canvas>

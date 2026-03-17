@@ -20,12 +20,15 @@ interface Placement {
   /** Board features after simulating this placement */
   features: number[];
   linesCleared: number;
+  /** Row where the piece landed (0 = top, gridHeight-1 = bottom) */
+  placementRow: number;
 }
 
 interface Plan {
   targetMatrix: number[][];
   targetX: number;
   features: number[];
+  placementRow: number;
 }
 
 @Injectable()
@@ -180,6 +183,7 @@ export class TetrisAiControllerService {
       linesCleared,
       gameOver,
       this.episodePieceCount,
+      this.plan.placementRow,
     );
     const nextFeatures = this.agent.extractFeatures(state.grid, 0);
     this.agent.remember(this.plan.features, reward, nextFeatures, gameOver);
@@ -252,6 +256,7 @@ export class TetrisAiControllerService {
       targetMatrix: chosen.matrix,
       targetX: chosen.x,
       features: chosen.features,
+      placementRow: chosen.placementRow,
     };
   }
 
@@ -285,6 +290,7 @@ export class TetrisAiControllerService {
           matrix: matrix.map((r) => [...r]),
           features: this.agent.extractFeatures(simGrid, clearResult.clearedCount),
           linesCleared: clearResult.clearedCount,
+          placementRow: dropY,
         });
       }
 
@@ -299,6 +305,7 @@ export class TetrisAiControllerService {
     linesCleared: number,
     gameOver: boolean,
     episodePieceCount: number,
+    placementRow: number,
   ): number {
     const scoreDelta =
       ((TETRIS_GAME_CONFIG.linePoints[linesCleared] ?? 0) * 2) /
@@ -310,17 +317,25 @@ export class TetrisAiControllerService {
       TETRIS_AI_CONFIG.rewardGameOverLengthBonusCap,
     );
 
+    // Reward pieces placed low, penalize pieces placed high.
+    // placementRow 0 = top (bad), gridHeight-1 = bottom (good).
+    // Normalized to [-0.5, +0.5] so it's centered around zero.
+    const placementHeightReward =
+      TETRIS_AI_CONFIG.placementHeightRewardWeight *
+      (placementRow / (TETRIS_GAME_CONFIG.gridHeight - 1) - 0.5);
+
     if (gameOver) {
       return (
         scoreDelta +
         piecePlacementReward +
+        placementHeightReward +
         gameOverLengthBonus -
         boardPenalty +
         TETRIS_AI_CONFIG.rewardGameOver
       );
     }
 
-    return scoreDelta + piecePlacementReward - boardPenalty;
+    return scoreDelta + piecePlacementReward + placementHeightReward - boardPenalty;
   }
 
   private computeBoardPenalty(features: number[]): number {
@@ -328,12 +343,16 @@ export class TetrisAiControllerService {
     const aggregateHeight = features[20];
     const holes = features[21];
     const bumpiness = features[23];
+    const coveredCells = features[24];
+    const pillars = features[25];
 
     return (
       holes * TETRIS_AI_CONFIG.holePenaltyWeight +
+      coveredCells * TETRIS_AI_CONFIG.coveredCellsPenaltyWeight +
       maxHeight * TETRIS_AI_CONFIG.maxHeightPenaltyWeight +
       aggregateHeight * TETRIS_AI_CONFIG.aggregateHeightPenaltyWeight +
-      bumpiness * TETRIS_AI_CONFIG.bumpinessPenaltyWeight
+      bumpiness * TETRIS_AI_CONFIG.bumpinessPenaltyWeight +
+      pillars * TETRIS_AI_CONFIG.pillarPenaltyWeight
     );
   }
 

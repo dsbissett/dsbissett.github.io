@@ -55,9 +55,10 @@ export class TetrisAiAgentService {
   }
 
   /**
-   * Extracts 24 heuristic features from the board state after a simulated placement.
+   * Extracts 26 heuristic features from the board state after a simulated placement.
    * Features: column heights (10), height diffs (9), max height (1),
-   *           aggregate height (1), holes (1), lines cleared (1), bumpiness (1)
+   *           aggregate height (1), holes (1), lines cleared (1), bumpiness (1),
+   *           covered cells (1), pillars (1)
    */
   public extractFeatures(grid: number[][], linesCleared: number): number[] {
     const heights = this.getColumnHeights(grid);
@@ -65,7 +66,9 @@ export class TetrisAiAgentService {
     const maxHeight = Math.max(...heights);
     const aggregateHeight = heights.reduce((s, h) => s + h, 0);
     const holes = this.countHoles(grid, heights);
+    const coveredCells = this.countCoveredCells(grid, heights);
     const bumpiness = diffs.reduce((s, d) => s + Math.abs(d), 0);
+    const pillars = this.countPillars(grid, heights);
 
     return [
       ...heights.map((h) => h / 20),
@@ -75,6 +78,8 @@ export class TetrisAiAgentService {
       holes / 40,
       linesCleared / 4,
       bumpiness / 100,
+      coveredCells / 60,
+      pillars / 10,
     ];
   }
 
@@ -597,6 +602,55 @@ export class TetrisAiAgentService {
       }
     }
     return holes;
+  }
+
+  /**
+   * Counts filled cells that sit above holes (blockades).
+   * A higher count means holes are more deeply buried and harder to clear.
+   */
+  private countCoveredCells(grid: number[][], heights: number[]): number {
+    const rows = grid.length;
+    let covered = 0;
+    for (let x = 0; x < grid[0].length; x++) {
+      const topY = rows - heights[x];
+      let filledAbove = 0;
+      for (let y = topY; y < rows; y++) {
+        if (grid[y][x] !== 0) {
+          filledAbove++;
+        } else {
+          // This is a hole — all filled cells above it are blockades
+          covered += filledAbove;
+        }
+      }
+    }
+    return covered;
+  }
+
+  /**
+   * Counts the number of pillars (runs of 3+ consecutive empty cells)
+   * within the occupied portion of each column.
+   */
+  private countPillars(grid: number[][], heights: number[]): number {
+    const rows = grid.length;
+    let pillars = 0;
+    for (let x = 0; x < grid[0].length; x++) {
+      const topY = rows - heights[x];
+      let consecutiveEmpty = 0;
+      for (let y = topY; y < rows; y++) {
+        if (grid[y][x] === 0) {
+          consecutiveEmpty++;
+        } else {
+          if (consecutiveEmpty >= 3) {
+            pillars++;
+          }
+          consecutiveEmpty = 0;
+        }
+      }
+      if (consecutiveEmpty >= 3) {
+        pillars++;
+      }
+    }
+    return pillars;
   }
 
   private removeStoredModelArtifacts(): void {

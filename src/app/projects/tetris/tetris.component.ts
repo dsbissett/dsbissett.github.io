@@ -71,6 +71,9 @@ export class TetrisComponent implements AfterViewInit, OnDestroy {
   private readonly facade = inject(TetrisFacadeService);
   private readonly trainingDataStatus = signal('');
 
+  protected readonly leftPanelCollapsed = signal(false);
+  protected readonly rightPanelCollapsed = signal(false);
+
   protected readonly aiReady = this.facade.aiReady;
   protected readonly aiEnabled = this.facade.aiEnabled;
   protected readonly demonstrationRecordingEnabled = this.facade.demonstrationRecordingEnabled;
