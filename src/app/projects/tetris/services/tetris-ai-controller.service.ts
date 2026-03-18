@@ -96,10 +96,32 @@ export class TetrisAiControllerService {
    * Called after a new piece has been spawned.
    * Plans the optimal placement immediately.
    */
+  private static readonly PIECE_NAMES: Record<number, string> = {
+    1: 'I', 2: 'O', 3: 'T', 4: 'L', 5: 'J', 6: 'S', 7: 'Z',
+  };
+
+  private getPieceIdFromMatrix(matrix: number[][]): number {
+    for (const row of matrix) {
+      for (const cell of row) {
+        if (cell !== 0) return cell;
+      }
+    }
+    return 0;
+  }
+
   public onNewPiece(state: TetrisGameState): void {
     if (!this.active && !this.isRecordingDemonstrations()) {
       return;
     }
+
+    // Log preview queue for verification
+    const currentPieceId = this.getPieceIdFromMatrix(state.activePiece.matrix);
+    const previewPieceIds = state.previewQueue.map((m) => this.getPieceIdFromMatrix(m));
+    console.log(
+      `%c🧩 PIECE QUEUE %cActive: ${TetrisAiControllerService.PIECE_NAMES[currentPieceId] ?? '?'} | Preview: [${previewPieceIds.map((id) => TetrisAiControllerService.PIECE_NAMES[id] ?? '?').join(', ')}] (${previewPieceIds.length} pieces)`,
+      'color:#ff9e64;font-weight:bold',
+      'color:#a9b1d6',
+    );
 
     const placements = this.enumeratePlacements(state);
 
@@ -306,6 +328,17 @@ export class TetrisAiControllerService {
       coveredCells: +(f[24] * 120).toFixed(1),
       pillars: +(f[25] * 10).toFixed(1),
     });
+    // Decode and log the preview queue one-hot features (indices 26-46)
+    const previewFeatures = f.slice(26, 47);
+    const decodedPreview: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      const oneHot = previewFeatures.slice(i * 7, (i + 1) * 7);
+      const pieceIdx = oneHot.indexOf(1);
+      decodedPreview.push(pieceIdx >= 0
+        ? (TetrisAiControllerService.PIECE_NAMES[pieceIdx + 1] ?? '?')
+        : 'none');
+    }
+    console.log(`Preview features decoded: [${decodedPreview.join(', ')}] (from feature indices 26-46)`);
     console.groupEnd();
 
     return {
@@ -386,13 +419,21 @@ export class TetrisAiControllerService {
         -(stackHeight - threshold) * TETRIS_AI_CONFIG.placementPenaltyPerRow;
     }
 
-    // --- Denormalized board features for logging ---
-    const holes = +(features[21] * 40).toFixed(1);
-    const coveredCells = +(features[24] * 120).toFixed(1);
-    const maxHeight = +(features[19] * 20).toFixed(1);
-    const aggregateHeight = +(features[20] * 200).toFixed(1);
-    const bumpiness = +(features[23] * 100).toFixed(1);
-    const pillars = +(features[25] * 10).toFixed(1);
+    // --- Board features for logging (both raw and normalized values) ---
+    const holesNorm = features[21];
+    const coveredCellsNorm = features[24];
+    const maxHeightNorm = features[19];
+    const aggregateHeightNorm = features[20];
+    const bumpinessNorm = features[23];
+    const pillarsNorm = features[25];
+
+    // Danger zone penalty component
+    const dangerThreshold = TETRIS_AI_CONFIG.heightDangerZoneRows / TETRIS_GAME_CONFIG.gridHeight;
+    let dangerZonePenalty = 0;
+    if (maxHeightNorm > dangerThreshold) {
+      const excess = (maxHeightNorm - dangerThreshold) / (1 - dangerThreshold);
+      dangerZonePenalty = excess * excess * TETRIS_AI_CONFIG.heightDangerZoneWeight;
+    }
 
     const rewardTotal = scoreDelta + lineClearBonus + piecePlacementReward + placementHeightReward;
 
@@ -411,13 +452,14 @@ export class TetrisAiControllerService {
       placementHeightReward: +placementHeightReward.toFixed(4),
       rewardSubtotal: +rewardTotal.toFixed(4),
     });
-    console.log('Penalty components:', {
-      holes: `${holes} × ${TETRIS_AI_CONFIG.holePenaltyWeight} = ${+(holes * TETRIS_AI_CONFIG.holePenaltyWeight).toFixed(4)}`,
-      coveredCells: `${coveredCells} × ${TETRIS_AI_CONFIG.coveredCellsPenaltyWeight} = ${+(coveredCells * TETRIS_AI_CONFIG.coveredCellsPenaltyWeight).toFixed(4)}`,
-      maxHeight: `${maxHeight} × ${TETRIS_AI_CONFIG.maxHeightPenaltyWeight} = ${+(maxHeight * TETRIS_AI_CONFIG.maxHeightPenaltyWeight).toFixed(4)}`,
-      aggregateHeight: `${aggregateHeight} × ${TETRIS_AI_CONFIG.aggregateHeightPenaltyWeight} = ${+(aggregateHeight * TETRIS_AI_CONFIG.aggregateHeightPenaltyWeight).toFixed(4)}`,
-      bumpiness: `${bumpiness} × ${TETRIS_AI_CONFIG.bumpinessPenaltyWeight} = ${+(bumpiness * TETRIS_AI_CONFIG.bumpinessPenaltyWeight).toFixed(4)}`,
-      pillars: `${pillars} × ${TETRIS_AI_CONFIG.pillarPenaltyWeight} = ${+(pillars * TETRIS_AI_CONFIG.pillarPenaltyWeight).toFixed(4)}`,
+    console.log('Penalty components (normalized × weight = contribution):', {
+      holes: `raw=${+(holesNorm * 40).toFixed(1)} norm=${holesNorm.toFixed(4)} × ${TETRIS_AI_CONFIG.holePenaltyWeight} = ${+(holesNorm * TETRIS_AI_CONFIG.holePenaltyWeight).toFixed(4)}`,
+      coveredCells: `raw=${+(coveredCellsNorm * 120).toFixed(1)} norm=${coveredCellsNorm.toFixed(4)} × ${TETRIS_AI_CONFIG.coveredCellsPenaltyWeight} = ${+(coveredCellsNorm * TETRIS_AI_CONFIG.coveredCellsPenaltyWeight).toFixed(4)}`,
+      maxHeight: `raw=${+(maxHeightNorm * 20).toFixed(1)} norm=${maxHeightNorm.toFixed(4)} × ${TETRIS_AI_CONFIG.maxHeightPenaltyWeight} = ${+(maxHeightNorm * TETRIS_AI_CONFIG.maxHeightPenaltyWeight).toFixed(4)}`,
+      aggregateHeight: `raw=${+(aggregateHeightNorm * 200).toFixed(1)} norm=${aggregateHeightNorm.toFixed(4)} × ${TETRIS_AI_CONFIG.aggregateHeightPenaltyWeight} = ${+(aggregateHeightNorm * TETRIS_AI_CONFIG.aggregateHeightPenaltyWeight).toFixed(4)}`,
+      bumpiness: `raw=${+(bumpinessNorm * 100).toFixed(1)} norm=${bumpinessNorm.toFixed(4)} × ${TETRIS_AI_CONFIG.bumpinessPenaltyWeight} = ${+(bumpinessNorm * TETRIS_AI_CONFIG.bumpinessPenaltyWeight).toFixed(4)}`,
+      pillars: `raw=${+(pillarsNorm * 10).toFixed(1)} norm=${pillarsNorm.toFixed(4)} × ${TETRIS_AI_CONFIG.pillarPenaltyWeight} = ${+(pillarsNorm * TETRIS_AI_CONFIG.pillarPenaltyWeight).toFixed(4)}`,
+      dangerZone: `maxHeight>${TETRIS_AI_CONFIG.heightDangerZoneRows}? ${maxHeightNorm > dangerThreshold ? 'YES' : 'no'} penalty=${+dangerZonePenalty.toFixed(4)}`,
       penaltyTotal: +boardPenalty.toFixed(4),
     });
     console.log('Placement context:', {
@@ -456,14 +498,22 @@ export class TetrisAiControllerService {
     const coveredCells = features[24];
     const pillars = features[25];
 
-    return (
+    let penalty =
       holes * TETRIS_AI_CONFIG.holePenaltyWeight +
       coveredCells * TETRIS_AI_CONFIG.coveredCellsPenaltyWeight +
       maxHeight * TETRIS_AI_CONFIG.maxHeightPenaltyWeight +
       aggregateHeight * TETRIS_AI_CONFIG.aggregateHeightPenaltyWeight +
       bumpiness * TETRIS_AI_CONFIG.bumpinessPenaltyWeight +
-      pillars * TETRIS_AI_CONFIG.pillarPenaltyWeight
-    );
+      pillars * TETRIS_AI_CONFIG.pillarPenaltyWeight;
+
+    // Quadratic danger zone: penalty escalates rapidly when max height exceeds threshold
+    const dangerThreshold = TETRIS_AI_CONFIG.heightDangerZoneRows / TETRIS_GAME_CONFIG.gridHeight;
+    if (maxHeight > dangerThreshold) {
+      const excess = (maxHeight - dangerThreshold) / (1 - dangerThreshold);
+      penalty += excess * excess * TETRIS_AI_CONFIG.heightDangerZoneWeight;
+    }
+
+    return penalty;
   }
 
   private matricesEqual(a: number[][], b: number[][]): boolean {
