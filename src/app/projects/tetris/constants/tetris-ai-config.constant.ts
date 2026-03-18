@@ -15,7 +15,7 @@ export const TETRIS_AI_CONFIG = {
   // Exploration (epsilon-greedy)
   epsilonStart: 1.0,
   epsilonMin: 0.05,
-  epsilonDecay: 0.999,
+  epsilonDecay: 0.995,
 
   // localStorage keys (TF.js uses localstorage://<key>)
   modelStorageKey: 'tetris-ai-model',
@@ -38,22 +38,35 @@ export const TETRIS_AI_CONFIG = {
 
   // Rewards
   rewardGameOver: -2,
-  rewardPiecePlaced: 0.05,
+  rewardPiecePlaced: 0.15,
   rewardGameOverLengthBonusPerPiece: 0.06,
   rewardGameOverLengthBonusCap: 3.0,
   scoreRewardDivisor: 20,
-  lineClearRewards: [0, 1.0, 3.0, 6.0, 12.0] as readonly number[],
-  holePenaltyWeight: 8.0,
-  coveredCellsPenaltyWeight: 4.0,
-  maxHeightPenaltyWeight: 5.0,
-  aggregateHeightPenaltyWeight: 1.5,
-  bumpinessPenaltyWeight: 1.0,
-  pillarPenaltyWeight: 3.0,
+  lineClearRewards: [0, 3.0, 8.0, 15.0, 30.0] as readonly number[],
+  holePenaltyWeight: 12.0,
+  coveredCellsPenaltyWeight: 6.0,
+  maxHeightPenaltyWeight: 2.5,
+  aggregateHeightPenaltyWeight: 1.2,
+  bumpinessPenaltyWeight: 2.0,
+  pillarPenaltyWeight: 2.5,
   placementHeightThreshold: 6,
-  placementRewardPerRow: 0.1,
+  placementRewardPerRow: 0.15,
   placementPenaltyPerRow: 1.2,
   heightDangerZoneRows: 6,
-  heightDangerZoneWeight: 15.0,
+  heightDangerZoneWeight: 5.0,
   rewardClipMin: -10,
-  rewardClipMax: 5,
+  rewardClipMax: 10,
+
+  // Derived penalties (computed from column heights, not NN features)
+  heightVariancePenaltyWeight: 1.5,
+  wellPenaltyWeight: 1.2,
+  wellDepthThreshold: 3,
+
+  // Column spread bonus: reward for distributing blocks across more columns
+  columnSpreadBonusWeight: 0.3,
+
+  // Bottom-row completeness bonus: reward for filling the bottom N rows
+  bottomRowCompletenessBonusRows: 3,
+  bottomRowCompletenessBonusWeight: 1.5,
+  bottomRowCompletenessThreshold: 0.7, // only reward when row is >= 70% full
 } as const;

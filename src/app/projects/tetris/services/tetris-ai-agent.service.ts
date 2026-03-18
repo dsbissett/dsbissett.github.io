@@ -782,7 +782,7 @@ export class TetrisAiAgentService {
   }
 
   /**
-   * Counts the number of pillars (runs of 3+ consecutive empty cells)
+   * Counts the number of pillars (runs of 2+ consecutive empty cells)
    * within the occupied portion of each column.
    */
   private countPillars(grid: number[][], heights: number[]): number {
@@ -795,13 +795,13 @@ export class TetrisAiAgentService {
         if (grid[y][x] === 0) {
           consecutiveEmpty++;
         } else {
-          if (consecutiveEmpty >= 3) {
+          if (consecutiveEmpty >= 2) {
             pillars++;
           }
           consecutiveEmpty = 0;
         }
       }
-      if (consecutiveEmpty >= 3) {
+      if (consecutiveEmpty >= 2) {
         pillars++;
       }
     }

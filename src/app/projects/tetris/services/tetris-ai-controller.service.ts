@@ -23,6 +23,8 @@ interface Placement {
   linesCleared: number;
   /** Row where the piece landed (0 = top, gridHeight-1 = bottom) */
   placementRow: number;
+  /** Average fill ratio of the bottom N rows (0..1) */
+  bottomRowCompleteness: number;
 }
 
 interface Plan {
@@ -30,6 +32,7 @@ interface Plan {
   targetX: number;
   features: number[];
   placementRow: number;
+  bottomRowCompleteness: number;
 }
 
 @Injectable()
@@ -45,6 +48,9 @@ export class TetrisAiControllerService {
   private aiCounterMs = 0;
   private episodePieceCount = 0;
   private episodePeakScore = 0;
+  private episodeTotalLinesCleared = 0;
+  private episodeTotalPenalty = 0;
+  private episodeTotalReward = 0;
   private pendingDemonstrationPlacements: Placement[] = [];
 
   readonly isEnabled = signal(false);
@@ -80,6 +86,9 @@ export class TetrisAiControllerService {
     this.aiCounterMs = 0;
     this.episodePieceCount = 0;
     this.episodePeakScore = 0;
+    this.episodeTotalLinesCleared = 0;
+    this.episodeTotalPenalty = 0;
+    this.episodeTotalReward = 0;
     this.persistEnabledPreference();
   }
 
@@ -142,6 +151,9 @@ export class TetrisAiControllerService {
     this.aiCounterMs = 0;
     this.episodePieceCount = 0;
     this.episodePeakScore = 0;
+    this.episodeTotalLinesCleared = 0;
+    this.episodeTotalPenalty = 0;
+    this.episodeTotalReward = 0;
     this.pendingDemonstrationPlacements = [];
   }
 
@@ -211,19 +223,37 @@ export class TetrisAiControllerService {
     }
 
     this.episodePieceCount++;
+    this.episodeTotalLinesCleared += linesCleared;
     const reward = this.computeReward(
       this.plan.features,
       linesCleared,
       gameOver,
       this.episodePieceCount,
       this.plan.placementRow,
+      this.plan.bottomRowCompleteness,
     );
+    this.episodeTotalReward += reward;
+    this.episodeTotalPenalty += this.computeBoardPenalty(this.plan.features);
     const nextFeatures = this.agent.extractFeatures(state.grid, 0, state.previewQueue);
     this.agent.remember(this.plan.features, reward, nextFeatures, gameOver);
     this.agent.trainStep();
 
     if (gameOver) {
       this.chart.markGameEnd();
+      const avgPenalty = this.episodePieceCount > 0 ? this.episodeTotalPenalty / this.episodePieceCount : 0;
+      const avgReward = this.episodePieceCount > 0 ? this.episodeTotalReward / this.episodePieceCount : 0;
+      console.log(
+        `%c📈 EPISODE DIAGNOSTICS`,
+        'font-size:11px;font-weight:bold;color:#e0af68;background:#1a1a2e;padding:3px 6px;border-radius:4px',
+      );
+      console.log(
+        `%c  Lines cleared: ${this.episodeTotalLinesCleared} | Pieces: ${this.episodePieceCount} | Lines/piece: ${(this.episodeTotalLinesCleared / this.episodePieceCount).toFixed(3)}`,
+        'color:#c0caf5',
+      );
+      console.log(
+        `%c  Avg reward: ${avgReward.toFixed(4)} | Avg penalty: ${avgPenalty.toFixed(4)} | Total reward: ${this.episodeTotalReward.toFixed(4)}`,
+        avgReward >= 0 ? 'color:#9ece6a' : 'color:#f7768e',
+      );
       this.agent.onEpisodeEnd(this.episodePeakScore);
     }
 
@@ -252,6 +282,9 @@ export class TetrisAiControllerService {
     this.plan = null;
     this.episodePieceCount = 0;
     this.episodePeakScore = 0;
+    this.episodeTotalLinesCleared = 0;
+    this.episodeTotalPenalty = 0;
+    this.episodeTotalReward = 0;
     this.pendingDemonstrationPlacements = [];
     this.stats.set({ ...this.agent.getStats() });
   }
@@ -346,6 +379,7 @@ export class TetrisAiControllerService {
       targetX: chosen.x,
       features: chosen.features,
       placementRow: chosen.placementRow,
+      bottomRowCompleteness: chosen.bottomRowCompleteness,
     };
   }
 
@@ -373,6 +407,17 @@ export class TetrisAiControllerService {
         this.gridService.merge(simGrid, tempPiece);
         const clearResult = this.gridService.clearLines(simGrid);
 
+        // Compute bottom-row completeness (average fill ratio of bottom N rows)
+        const bottomRows = TETRIS_AI_CONFIG.bottomRowCompletenessBonusRows;
+        const gridWidth = TETRIS_GAME_CONFIG.gridWidth;
+        let bottomFilled = 0;
+        for (let r = simGrid.length - bottomRows; r < simGrid.length; r++) {
+          for (let c = 0; c < gridWidth; c++) {
+            if (simGrid[r][c] !== 0) bottomFilled++;
+          }
+        }
+        const bottomRowCompleteness = bottomFilled / (bottomRows * gridWidth);
+
         results.push({
           rotation,
           x,
@@ -380,6 +425,7 @@ export class TetrisAiControllerService {
           features: this.agent.extractFeatures(simGrid, clearResult.clearedCount, state.previewQueue),
           linesCleared: clearResult.clearedCount,
           placementRow: dropY,
+          bottomRowCompleteness,
         });
       }
 
@@ -395,6 +441,7 @@ export class TetrisAiControllerService {
     gameOver: boolean,
     episodePieceCount: number,
     placementRow: number,
+    bottomRowCompleteness: number,
   ): number {
     const scoreDelta =
       ((TETRIS_GAME_CONFIG.linePoints[linesCleared] ?? 0) * 2) /
@@ -435,21 +482,34 @@ export class TetrisAiControllerService {
       dangerZonePenalty = excess * excess * TETRIS_AI_CONFIG.heightDangerZoneWeight;
     }
 
-    const rewardTotal = scoreDelta + lineClearBonus + piecePlacementReward + placementHeightReward;
+    // Column spread bonus: reward for distributing blocks across more columns
+    const derived = this.computeDerivedMetrics(features);
+    const columnSpreadBonus = derived.columnSpreadRatio * TETRIS_AI_CONFIG.columnSpreadBonusWeight;
+
+    // Bottom-row completeness bonus: reward filling the bottom rows
+    const rowThreshold = TETRIS_AI_CONFIG.bottomRowCompletenessThreshold;
+    const bottomRowBonus = bottomRowCompleteness >= rowThreshold
+      ? (bottomRowCompleteness - rowThreshold) / (1 - rowThreshold) * TETRIS_AI_CONFIG.bottomRowCompletenessBonusWeight
+      : 0;
+
+    const rewardTotal = scoreDelta + lineClearBonus + piecePlacementReward + placementHeightReward + columnSpreadBonus + bottomRowBonus;
 
     this.chart.pushEntry(rewardTotal, boardPenalty);
 
+    const netReward = rewardTotal - boardPenalty;
     console.groupCollapsed(
-      `%c💰 REWARD %c#${episodePieceCount} %cR=${(rewardTotal - boardPenalty).toFixed(3)}${linesCleared > 0 ? ` ✨${linesCleared}L` : ''}`,
+      `%c💰 REWARD %c#${episodePieceCount} %cR=${netReward.toFixed(3)}${linesCleared > 0 ? ` ✨${linesCleared}L` : ''}`,
       'color:#9ece6a;font-weight:bold',
       'color:#565f89',
-      (rewardTotal - boardPenalty) >= 0 ? 'color:#9ece6a' : 'color:#f7768e',
+      netReward >= 0 ? 'color:#9ece6a' : 'color:#f7768e',
     );
     console.log('Reward components:', {
       scoreReward: +scoreDelta.toFixed(4),
       lineClearBonus: +lineClearBonus.toFixed(4),
       piecePlacementReward: +piecePlacementReward.toFixed(4),
       placementHeightReward: +placementHeightReward.toFixed(4),
+      columnSpreadBonus: +columnSpreadBonus.toFixed(4),
+      bottomRowBonus: `completeness=${(bottomRowCompleteness * 100).toFixed(0)}% bonus=${+bottomRowBonus.toFixed(4)}`,
       rewardSubtotal: +rewardTotal.toFixed(4),
     });
     console.log('Penalty components (normalized × weight = contribution):', {
@@ -459,8 +519,16 @@ export class TetrisAiControllerService {
       aggregateHeight: `raw=${+(aggregateHeightNorm * 200).toFixed(1)} norm=${aggregateHeightNorm.toFixed(4)} × ${TETRIS_AI_CONFIG.aggregateHeightPenaltyWeight} = ${+(aggregateHeightNorm * TETRIS_AI_CONFIG.aggregateHeightPenaltyWeight).toFixed(4)}`,
       bumpiness: `raw=${+(bumpinessNorm * 100).toFixed(1)} norm=${bumpinessNorm.toFixed(4)} × ${TETRIS_AI_CONFIG.bumpinessPenaltyWeight} = ${+(bumpinessNorm * TETRIS_AI_CONFIG.bumpinessPenaltyWeight).toFixed(4)}`,
       pillars: `raw=${+(pillarsNorm * 10).toFixed(1)} norm=${pillarsNorm.toFixed(4)} × ${TETRIS_AI_CONFIG.pillarPenaltyWeight} = ${+(pillarsNorm * TETRIS_AI_CONFIG.pillarPenaltyWeight).toFixed(4)}`,
+      heightVariance: `var=${derived.heightVariance.toFixed(2)} norm=${derived.normalizedVariance.toFixed(4)} × ${TETRIS_AI_CONFIG.heightVariancePenaltyWeight} = ${+(derived.normalizedVariance * TETRIS_AI_CONFIG.heightVariancePenaltyWeight).toFixed(4)}`,
+      wells: `count=${derived.wellCount} norm=${derived.wells.toFixed(4)} × ${TETRIS_AI_CONFIG.wellPenaltyWeight} = ${+(derived.wells * TETRIS_AI_CONFIG.wellPenaltyWeight).toFixed(4)}`,
       dangerZone: `maxHeight>${TETRIS_AI_CONFIG.heightDangerZoneRows}? ${maxHeightNorm > dangerThreshold ? 'YES' : 'no'} penalty=${+dangerZonePenalty.toFixed(4)}`,
       penaltyTotal: +boardPenalty.toFixed(4),
+    });
+    console.log('Board distribution:', {
+      columnsUsed: `${derived.columnsUsed}/10`,
+      spreadRatio: +derived.columnSpreadRatio.toFixed(2),
+      heightVariance: +derived.heightVariance.toFixed(2),
+      columnHeights: features.slice(0, 10).map((v) => +(v * 20).toFixed(1)),
     });
     console.log('Placement context:', {
       placementRow,
@@ -469,7 +537,7 @@ export class TetrisAiControllerService {
       linesCleared,
       heightRewardSign: stackHeight <= threshold ? 'REWARD (below threshold)' : 'PENALTY (above threshold)',
     });
-    console.log(`Net reward: ${rewardTotal.toFixed(4)} - ${boardPenalty.toFixed(4)} = ${(rewardTotal - boardPenalty).toFixed(4)}`);
+    console.log(`Net reward: ${rewardTotal.toFixed(4)} - ${boardPenalty.toFixed(4)} = ${netReward.toFixed(4)}`);
     console.groupEnd();
 
     if (gameOver) {
@@ -513,7 +581,62 @@ export class TetrisAiControllerService {
       penalty += excess * excess * TETRIS_AI_CONFIG.heightDangerZoneWeight;
     }
 
+    // Height variance penalty: penalizes uneven column height distribution (towers/islands)
+    const colHeights = features.slice(0, 10).map((h) => h * 20); // denormalize
+    const meanHeight = colHeights.reduce((s, h) => s + h, 0) / colHeights.length;
+    const variance = colHeights.reduce((s, h) => s + (h - meanHeight) ** 2, 0) / colHeights.length;
+    const normalizedVariance = Math.min(1, variance / 25); // normalize: variance of 25 (stddev ~5) → 1.0
+    penalty += normalizedVariance * TETRIS_AI_CONFIG.heightVariancePenaltyWeight;
+
+    // Well penalty: penalizes columns significantly shorter than both neighbors
+    const wellDepth = TETRIS_AI_CONFIG.wellDepthThreshold;
+    let wells = 0;
+    for (let i = 0; i < colHeights.length; i++) {
+      const left = i > 0 ? colHeights[i - 1] : colHeights[i]; // treat edges as same height
+      const right = i < colHeights.length - 1 ? colHeights[i + 1] : colHeights[i];
+      const depth = Math.min(left, right) - colHeights[i];
+      if (depth >= wellDepth) {
+        wells += depth / 20; // normalized by grid height
+      }
+    }
+    penalty += wells * TETRIS_AI_CONFIG.wellPenaltyWeight;
+
     return penalty;
+  }
+
+  /**
+   * Computes derived board metrics from column height features for logging/rewards.
+   */
+  private computeDerivedMetrics(features: number[]): {
+    heightVariance: number;
+    normalizedVariance: number;
+    wells: number;
+    wellCount: number;
+    columnsUsed: number;
+    columnSpreadRatio: number;
+  } {
+    const colHeights = features.slice(0, 10).map((h) => h * 20);
+    const meanHeight = colHeights.reduce((s, h) => s + h, 0) / colHeights.length;
+    const variance = colHeights.reduce((s, h) => s + (h - meanHeight) ** 2, 0) / colHeights.length;
+    const normalizedVariance = Math.min(1, variance / 25);
+
+    const wellDepth = TETRIS_AI_CONFIG.wellDepthThreshold;
+    let wells = 0;
+    let wellCount = 0;
+    for (let i = 0; i < colHeights.length; i++) {
+      const left = i > 0 ? colHeights[i - 1] : colHeights[i];
+      const right = i < colHeights.length - 1 ? colHeights[i + 1] : colHeights[i];
+      const depth = Math.min(left, right) - colHeights[i];
+      if (depth >= wellDepth) {
+        wells += depth / 20;
+        wellCount++;
+      }
+    }
+
+    const columnsUsed = colHeights.filter((h) => h > 0).length;
+    const columnSpreadRatio = columnsUsed / colHeights.length;
+
+    return { heightVariance: variance, normalizedVariance, wells, wellCount, columnsUsed, columnSpreadRatio };
   }
 
   private matricesEqual(a: number[][], b: number[][]): boolean {
