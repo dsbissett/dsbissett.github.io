@@ -58,19 +58,20 @@ export class TetrisAiAgentService {
       'font-size:12px;font-weight:bold;color:#7dcfff;background:#1a1a2e;padding:4px 8px;border-radius:4px',
     );
     console.log(`%c  TF.js backend: ${tf.getBackend()} | Model: ${loaded ? 'loaded from storage' : 'freshly built'}`, 'color:#a9b1d6');
-    console.log(`%c  Network: ${TETRIS_AI_CONFIG.featureCount} → ${TETRIS_AI_CONFIG.hiddenLayer1} → ${TETRIS_AI_CONFIG.hiddenLayer2} → 1`, 'color:#a9b1d6');
+    console.log(`%c  Network: ${TETRIS_AI_CONFIG.featureCount} (26 board + 21 preview) → ${TETRIS_AI_CONFIG.hiddenLayer1} → ${TETRIS_AI_CONFIG.hiddenLayer2} → 1`, 'color:#a9b1d6');
     console.log(`%c  Episodes: ${this.stats.totalEpisodes} | Steps: ${this.stats.totalSteps} | Epsilon: ${this.stats.epsilon.toFixed(4)} | Best score: ${this.stats.bestScore}`, 'color:#a9b1d6');
     console.log(`%c  Replay buffer: ${this.replayBuffer.length}/${TETRIS_AI_CONFIG.replayBufferSize} | Demonstrations: ${this.demonstrations.length}/${TETRIS_AI_CONFIG.demonstrationBufferSize}`, 'color:#a9b1d6');
     console.log(`%c  Gamma: ${TETRIS_AI_CONFIG.gamma} | LR: ${TETRIS_AI_CONFIG.learningRate} | Batch: ${TETRIS_AI_CONFIG.batchSize} | Train every: ${TETRIS_AI_CONFIG.trainEveryNSteps} steps | Target sync: every ${TETRIS_AI_CONFIG.targetNetworkUpdateFrequency} steps`, 'color:#565f89');
   }
 
   /**
-   * Extracts 26 heuristic features from the board state after a simulated placement.
+   * Extracts 47 features from the board state after a simulated placement.
    * Features: column heights (10), height diffs (9), max height (1),
    *           aggregate height (1), holes (1), lines cleared (1), bumpiness (1),
-   *           covered cells (1), pillars (1)
+   *           covered cells (1), pillars (1),
+   *           preview piece 1 one-hot (7), preview piece 2 one-hot (7), preview piece 3 one-hot (7)
    */
-  public extractFeatures(grid: number[][], linesCleared: number): number[] {
+  public extractFeatures(grid: number[][], linesCleared: number, previewQueue: number[][][]): number[] {
     const heights = this.getColumnHeights(grid);
     const diffs = this.getHeightDiffs(heights);
     const maxHeight = Math.max(...heights);
@@ -90,6 +91,7 @@ export class TetrisAiAgentService {
       clamp(bumpiness / 100),
       clamp(coveredCells / 120),
       clamp(pillars / 10),
+      ...this.encodePreviewQueue(previewQueue),
     ];
   }
 
@@ -362,7 +364,16 @@ export class TetrisAiAgentService {
   private async tryLoadModel(): Promise<boolean> {
     try {
       const key = `localstorage://${TETRIS_AI_CONFIG.modelStorageKey}`;
-      this.model = (await tf.loadLayersModel(key)) as tf.Sequential;
+      const loaded = (await tf.loadLayersModel(key)) as tf.Sequential;
+
+      // Reject stale models whose input shape doesn't match the current config
+      const inputShape = loaded.inputLayers[0]?.batchInputShape;
+      if (!inputShape || inputShape[inputShape.length - 1] !== TETRIS_AI_CONFIG.featureCount) {
+        loaded.dispose();
+        return false;
+      }
+
+      this.model = loaded;
       this.model.compile({
         optimizer: tf.train.adam(TETRIS_AI_CONFIG.learningRate),
         loss: 'meanSquaredError',
@@ -680,6 +691,37 @@ export class TetrisAiAgentService {
     const clonedWeights = this.model.getWeights().map((weight) => weight.clone());
     this.targetModel.setWeights(clonedWeights);
     clonedWeights.forEach((weight) => weight.dispose());
+  }
+
+  /**
+   * Encodes the preview queue as 3 × 7 one-hot vectors (21 values).
+   * Piece identity is determined by the non-zero cell value in the matrix:
+   * 1=I, 2=O, 3=T, 4=L, 5=J, 6=S, 7=Z
+   */
+  private encodePreviewQueue(previewQueue: number[][][]): number[] {
+    const encoded: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      const oneHot = [0, 0, 0, 0, 0, 0, 0];
+      const matrix = previewQueue[i];
+      if (matrix) {
+        const pieceId = this.getPieceId(matrix);
+        if (pieceId >= 1 && pieceId <= 7) {
+          oneHot[pieceId - 1] = 1;
+        }
+      }
+      encoded.push(...oneHot);
+    }
+    return encoded;
+  }
+
+  /** Returns the non-zero cell value from a piece matrix (1–7). */
+  private getPieceId(matrix: number[][]): number {
+    for (const row of matrix) {
+      for (const cell of row) {
+        if (cell !== 0) return cell;
+      }
+    }
+    return 0;
   }
 
   private getColumnHeights(grid: number[][]): number[] {

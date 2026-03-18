@@ -1,6 +1,6 @@
 export const TETRIS_AI_CONFIG = {
   // Network architecture
-  featureCount: 26,
+  featureCount: 47, // 26 board + 21 preview (3 pieces × 7 one-hot)
   hiddenLayer1: 128,
   hiddenLayer2: 64,
 
@@ -38,19 +38,20 @@ export const TETRIS_AI_CONFIG = {
 
   // Rewards
   rewardGameOver: -2,
-  rewardPiecePlaced: 0.5,
+  rewardPiecePlaced: 0.05,
   rewardGameOverLengthBonusPerPiece: 0.06,
   rewardGameOverLengthBonusCap: 3.0,
   scoreRewardDivisor: 20,
-  holePenaltyWeight: 1.5,
-  coveredCellsPenaltyWeight: 0.8,
-  maxHeightPenaltyWeight: 0.4,
-  aggregateHeightPenaltyWeight: 0.15,
-  bumpinessPenaltyWeight: 0.15,
-  pillarPenaltyWeight: 1.0,
-  placementHeightThreshold: 6,
-  placementRewardPerRow: 0.15,
-  placementPenaltyPerRow: 0.3,
+  lineClearRewards: [0, 1.0, 3.0, 6.0, 12.0] as readonly number[],
+  holePenaltyWeight: 2.0,
+  coveredCellsPenaltyWeight: 1.0,
+  maxHeightPenaltyWeight: 1.5,
+  aggregateHeightPenaltyWeight: 0.4,
+  bumpinessPenaltyWeight: 0.5,
+  pillarPenaltyWeight: 1.5,
+  placementHeightThreshold: 4,
+  placementRewardPerRow: 0.05,
+  placementPenaltyPerRow: 0.4,
   rewardClipMin: -5,
   rewardClipMax: 5,
 } as const;

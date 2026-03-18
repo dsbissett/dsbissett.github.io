@@ -196,7 +196,7 @@ export class TetrisAiControllerService {
       this.episodePieceCount,
       this.plan.placementRow,
     );
-    const nextFeatures = this.agent.extractFeatures(state.grid, 0);
+    const nextFeatures = this.agent.extractFeatures(state.grid, 0, state.previewQueue);
     this.agent.remember(this.plan.features, reward, nextFeatures, gameOver);
     this.agent.trainStep();
 
@@ -344,7 +344,7 @@ export class TetrisAiControllerService {
           rotation,
           x,
           matrix: matrix.map((r) => [...r]),
-          features: this.agent.extractFeatures(simGrid, clearResult.clearedCount),
+          features: this.agent.extractFeatures(simGrid, clearResult.clearedCount, state.previewQueue),
           linesCleared: clearResult.clearedCount,
           placementRow: dropY,
         });
@@ -366,6 +366,7 @@ export class TetrisAiControllerService {
     const scoreDelta =
       ((TETRIS_GAME_CONFIG.linePoints[linesCleared] ?? 0) * 2) /
       TETRIS_AI_CONFIG.scoreRewardDivisor;
+    const lineClearBonus = TETRIS_AI_CONFIG.lineClearRewards[linesCleared] ?? 0;
     const boardPenalty = this.computeBoardPenalty(features);
     const piecePlacementReward = TETRIS_AI_CONFIG.rewardPiecePlaced;
     const gameOverLengthBonus = Math.min(
@@ -393,18 +394,19 @@ export class TetrisAiControllerService {
     const bumpiness = +(features[23] * 100).toFixed(1);
     const pillars = +(features[25] * 10).toFixed(1);
 
-    const rewardTotal = scoreDelta + piecePlacementReward + placementHeightReward;
+    const rewardTotal = scoreDelta + lineClearBonus + piecePlacementReward + placementHeightReward;
 
     this.chart.pushEntry(rewardTotal, boardPenalty);
 
     console.groupCollapsed(
-      `%c💰 REWARD %c#${episodePieceCount} %cR=${(rewardTotal - boardPenalty).toFixed(3)}`,
+      `%c💰 REWARD %c#${episodePieceCount} %cR=${(rewardTotal - boardPenalty).toFixed(3)}${linesCleared > 0 ? ` ✨${linesCleared}L` : ''}`,
       'color:#9ece6a;font-weight:bold',
       'color:#565f89',
       (rewardTotal - boardPenalty) >= 0 ? 'color:#9ece6a' : 'color:#f7768e',
     );
     console.log('Reward components:', {
       scoreReward: +scoreDelta.toFixed(4),
+      lineClearBonus: +lineClearBonus.toFixed(4),
       piecePlacementReward: +piecePlacementReward.toFixed(4),
       placementHeightReward: +placementHeightReward.toFixed(4),
       rewardSubtotal: +rewardTotal.toFixed(4),
