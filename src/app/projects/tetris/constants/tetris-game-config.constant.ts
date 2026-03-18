@@ -36,4 +36,6 @@ export const TETRIS_GAME_CONFIG: TetrisGameConfig = {
   blockEffectMaxSpeedX: 3,
   blockEffectMinSpeedY: -22,
   blockEffectMaxSpeedY: -4,
+  stackHeightThreshold: 8,
+  stackHeightPenaltyPerRow: 1000,
 };

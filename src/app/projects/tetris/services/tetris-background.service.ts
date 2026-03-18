@@ -17,7 +17,7 @@ interface FloatingPiece {
 }
 
 const PIECE_NAMES: TetrisPieceName[] = ['I', 'O', 'T', 'L', 'J', 'S', 'Z'];
-const PIECE_COUNT = 18;
+const PIECE_COUNT = 40;
 const BASE_HUE_SPEED = 8;
 
 @Injectable()

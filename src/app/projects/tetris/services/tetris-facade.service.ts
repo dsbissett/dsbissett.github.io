@@ -45,6 +45,13 @@ export class TetrisFacadeService {
   private canvasSize: TetrisCanvasSize | null = null;
   private aiRestartCounterMs = 0;
 
+  public initializeCharts(
+    rewardCanvas: HTMLCanvasElement,
+    penaltyCanvas: HTMLCanvasElement,
+  ): void {
+    this.aiController.initializeCharts(rewardCanvas, penaltyCanvas);
+  }
+
   public readonly aiEnabled = this.aiController.isEnabled;
   public readonly aiReady = this.aiController.isReady;
   public readonly demonstrationRecordingEnabled = this.aiController.isRecordingDemonstrations;
@@ -76,6 +83,7 @@ export class TetrisFacadeService {
     this.stateService.clear();
     this.backgroundService.destroy();
     this.blockEffects.destroy();
+    this.aiController.destroyCharts();
     this.inputService.reset();
     this.gameContext = null;
     this.gameCanvas = null;
@@ -216,6 +224,7 @@ export class TetrisFacadeService {
 
     this.renderer.render(this.gameContext, state, this.canvasSize);
     this.blockEffects.updateAndDraw();
+    this.aiController.renderCharts();
 
     if (state.status === 'gameOver') {
       this.renderer.renderGameOver(this.gameContext, this.canvasSize);

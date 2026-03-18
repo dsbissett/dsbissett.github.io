@@ -134,6 +134,10 @@
               <dd>{{ demonstrationSamplesText() }}</dd>
             </div>
           </dl>
+          <div class="chart-stack">
+            <canvas #rewardChartCanvas class="ai-chart"></canvas>
+            <canvas #penaltyChartCanvas class="ai-chart"></canvas>
+          </div>
         } @else {
           <p class="stats-loading">Waiting for AI model to load...</p>
         }

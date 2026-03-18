@@ -7,6 +7,7 @@ import { TetrisMatrix } from '../classes/tetris-matrix.class';
 import { TetrisGameState } from '../interfaces/tetris-game-state.interface';
 import { TetrisAiStats } from '../interfaces/tetris-ai-stats.interface';
 import { TetrisAiAgentService } from './tetris-ai-agent.service';
+import { TetrisAiChartService } from './tetris-ai-chart.service';
 import { TetrisCollisionService } from './tetris-collision.service';
 import { TetrisGridService } from './tetris-grid.service';
 
@@ -34,6 +35,7 @@ interface Plan {
 @Injectable()
 export class TetrisAiControllerService {
   private readonly agent = inject(TetrisAiAgentService);
+  private readonly chart = inject(TetrisAiChartService);
   private readonly collision = inject(TetrisCollisionService);
   private readonly gridService = inject(TetrisGridService);
 
@@ -42,6 +44,7 @@ export class TetrisAiControllerService {
   private plan: Plan | null = null;
   private aiCounterMs = 0;
   private episodePieceCount = 0;
+  private episodePeakScore = 0;
   private pendingDemonstrationPlacements: Placement[] = [];
 
   readonly isEnabled = signal(false);
@@ -76,6 +79,7 @@ export class TetrisAiControllerService {
     this.plan = null;
     this.aiCounterMs = 0;
     this.episodePieceCount = 0;
+    this.episodePeakScore = 0;
     this.persistEnabledPreference();
   }
 
@@ -115,6 +119,7 @@ export class TetrisAiControllerService {
     this.plan = null;
     this.aiCounterMs = 0;
     this.episodePieceCount = 0;
+    this.episodePeakScore = 0;
     this.pendingDemonstrationPlacements = [];
   }
 
@@ -173,7 +178,13 @@ export class TetrisAiControllerService {
    * Computes reward, stores experience, triggers training.
    */
   public onPieceLocked(state: TetrisGameState, linesCleared: number, gameOver: boolean): void {
+    this.episodePeakScore = Math.max(this.episodePeakScore, state.score);
+
     if (!this.active || !this.plan) {
+      if (gameOver) {
+        this.agent.onEpisodeEnd(this.episodePeakScore);
+        this.stats.set({ ...this.agent.getStats() });
+      }
       return;
     }
 
@@ -190,17 +201,35 @@ export class TetrisAiControllerService {
     this.agent.trainStep();
 
     if (gameOver) {
-      this.agent.onEpisodeEnd(state.score);
+      this.chart.markGameEnd();
+      this.agent.onEpisodeEnd(this.episodePeakScore);
     }
 
     this.stats.set({ ...this.agent.getStats() });
     this.plan = null;
   }
 
+  public initializeCharts(
+    rewardCanvas: HTMLCanvasElement,
+    penaltyCanvas: HTMLCanvasElement,
+  ): void {
+    this.chart.initialize(rewardCanvas, penaltyCanvas);
+  }
+
+  public renderCharts(): void {
+    this.chart.render();
+  }
+
+  public destroyCharts(): void {
+    this.chart.destroy();
+  }
+
   public reset(): void {
     this.agent.reset();
+    this.chart.reset();
     this.plan = null;
     this.episodePieceCount = 0;
+    this.episodePeakScore = 0;
     this.pendingDemonstrationPlacements = [];
     this.stats.set({ ...this.agent.getStats() });
   }
@@ -249,8 +278,35 @@ export class TetrisAiControllerService {
   private computePlan(placements: Placement[]): Plan | null {
     if (placements.length === 0) return null;
 
-    const idx = this.agent.selectPlacement(placements.map((p) => p.features));
+    const featuresBatch = placements.map((p) => p.features);
+    const values = this.agent.evaluatePlacements(featuresBatch);
+    const idx = this.agent.selectPlacement(featuresBatch);
     const chosen = placements[idx];
+    const wasExploration = idx !== values.indexOf(Math.max(...values));
+
+    console.groupCollapsed(
+      `%c🎯 PLACEMENT DECISION %c(piece #${this.episodePieceCount + 1})`,
+      'color:#7aa2f7;font-weight:bold',
+      'color:#565f89',
+    );
+    console.log(`Candidates evaluated: ${placements.length}`);
+    console.log(`Chosen: rotation=${chosen.rotation}, x=${chosen.x}, row=${chosen.placementRow}`);
+    console.log(`Q-value: ${values[idx].toFixed(4)} (${wasExploration ? '🎲 EXPLORATION' : '🧠 EXPLOITATION'})`);
+    console.log(`Q-value range: [${Math.min(...values).toFixed(4)}, ${Math.max(...values).toFixed(4)}]`);
+    console.log(`Epsilon: ${this.agent.getStats().epsilon.toFixed(4)}`);
+
+    const f = chosen.features;
+    console.log('Board features after placement:', {
+      columnHeights: f.slice(0, 10).map((v) => +(v * 20).toFixed(1)),
+      maxHeight: +(f[19] * 20).toFixed(1),
+      aggregateHeight: +(f[20] * 200).toFixed(1),
+      holes: +(f[21] * 40).toFixed(1),
+      linesCleared: +(f[22] * 4).toFixed(1),
+      bumpiness: +(f[23] * 100).toFixed(1),
+      coveredCells: +(f[24] * 120).toFixed(1),
+      pillars: +(f[25] * 10).toFixed(1),
+    });
+    console.groupEnd();
 
     return {
       targetMatrix: chosen.matrix,
@@ -317,25 +373,77 @@ export class TetrisAiControllerService {
       TETRIS_AI_CONFIG.rewardGameOverLengthBonusCap,
     );
 
-    // Reward pieces placed low, penalize pieces placed high.
-    // placementRow 0 = top (bad), gridHeight-1 = bottom (good).
-    // Normalized to [-0.5, +0.5] so it's centered around zero.
-    const placementHeightReward =
-      TETRIS_AI_CONFIG.placementHeightRewardWeight *
-      (placementRow / (TETRIS_GAME_CONFIG.gridHeight - 1) - 0.5);
-
-    if (gameOver) {
-      return (
-        scoreDelta +
-        piecePlacementReward +
-        placementHeightReward +
-        gameOverLengthBonus -
-        boardPenalty +
-        TETRIS_AI_CONFIG.rewardGameOver
-      );
+    const gridHeight = TETRIS_GAME_CONFIG.gridHeight;
+    const threshold = TETRIS_AI_CONFIG.placementHeightThreshold;
+    const stackHeight = gridHeight - placementRow;
+    let placementHeightReward: number;
+    if (stackHeight <= threshold) {
+      placementHeightReward =
+        (threshold - stackHeight) * TETRIS_AI_CONFIG.placementRewardPerRow;
+    } else {
+      placementHeightReward =
+        -(stackHeight - threshold) * TETRIS_AI_CONFIG.placementPenaltyPerRow;
     }
 
-    return scoreDelta + piecePlacementReward + placementHeightReward - boardPenalty;
+    // --- Denormalized board features for logging ---
+    const holes = +(features[21] * 40).toFixed(1);
+    const coveredCells = +(features[24] * 120).toFixed(1);
+    const maxHeight = +(features[19] * 20).toFixed(1);
+    const aggregateHeight = +(features[20] * 200).toFixed(1);
+    const bumpiness = +(features[23] * 100).toFixed(1);
+    const pillars = +(features[25] * 10).toFixed(1);
+
+    const rewardTotal = scoreDelta + piecePlacementReward + placementHeightReward;
+
+    this.chart.pushEntry(rewardTotal, boardPenalty);
+
+    console.groupCollapsed(
+      `%c💰 REWARD %c#${episodePieceCount} %cR=${(rewardTotal - boardPenalty).toFixed(3)}`,
+      'color:#9ece6a;font-weight:bold',
+      'color:#565f89',
+      (rewardTotal - boardPenalty) >= 0 ? 'color:#9ece6a' : 'color:#f7768e',
+    );
+    console.log('Reward components:', {
+      scoreReward: +scoreDelta.toFixed(4),
+      piecePlacementReward: +piecePlacementReward.toFixed(4),
+      placementHeightReward: +placementHeightReward.toFixed(4),
+      rewardSubtotal: +rewardTotal.toFixed(4),
+    });
+    console.log('Penalty components:', {
+      holes: `${holes} × ${TETRIS_AI_CONFIG.holePenaltyWeight} = ${+(holes * TETRIS_AI_CONFIG.holePenaltyWeight).toFixed(4)}`,
+      coveredCells: `${coveredCells} × ${TETRIS_AI_CONFIG.coveredCellsPenaltyWeight} = ${+(coveredCells * TETRIS_AI_CONFIG.coveredCellsPenaltyWeight).toFixed(4)}`,
+      maxHeight: `${maxHeight} × ${TETRIS_AI_CONFIG.maxHeightPenaltyWeight} = ${+(maxHeight * TETRIS_AI_CONFIG.maxHeightPenaltyWeight).toFixed(4)}`,
+      aggregateHeight: `${aggregateHeight} × ${TETRIS_AI_CONFIG.aggregateHeightPenaltyWeight} = ${+(aggregateHeight * TETRIS_AI_CONFIG.aggregateHeightPenaltyWeight).toFixed(4)}`,
+      bumpiness: `${bumpiness} × ${TETRIS_AI_CONFIG.bumpinessPenaltyWeight} = ${+(bumpiness * TETRIS_AI_CONFIG.bumpinessPenaltyWeight).toFixed(4)}`,
+      pillars: `${pillars} × ${TETRIS_AI_CONFIG.pillarPenaltyWeight} = ${+(pillars * TETRIS_AI_CONFIG.pillarPenaltyWeight).toFixed(4)}`,
+      penaltyTotal: +boardPenalty.toFixed(4),
+    });
+    console.log('Placement context:', {
+      placementRow,
+      stackHeight,
+      threshold,
+      linesCleared,
+      heightRewardSign: stackHeight <= threshold ? 'REWARD (below threshold)' : 'PENALTY (above threshold)',
+    });
+    console.log(`Net reward: ${rewardTotal.toFixed(4)} - ${boardPenalty.toFixed(4)} = ${(rewardTotal - boardPenalty).toFixed(4)}`);
+    console.groupEnd();
+
+    if (gameOver) {
+      const rawTotal = rewardTotal + gameOverLengthBonus - boardPenalty + TETRIS_AI_CONFIG.rewardGameOver;
+      const total = Math.max(TETRIS_AI_CONFIG.rewardClipMin, Math.min(TETRIS_AI_CONFIG.rewardClipMax, rawTotal));
+      console.log(
+        `%c☠️ GAME OVER — Episode #${this.agent.getStats().totalEpisodes + 1}`,
+        'font-size:14px;font-weight:bold;color:#f7768e;background:#1a1a2e;padding:4px 8px;border-radius:4px',
+      );
+      console.log(
+        `%c  Pieces placed: ${episodePieceCount} | Peak score: ${this.episodePeakScore} | Game-over penalty: ${TETRIS_AI_CONFIG.rewardGameOver} | Length bonus: ${+gameOverLengthBonus.toFixed(4)} | Raw: ${+rawTotal.toFixed(4)} | Clipped: ${+total.toFixed(4)}`,
+        'color:#bb9af7',
+      );
+      return total;
+    }
+
+    const rawNet = rewardTotal - boardPenalty;
+    return Math.max(TETRIS_AI_CONFIG.rewardClipMin, Math.min(TETRIS_AI_CONFIG.rewardClipMax, rawNet));
   }
 
   private computeBoardPenalty(features: number[]): number {

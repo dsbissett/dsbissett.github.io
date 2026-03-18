@@ -3,6 +3,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  effect,
   ElementRef,
   OnDestroy,
   inject,
@@ -11,6 +12,7 @@ import {
 } from '@angular/core';
 import { TetrisAnimationFrameService } from './services/tetris-animation-frame.service';
 import { TetrisAiAgentService } from './services/tetris-ai-agent.service';
+import { TetrisAiChartService } from './services/tetris-ai-chart.service';
 import { TetrisAiControllerService } from './services/tetris-ai-controller.service';
 import { TetrisAudioService } from './services/tetris-audio.service';
 import { TetrisBackgroundService } from './services/tetris-background.service';
@@ -32,6 +34,7 @@ import { TetrisStateService } from './services/tetris-state.service';
   providers: [
     TetrisAnimationFrameService,
     TetrisAiAgentService,
+    TetrisAiChartService,
     TetrisAiControllerService,
     TetrisAudioService,
     TetrisBackgroundService,
@@ -66,10 +69,24 @@ export class TetrisComponent implements AfterViewInit, OnDestroy {
     viewChild.required<ElementRef<HTMLCanvasElement>>('effectsCanvas');
   private readonly backgroundCanvasElement =
     viewChild.required<ElementRef<HTMLCanvasElement>>('backgroundCanvas');
+  private readonly rewardChartCanvasElement =
+    viewChild<ElementRef<HTMLCanvasElement>>('rewardChartCanvas');
+  private readonly penaltyChartCanvasElement =
+    viewChild<ElementRef<HTMLCanvasElement>>('penaltyChartCanvas');
   private readonly trainingDataInputElement =
     viewChild.required<ElementRef<HTMLInputElement>>('trainingDataInput');
   private readonly facade = inject(TetrisFacadeService);
   private readonly trainingDataStatus = signal('');
+  private chartsInitialized = false;
+
+  private readonly chartInitEffect = effect(() => {
+    const rewardRef = this.rewardChartCanvasElement();
+    const penaltyRef = this.penaltyChartCanvasElement();
+    if (rewardRef && penaltyRef && !this.chartsInitialized) {
+      this.chartsInitialized = true;
+      this.facade.initializeCharts(rewardRef.nativeElement, penaltyRef.nativeElement);
+    }
+  });
 
   protected readonly leftPanelCollapsed = signal(false);
   protected readonly rightPanelCollapsed = signal(false);

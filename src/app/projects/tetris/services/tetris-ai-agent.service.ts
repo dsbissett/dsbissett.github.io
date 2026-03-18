@@ -52,6 +52,16 @@ export class TetrisAiAgentService {
     if (!loaded) {
       this.buildModels();
     }
+
+    console.log(
+      `%c🤖 AI AGENT INITIALIZED`,
+      'font-size:12px;font-weight:bold;color:#7dcfff;background:#1a1a2e;padding:4px 8px;border-radius:4px',
+    );
+    console.log(`%c  TF.js backend: ${tf.getBackend()} | Model: ${loaded ? 'loaded from storage' : 'freshly built'}`, 'color:#a9b1d6');
+    console.log(`%c  Network: ${TETRIS_AI_CONFIG.featureCount} → ${TETRIS_AI_CONFIG.hiddenLayer1} → ${TETRIS_AI_CONFIG.hiddenLayer2} → 1`, 'color:#a9b1d6');
+    console.log(`%c  Episodes: ${this.stats.totalEpisodes} | Steps: ${this.stats.totalSteps} | Epsilon: ${this.stats.epsilon.toFixed(4)} | Best score: ${this.stats.bestScore}`, 'color:#a9b1d6');
+    console.log(`%c  Replay buffer: ${this.replayBuffer.length}/${TETRIS_AI_CONFIG.replayBufferSize} | Demonstrations: ${this.demonstrations.length}/${TETRIS_AI_CONFIG.demonstrationBufferSize}`, 'color:#a9b1d6');
+    console.log(`%c  Gamma: ${TETRIS_AI_CONFIG.gamma} | LR: ${TETRIS_AI_CONFIG.learningRate} | Batch: ${TETRIS_AI_CONFIG.batchSize} | Train every: ${TETRIS_AI_CONFIG.trainEveryNSteps} steps | Target sync: every ${TETRIS_AI_CONFIG.targetNetworkUpdateFrequency} steps`, 'color:#565f89');
   }
 
   /**
@@ -69,17 +79,17 @@ export class TetrisAiAgentService {
     const coveredCells = this.countCoveredCells(grid, heights);
     const bumpiness = diffs.reduce((s, d) => s + Math.abs(d), 0);
     const pillars = this.countPillars(grid, heights);
-
+    const clamp = (v: number): number => Math.max(0, Math.min(1, v));
     return [
-      ...heights.map((h) => h / 20),
-      ...diffs.map((d) => d / 20),
-      maxHeight / 20,
-      aggregateHeight / 200,
-      holes / 40,
-      linesCleared / 4,
-      bumpiness / 100,
-      coveredCells / 60,
-      pillars / 10,
+      ...heights.map((h) => clamp(h / 20)),
+      ...diffs.map((d) => (d + 20) / 40), // shift to [0,1] range for diffs (-20..+20)
+      clamp(maxHeight / 20),
+      clamp(aggregateHeight / 200),
+      clamp(holes / 40),
+      clamp(linesCleared / 4),
+      clamp(bumpiness / 100),
+      clamp(coveredCells / 120),
+      clamp(pillars / 10),
     ];
   }
 
@@ -95,7 +105,8 @@ export class TetrisAiAgentService {
   /** Epsilon-greedy selection over candidate placements. Returns the selected index. */
   public selectPlacement(featuresBatch: number[][]): number {
     if (Math.random() < this.stats.epsilon) {
-      return Math.floor(Math.random() * featuresBatch.length);
+      const idx = Math.floor(Math.random() * featuresBatch.length);
+      return idx;
     }
     const values = this.evaluatePlacements(featuresBatch);
     return values.indexOf(Math.max(...values));
@@ -108,6 +119,15 @@ export class TetrisAiAgentService {
     this.replayBuffer.push({ features, reward, nextFeatures, done });
     this.stepCount++;
     this.stats.totalSteps++;
+
+    console.log(
+      `%c📦 REPLAY BUFFER %csize=${this.replayBuffer.length}/${TETRIS_AI_CONFIG.replayBufferSize} %cstep=${this.stepCount} %creward=${reward >= 0 ? '+' : ''}${reward.toFixed(4)} done=${done}`,
+      'color:#7dcfff;font-weight:bold',
+      'color:#565f89',
+      'color:#565f89',
+      reward >= 0 ? 'color:#9ece6a' : 'color:#f7768e',
+    );
+
     this.persistStats();
     this.persistReplayBuffer();
   }
@@ -154,7 +174,8 @@ export class TetrisAiAgentService {
 
   public onEpisodeEnd(score: number): void {
     this.stats.totalEpisodes++;
-    if (score > this.stats.bestScore) {
+    const isNewBest = score > this.stats.bestScore;
+    if (isNewBest) {
       this.stats.bestScore = score;
     }
     this.stats.recentScores.push(score);
@@ -163,6 +184,29 @@ export class TetrisAiAgentService {
     }
     this.stats.averageScore =
       this.stats.recentScores.reduce((s, x) => s + x, 0) / this.stats.recentScores.length;
+
+    const recentScores = this.stats.recentScores;
+    const scoreTrend = recentScores.length >= 4
+      ? (recentScores.slice(-2).reduce((s, x) => s + x, 0) / 2) -
+        (recentScores.slice(-4, -2).reduce((s, x) => s + x, 0) / 2)
+      : 0;
+
+    console.log(
+      `%c📊 EPISODE #${this.stats.totalEpisodes} SUMMARY`,
+      'font-size:12px;font-weight:bold;color:#7aa2f7;background:#1a1a2e;padding:4px 8px;border-radius:4px',
+    );
+    console.log(
+      `%c  Score: ${score}${isNewBest ? ' 🏆 NEW BEST!' : ''} | Avg(${recentScores.length}): ${this.stats.averageScore.toFixed(1)} | Best: ${this.stats.bestScore} | Trend: ${scoreTrend >= 0 ? '📈+' : '📉'}${scoreTrend.toFixed(1)}`,
+      'color:#c0caf5',
+    );
+    console.log(
+      `%c  Total steps: ${this.stats.totalSteps} | Epsilon: ${this.stats.epsilon.toFixed(4)} | Buffer: ${this.replayBuffer.length}/${TETRIS_AI_CONFIG.replayBufferSize} | Demonstrations: ${this.demonstrations.length}`,
+      'color:#a9b1d6',
+    );
+    console.log(
+      `%c  Recent scores: [${recentScores.join(', ')}]`,
+      'color:#565f89',
+    );
 
     this.persistStats();
     this.persistModel();
@@ -526,15 +570,67 @@ export class TetrisAiAgentService {
       e.done ? e.reward : e.reward + TETRIS_AI_CONFIG.gamma * nextValues[i],
     );
 
+    // Compute current predictions for loss tracking
+    const currentPredictions: number[] = tf.tidy(() => {
+      const input = tf.tensor2d(batch.map((e) => e.features));
+      const pred = Array.from((this.model.predict(input) as tf.Tensor).dataSync());
+      input.dispose();
+      return pred;
+    });
+
     const xs = tf.tensor2d(batch.map((e) => e.features));
     const ys = tf.tensor2d(targets, [targets.length, 1]);
 
-    await this.model.fit(xs, ys, { epochs: 1, verbose: 0 });
+    const result = await this.model.fit(xs, ys, { epochs: 1, verbose: 0 });
+    const loss = result.history['loss']?.[0] as number | undefined;
+
+    // Compute TD errors for diagnosing learning
+    const tdErrors = targets.map((t, i) => t - currentPredictions[i]);
+    const meanAbsTdError = tdErrors.reduce((s, e) => s + Math.abs(e), 0) / tdErrors.length;
+    const maxAbsTdError = Math.max(...tdErrors.map(Math.abs));
+
+    const batchRewards = batch.map((e) => e.reward);
+    const doneCount = batch.filter((e) => e.done).length;
+
+    console.groupCollapsed(
+      `%c🧠 TRAINING STEP %c#${this.stepCount} %closs=${loss?.toFixed(6) ?? '?'}`,
+      'color:#bb9af7;font-weight:bold',
+      'color:#565f89',
+      loss !== undefined && loss < 0.1 ? 'color:#9ece6a' : 'color:#e0af68',
+    );
+    console.log('Batch stats:', {
+      batchSize: batch.length,
+      doneExperiences: doneCount,
+      rewardRange: `[${Math.min(...batchRewards).toFixed(4)}, ${Math.max(...batchRewards).toFixed(4)}]`,
+      meanReward: +(batchRewards.reduce((s, r) => s + r, 0) / batchRewards.length).toFixed(4),
+    });
+    console.log('TD error:', {
+      meanAbsolute: +meanAbsTdError.toFixed(6),
+      maxAbsolute: +maxAbsTdError.toFixed(6),
+    });
+    console.log('Q-value predictions:', {
+      currentRange: `[${Math.min(...currentPredictions).toFixed(4)}, ${Math.max(...currentPredictions).toFixed(4)}]`,
+      targetRange: `[${Math.min(...targets).toFixed(4)}, ${Math.max(...targets).toFixed(4)}]`,
+      nextValueRange: `[${Math.min(...nextValues).toFixed(4)}, ${Math.max(...nextValues).toFixed(4)}]`,
+    });
+    console.log('Hyperparameters:', {
+      gamma: TETRIS_AI_CONFIG.gamma,
+      learningRate: TETRIS_AI_CONFIG.learningRate,
+      epsilon: +this.stats.epsilon.toFixed(6),
+      trainEveryNSteps: TETRIS_AI_CONFIG.trainEveryNSteps,
+    });
+    console.log(`TF.js tensors in memory: ${tf.memory().numTensors}`);
+    console.groupEnd();
 
     xs.dispose();
     ys.dispose();
 
     if (this.stepCount % TETRIS_AI_CONFIG.targetNetworkUpdateFrequency === 0) {
+      console.log(
+        `%c🔄 TARGET NETWORK SYNC %cat step ${this.stepCount}`,
+        'color:#ff9e64;font-weight:bold',
+        'color:#565f89',
+      );
       this.syncTargetNetwork();
     }
 
@@ -550,11 +646,28 @@ export class TetrisAiAgentService {
       [batch.length, 1],
     );
 
-    await this.model.fit(xs, ys, {
+    const result = await this.model.fit(xs, ys, {
       epochs: TETRIS_AI_CONFIG.demonstrationEpochs,
       verbose: 0,
       shuffle: true,
     });
+
+    const loss = result.history['loss']?.[result.history['loss'].length - 1] as number | undefined;
+    const positiveCount = batch.filter((e) => e.target > 0).length;
+
+    console.groupCollapsed(
+      `%c👨‍🏫 DEMONSTRATION TRAINING %closs=${loss?.toFixed(6) ?? '?'}`,
+      'color:#e0af68;font-weight:bold',
+      loss !== undefined && loss < 0.1 ? 'color:#9ece6a' : 'color:#e0af68',
+    );
+    console.log('Batch:', {
+      size: batch.length,
+      positiveExamples: positiveCount,
+      negativeExamples: batch.length - positiveCount,
+      epochs: TETRIS_AI_CONFIG.demonstrationEpochs,
+      totalDemonstrations: this.demonstrations.length,
+    });
+    console.groupEnd();
 
     xs.dispose();
     ys.dispose();

@@ -5,6 +5,16 @@ import { TetrisGameState } from '../interfaces/tetris-game-state.interface';
 
 @Injectable()
 export class TetrisScoringService {
+  public applyHeightPenalty(state: TetrisGameState, stackHeight: number): void {
+    const excess = stackHeight - TETRIS_GAME_CONFIG.stackHeightThreshold;
+    if (excess <= 0) {
+      return;
+    }
+    const penalty = excess * TETRIS_GAME_CONFIG.stackHeightPenaltyPerRow;
+    console.log(`Applying height penalty: ${penalty} points for stack height of ${stackHeight}`);
+    state.score = Math.max(0, state.score - penalty);
+  }
+
   public applyLineClear(state: TetrisGameState, clearedCount: number): void {
     state.score += this.calculatePoints(clearedCount);
     state.totalClearedRows += clearedCount;
@@ -19,6 +29,7 @@ export class TetrisScoringService {
 
   public applySpeedUp(state: TetrisGameState): void {
     state.dropIntervalMs /= TETRIS_GAME_CONFIG.speedUpDivisor;
+    console.log(`Speeding up! New drop interval: ${state.dropIntervalMs} ms`);
   }
 
   private calculatePoints(clearedCount: number): number {

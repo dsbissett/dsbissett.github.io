@@ -42,6 +42,15 @@ export class TetrisGridService {
     return { clearedCount, clearedCells };
   }
 
+  public getStackHeight(grid: number[][]): number {
+    for (let y = 0; y < grid.length; y++) {
+      if (grid[y].some((cell) => cell !== 0)) {
+        return grid.length - y;
+      }
+    }
+    return 0;
+  }
+
   public isTopRowOccupied(grid: number[][]): boolean {
     return grid[0].some((cell) => cell !== 0);
   }

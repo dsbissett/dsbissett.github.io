@@ -15,7 +15,7 @@ export const TETRIS_AI_CONFIG = {
   // Exploration (epsilon-greedy)
   epsilonStart: 1.0,
   epsilonMin: 0.05,
-  epsilonDecay: 0.9995,
+  epsilonDecay: 0.995,
 
   // localStorage keys (TF.js uses localstorage://<key>)
   modelStorageKey: 'tetris-ai-model',
@@ -37,16 +37,20 @@ export const TETRIS_AI_CONFIG = {
   humanRejectedTarget: -0.35,
 
   // Rewards
-  rewardGameOver: -12,
-  rewardPiecePlaced: 0.35,
+  rewardGameOver: -2,
+  rewardPiecePlaced: 0.5,
   rewardGameOverLengthBonusPerPiece: 0.06,
-  rewardGameOverLengthBonusCap: 11.5,
-  scoreRewardDivisor: 100,
-  holePenaltyWeight: 2.4,
-  coveredCellsPenaltyWeight: 1.4,
-  maxHeightPenaltyWeight: 1.25,
-  aggregateHeightPenaltyWeight: 0.3,
-  bumpinessPenaltyWeight: 0.18,
-  pillarPenaltyWeight: 1.8,
-  placementHeightRewardWeight: 0.6,
+  rewardGameOverLengthBonusCap: 3.0,
+  scoreRewardDivisor: 20,
+  holePenaltyWeight: 1.5,
+  coveredCellsPenaltyWeight: 0.8,
+  maxHeightPenaltyWeight: 0.4,
+  aggregateHeightPenaltyWeight: 0.15,
+  bumpinessPenaltyWeight: 0.15,
+  pillarPenaltyWeight: 1.0,
+  placementHeightThreshold: 6,
+  placementRewardPerRow: 0.15,
+  placementPenaltyPerRow: 0.3,
+  rewardClipMin: -5,
+  rewardClipMax: 5,
 } as const;

@@ -34,4 +34,6 @@ export interface TetrisGameConfig {
   blockEffectMaxSpeedX: number;
   blockEffectMinSpeedY: number;
   blockEffectMaxSpeedY: number;
+  stackHeightThreshold: number;
+  stackHeightPenaltyPerRow: number;
 }
