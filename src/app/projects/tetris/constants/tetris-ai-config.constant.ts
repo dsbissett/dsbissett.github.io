@@ -15,7 +15,7 @@ export const TETRIS_AI_CONFIG = {
   // Exploration (epsilon-greedy)
   epsilonStart: 1.0,
   epsilonMin: 0.05,
-  epsilonDecay: 0.995,
+  epsilonDecay: 0.999,
 
   // localStorage keys (TF.js uses localstorage://<key>)
   modelStorageKey: 'tetris-ai-model',
