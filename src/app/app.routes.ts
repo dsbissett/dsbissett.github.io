@@ -77,6 +77,14 @@ export const routes: Routes = [
         (m) => m.TetrisComponent
       ),
   },
+  {
+    path: 'pink-tetris',
+    title: 'Pink Tetris',
+    loadComponent: () =>
+      import('./projects/pink-tetris/tetris.component').then(
+        (m) => m.PinkTetrisComponent
+      ),
+  },
   ...projectDefinitions
     .filter(
       (project) =>

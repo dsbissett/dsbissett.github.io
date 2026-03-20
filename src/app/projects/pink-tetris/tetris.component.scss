@@ -1,0 +1,159 @@
+:host {
+  --text-primary: #fff0f6;
+  --text-secondary: rgba(255, 220, 235, 0.78);
+  --accent: #ff69b4;
+  --accent-strong: #ff85c8;
+  --panel-border: rgba(255, 150, 200, 0.3);
+  --panel-glow: rgba(255, 105, 180, 0.2);
+  display: flex;
+  margin: 0;
+  height: 100vh;
+  justify-content: center;
+  align-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at top left, rgba(255, 105, 180, 0.25), transparent 40%),
+    radial-gradient(circle at bottom right, rgba(219, 112, 219, 0.2), transparent 35%),
+    linear-gradient(135deg, #2d0a1e 0%, #1a0612 48%, #120410 100%);
+  position: relative;
+  overflow: hidden;
+  color: var(--text-primary);
+}
+
+.background-layer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 0;
+}
+
+.experience-shell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 600px;
+}
+
+.game-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  padding: 22px;
+  border: 1px solid var(--panel-border);
+  border-radius: 28px;
+  background: linear-gradient(180deg, rgba(45, 10, 30, 0.92), rgba(25, 5, 18, 0.85));
+  box-shadow:
+    0 22px 64px rgba(0, 0, 0, 0.46),
+    0 0 40px var(--panel-glow),
+    0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+  backdrop-filter: blur(12px);
+  flex-shrink: 0;
+}
+
+.game-title {
+  margin: 0 0 14px;
+  font-size: clamp(1.4rem, 4vw, 2rem);
+  font-family: 'Press Start 2P', monospace;
+  background: linear-gradient(135deg, #ff69b4, #ff85c8, #ffb6d9, #ff69b4);
+  background-size: 300% 300%;
+  animation: shimmer 3s ease infinite;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-align: center;
+  filter: drop-shadow(0 2px 8px rgba(255, 105, 180, 0.5));
+}
+
+@keyframes shimmer {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+.game-canvas {
+  border: 2px solid rgba(255, 150, 200, 0.45);
+  border-radius: 16px;
+  box-shadow:
+    0 0 15px rgba(255, 105, 180, 0.25),
+    0 0 48px rgba(219, 112, 219, 0.15),
+    inset 0 0 20px rgba(0, 0, 0, 0.3);
+  max-width: 100%;
+  height: auto;
+}
+
+.preview-container {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  margin-top: 18px;
+  gap: 12px;
+}
+
+.preview {
+  flex: 1;
+  max-width: 88px;
+  height: auto;
+  border: 1px solid rgba(255, 150, 200, 0.28);
+  border-radius: 12px;
+  background: rgba(30, 5, 20, 0.7);
+  box-shadow: 0 0 12px rgba(255, 105, 180, 0.12);
+}
+
+.effects-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 10;
+}
+
+@media (max-width: 600px) {
+  :host {
+    height: 100vh;
+    height: 100dvh;
+    padding: 8px;
+    touch-action: none;
+    overscroll-behavior: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  .experience-shell {
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    margin: auto;
+  }
+
+  .game-container {
+    padding: 10px;
+    border-radius: 20px;
+  }
+
+  .game-title {
+    margin: 0 0 8px;
+    font-size: clamp(1.2rem, 5vw, 1.6rem);
+  }
+
+  .game-canvas {
+    border-radius: 10px;
+  }
+
+  .preview-container {
+    margin-top: 10px;
+    gap: 8px;
+  }
+
+  .preview {
+    max-width: 72px;
+    border-radius: 8px;
+  }
+}

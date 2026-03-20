@@ -1,90 +1,132 @@
 import { Injectable } from '@angular/core';
 
-const MAX_VISIBLE_GAMES = 3;
+/** Number of data points visible at once. */
+const CHART_WINDOW_SIZE = 50;
+/** Fixed interval (ms) between chart ticks — the chart's own clock. */
+const TICK_INTERVAL_MS = 120;
+/** Window size for the rolling average. */
+const ROLLING_AVG_WINDOW = 20;
 const PADDING = 28;
 const GRID_COLOR = 'rgba(255,255,255,.08)';
 const REWARD_COLOR = '#9ece6a';
-const PENALTY_COLOR = '#f7768e';
+const TREND_COLOR = '#7aa2f7';
 
 @Injectable()
 export class TetrisAiChartService {
   private rewards: number[] = [];
-  private penalties: number[] = [];
-  /** Indices marking the end of each completed game (exclusive). */
-  private gameBoundaries: number[] = [];
-  /** Fixed window size (in data points) once 3 games have completed. */
-  private windowSize = 0;
+  private trend: number[] = [];
+
+  /** Queued reward values from gameplay — consumed one per tick. */
+  private pendingRewards: number[] = [];
+
+  /** Last plotted values (repeated as flat line when no data is queued). */
+  private lastReward = 0;
+  private lastTrend = 0;
+
+  /** All raw rewards received so far, used to compute rolling average. */
+  private allRewards: number[] = [];
+
+  private lastTickTime = 0;
+  private started = false;
 
   private rewardCtx: CanvasRenderingContext2D | null = null;
-  private penaltyCtx: CanvasRenderingContext2D | null = null;
+  private trendCtx: CanvasRenderingContext2D | null = null;
 
   public initialize(
     rewardCanvas: HTMLCanvasElement,
-    penaltyCanvas: HTMLCanvasElement,
+    trendCanvas: HTMLCanvasElement,
   ): void {
     this.rewardCtx = this.setupCanvas(rewardCanvas);
-    this.penaltyCtx = this.setupCanvas(penaltyCanvas);
+    this.trendCtx = this.setupCanvas(trendCanvas);
   }
 
-  public pushEntry(reward: number, penalty: number): void {
-    this.rewards.push(reward);
-    this.penalties.push(penalty);
-  }
+  /** Queue a data point from gameplay. Consumed by the chart's own clock. */
+  public pushEntry(reward: number, _penalty: number): void {
+    this.pendingRewards.push(reward);
 
-  /** Mark the current game as complete and recalculate the rolling window. */
-  public markGameEnd(): void {
-    this.gameBoundaries.push(this.rewards.length);
-
-    if (this.gameBoundaries.length >= MAX_VISIBLE_GAMES) {
-      const len = this.gameBoundaries.length;
-      // Window spans the last MAX_VISIBLE_GAMES completed games.
-      this.windowSize =
-        this.gameBoundaries[len - 1] - this.gameBoundaries[len - MAX_VISIBLE_GAMES];
-    }
-
-    // Trim data that can never be visible again (keep 3 boundaries).
-    while (this.gameBoundaries.length > MAX_VISIBLE_GAMES) {
-      const trimTo = this.gameBoundaries[0];
-      this.rewards = this.rewards.slice(trimTo);
-      this.penalties = this.penalties.slice(trimTo);
-      this.gameBoundaries = this.gameBoundaries.slice(1).map((b) => b - trimTo);
+    if (!this.started) {
+      this.started = true;
+      this.lastTickTime = performance.now();
     }
   }
+
+  /** No-op — chart scrolls on its own clock. */
+  public markGameEnd(): void {}
 
   public render(): void {
-    const rewardVisible = this.getVisibleSlice(this.rewards);
-    const penaltyVisible = this.getVisibleSlice(this.penalties);
-    if (this.rewardCtx) {
-      this.renderChart(this.rewardCtx, rewardVisible, REWARD_COLOR, 'Reward');
+    if (this.started) {
+      this.advanceTicks();
     }
-    if (this.penaltyCtx) {
-      this.renderChart(this.penaltyCtx, penaltyVisible, PENALTY_COLOR, 'Penalty');
+
+    const rewardVisible = this.getVisibleSlice(this.rewards);
+    const trendVisible = this.getVisibleSlice(this.trend);
+    if (this.rewardCtx) {
+      this.renderChart(this.rewardCtx, rewardVisible, REWARD_COLOR, 'Net Reward');
+    }
+    if (this.trendCtx) {
+      this.renderChart(this.trendCtx, trendVisible, TREND_COLOR, `Avg Reward (${ROLLING_AVG_WINDOW})`);
     }
   }
 
   public reset(): void {
     this.rewards = [];
-    this.penalties = [];
-    this.gameBoundaries = [];
-    this.windowSize = 0;
-  }
-
-  /**
-   * Returns the visible tail of a data array.
-   * Before 3 games complete: returns everything (chart fills up).
-   * After 3 games: returns the last `windowSize` points, scrolling
-   * smoothly as each new point pushes the oldest one off the left.
-   */
-  private getVisibleSlice(data: number[]): number[] {
-    if (this.windowSize === 0 || data.length <= this.windowSize) {
-      return data;
-    }
-    return data.slice(data.length - this.windowSize);
+    this.trend = [];
+    this.pendingRewards = [];
+    this.allRewards = [];
+    this.lastReward = 0;
+    this.lastTrend = 0;
+    this.lastTickTime = 0;
+    this.started = false;
   }
 
   public destroy(): void {
     this.rewardCtx = null;
-    this.penaltyCtx = null;
+    this.trendCtx = null;
+  }
+
+  /**
+   * Advance the chart's own clock. For each elapsed tick interval,
+   * consume one queued value or repeat the last value (flat line).
+   */
+  private advanceTicks(): void {
+    const now = performance.now();
+    while (now - this.lastTickTime >= TICK_INTERVAL_MS) {
+      this.lastTickTime += TICK_INTERVAL_MS;
+
+      if (this.pendingRewards.length > 0) {
+        this.lastReward = this.pendingRewards.shift()!;
+        this.allRewards.push(this.lastReward);
+        this.lastTrend = this.computeRollingAvg();
+      }
+
+      this.rewards.push(this.lastReward);
+      this.trend.push(this.lastTrend);
+    }
+
+    // Trim to prevent unbounded memory growth
+    if (this.rewards.length > CHART_WINDOW_SIZE * 2) {
+      this.rewards = this.rewards.slice(this.rewards.length - CHART_WINDOW_SIZE);
+      this.trend = this.trend.slice(this.trend.length - CHART_WINDOW_SIZE);
+    }
+
+    // Keep allRewards bounded (only need the last ROLLING_AVG_WINDOW entries)
+    if (this.allRewards.length > ROLLING_AVG_WINDOW * 2) {
+      this.allRewards = this.allRewards.slice(-ROLLING_AVG_WINDOW);
+    }
+  }
+
+  private computeRollingAvg(): number {
+    const data = this.allRewards;
+    if (data.length === 0) return 0;
+    const window = data.slice(-ROLLING_AVG_WINDOW);
+    return window.reduce((s, v) => s + v, 0) / window.length;
+  }
+
+  private getVisibleSlice(data: number[]): number[] {
+    if (data.length <= CHART_WINDOW_SIZE) {
+      return data;
+    }
+    return data.slice(data.length - CHART_WINDOW_SIZE);
   }
 
   private setupCanvas(canvas: HTMLCanvasElement): CanvasRenderingContext2D {

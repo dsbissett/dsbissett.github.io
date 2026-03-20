@@ -1,16 +1,16 @@
 export const TETRIS_AI_CONFIG = {
   // Network architecture
-  featureCount: 47, // 26 board + 21 preview (3 pieces × 7 one-hot)
+  featureCount: 48, // 27 board + 21 preview (3 pieces × 7 one-hot)
   hiddenLayer1: 128,
   hiddenLayer2: 64,
 
   // Training hyperparameters
   replayBufferSize: 5000,
   batchSize: 32,
-  gamma: 0.95,
-  learningRate: 0.001,
+  gamma: 0.90,
+  learningRate: 0.0005,
   trainEveryNSteps: 4,
-  targetNetworkUpdateFrequency: 100,
+  targetNetworkUpdateFrequency: 50,
 
   // Exploration (epsilon-greedy)
   epsilonStart: 1.0,
@@ -36,37 +36,52 @@ export const TETRIS_AI_CONFIG = {
   humanChosenTarget: 1.5,
   humanRejectedTarget: -0.35,
 
-  // Rewards
-  rewardGameOver: -2,
-  rewardPiecePlaced: 0.15,
-  rewardGameOverLengthBonusPerPiece: 0.06,
-  rewardGameOverLengthBonusCap: 3.0,
-  scoreRewardDivisor: 20,
-  lineClearRewards: [0, 3.0, 8.0, 15.0, 30.0] as readonly number[],
-  holePenaltyWeight: 12.0,
-  coveredCellsPenaltyWeight: 6.0,
-  maxHeightPenaltyWeight: 2.5,
-  aggregateHeightPenaltyWeight: 1.2,
-  bumpinessPenaltyWeight: 2.0,
-  pillarPenaltyWeight: 2.5,
-  placementHeightThreshold: 6,
-  placementRewardPerRow: 0.15,
-  placementPenaltyPerRow: 1.2,
-  heightDangerZoneRows: 6,
-  heightDangerZoneWeight: 5.0,
-  rewardClipMin: -10,
-  rewardClipMax: 10,
+  // ── Delta-based reward system ──
+  // reward = lineClearBonus + survivalReward
+  //        - deltaHolesWeight * (newHoles - oldHoles)
+  //        - deltaAggHeightWeight * (newAggHeight - oldAggHeight)
+  //        - deltaBumpinessWeight * (newBumpiness - oldBumpiness)
+  //        - deltaMaxHeightWeight * (newMaxHeight - oldMaxHeight)
+  //        - deltaCoveredCellsWeight * (newCovered - oldCovered)
+  //        - deltaPillarsWeight * (newPillars - oldPillars)
 
-  // Derived penalties (computed from column heights, not NN features)
-  heightVariancePenaltyWeight: 1.5,
-  wellPenaltyWeight: 1.2,
-  wellDepthThreshold: 3,
+  // Line clear rewards (nonlinear / squared bonus for multi-line clears)
+  // These must clearly dominate the penalty scale so the agent pursues clears
+  lineClearRewards: [0, 3.0, 12.0, 27.0, 50.0] as readonly number[],
 
-  // Column spread bonus: reward for distributing blocks across more columns
-  columnSpreadBonusWeight: 0.3,
+  // Survival reward: offsets the unavoidable height increase from placing a piece
+  // so that a clean placement (no new holes, low bumpiness) is net-positive.
+  // Typical clean piece adds ~3 agg height (0.17 penalty) + ~0.5 maxHeight (0.42 penalty)
+  // → survival of 1.5 makes clean flat placements net ≈ +0.9.
+  survivalReward: 1.5,
 
-  // Bottom-row completeness bonus: reward for filling the bottom N rows
-  bottomRowCompletenessBonusRows: 3,
-  bottomRowCompletenessBonusWeight: 1.5,
-  bottomRowCompletenessThreshold: 0.7, // only reward when row is >= 70% full
+  // Delta penalty weights (penalize the CHANGE caused by the move, not absolute state)
+  // Tuned so that:
+  //   clean flat placement ≈ +0.9 reward (clear positive signal)
+  //   slightly bumpy placement ≈ -0.5 (mildly negative)
+  //   hole-creating move = severely negative (-4 to -7)
+  //   line clear = massively positive (+15 to +50)
+  deltaHolesWeight: 2.5,             // CRITICAL: holes are the #1 enemy
+  deltaCoveredCellsWeight: 0.8,      // deeply buried holes compound the problem
+  deltaAggregateHeightWeight: 0.1,   // low: height increase is unavoidable per piece
+  deltaBumpinessWeight: 1.0,         // strongly discourage uneven surfaces / towers
+  deltaMaxHeightWeight: 0.6,         // discourage building tall spikes
+  deltaPillarsWeight: 1.0,           // severely penalize vertical gaps in columns
+  deltaWellsWeight: 1.5,             // penalize columns much lower than neighbors (islands)
+
+  // Danger zone: quadratic penalty when max column height exceeds threshold (absolute)
+  // Triggers at row 5 — constant pressure to keep the board low.
+  // Quadratic ramp: height 6 → 0.01 penalty, height 10 → 0.33, height 15 → 1.33, height 18 → 2.25
+  heightDangerZoneRows: 5,
+  heightDangerZoneWeight: 3.0,
+
+  // Game-over penalty
+  rewardGameOver: -8.0,
+  rewardGameOverLengthBonusPerPiece: 0.05,
+  rewardGameOverLengthBonusCap: 4.0,
+  rewardGameOverScoreBonusPerPoint: 0.02, // 40-pt line clear → +0.8, 160 pts → +3.2
+
+  // Reward clipping range (wide enough to preserve gradient for stronger signals)
+  rewardClipMin: -12,
+  rewardClipMax: 20,
 } as const;

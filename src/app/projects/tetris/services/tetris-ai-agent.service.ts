@@ -58,17 +58,17 @@ export class TetrisAiAgentService {
       'font-size:12px;font-weight:bold;color:#7dcfff;background:#1a1a2e;padding:4px 8px;border-radius:4px',
     );
     console.log(`%c  TF.js backend: ${tf.getBackend()} | Model: ${loaded ? 'loaded from storage' : 'freshly built'}`, 'color:#a9b1d6');
-    console.log(`%c  Network: ${TETRIS_AI_CONFIG.featureCount} (26 board + 21 preview) → ${TETRIS_AI_CONFIG.hiddenLayer1} → ${TETRIS_AI_CONFIG.hiddenLayer2} → 1`, 'color:#a9b1d6');
+    console.log(`%c  Network: ${TETRIS_AI_CONFIG.featureCount} (27 board + 21 preview) → ${TETRIS_AI_CONFIG.hiddenLayer1} → ${TETRIS_AI_CONFIG.hiddenLayer2} → 1`, 'color:#a9b1d6');
     console.log(`%c  Episodes: ${this.stats.totalEpisodes} | Steps: ${this.stats.totalSteps} | Epsilon: ${this.stats.epsilon.toFixed(4)} | Best score: ${this.stats.bestScore}`, 'color:#a9b1d6');
     console.log(`%c  Replay buffer: ${this.replayBuffer.length}/${TETRIS_AI_CONFIG.replayBufferSize} | Demonstrations: ${this.demonstrations.length}/${TETRIS_AI_CONFIG.demonstrationBufferSize}`, 'color:#a9b1d6');
     console.log(`%c  Gamma: ${TETRIS_AI_CONFIG.gamma} | LR: ${TETRIS_AI_CONFIG.learningRate} | Batch: ${TETRIS_AI_CONFIG.batchSize} | Train every: ${TETRIS_AI_CONFIG.trainEveryNSteps} steps | Target sync: every ${TETRIS_AI_CONFIG.targetNetworkUpdateFrequency} steps`, 'color:#565f89');
   }
 
   /**
-   * Extracts 47 features from the board state after a simulated placement.
+   * Extracts 48 features from the board state after a simulated placement.
    * Features: column heights (10), height diffs (9), max height (1),
    *           aggregate height (1), holes (1), lines cleared (1), bumpiness (1),
-   *           covered cells (1), pillars (1),
+   *           covered cells (1), pillars (1), wells (1),
    *           preview piece 1 one-hot (7), preview piece 2 one-hot (7), preview piece 3 one-hot (7)
    */
   public extractFeatures(grid: number[][], linesCleared: number, previewQueue: number[][][]): number[] {
@@ -80,6 +80,7 @@ export class TetrisAiAgentService {
     const coveredCells = this.countCoveredCells(grid, heights);
     const bumpiness = diffs.reduce((s, d) => s + Math.abs(d), 0);
     const pillars = this.countPillars(grid, heights);
+    const wells = this.countWells(heights);
     const clamp = (v: number): number => Math.max(0, Math.min(1, v));
     return [
       ...heights.map((h) => clamp(h / 20)),
@@ -91,6 +92,7 @@ export class TetrisAiAgentService {
       clamp(bumpiness / 100),
       clamp(coveredCells / 120),
       clamp(pillars / 10),
+      clamp(wells / 100),
       ...this.encodePreviewQueue(previewQueue),
     ];
   }
@@ -806,6 +808,25 @@ export class TetrisAiAgentService {
       }
     }
     return pillars;
+  }
+
+  /**
+   * Sums up well depths across all columns.
+   * A well is a column that is lower than both its neighbors.
+   * Well depth = min(leftHeight, rightHeight) - columnHeight.
+   * Directly targets the "island" pattern where isolated clusters leave gaps.
+   */
+  private countWells(heights: number[]): number {
+    let wells = 0;
+    for (let i = 0; i < heights.length; i++) {
+      const left = i > 0 ? heights[i - 1] : heights[i];
+      const right = i < heights.length - 1 ? heights[i + 1] : heights[i];
+      const minNeighbor = Math.min(left, right);
+      if (heights[i] < minNeighbor) {
+        wells += minNeighbor - heights[i];
+      }
+    }
+    return wells;
   }
 
   private removeStoredModelArtifacts(): void {

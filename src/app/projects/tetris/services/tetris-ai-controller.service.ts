@@ -23,8 +23,6 @@ interface Placement {
   linesCleared: number;
   /** Row where the piece landed (0 = top, gridHeight-1 = bottom) */
   placementRow: number;
-  /** Average fill ratio of the bottom N rows (0..1) */
-  bottomRowCompleteness: number;
 }
 
 interface Plan {
@@ -32,7 +30,18 @@ interface Plan {
   targetX: number;
   features: number[];
   placementRow: number;
-  bottomRowCompleteness: number;
+  linesCleared: number;
+}
+
+/** Extracted board metrics used for delta-based reward computation. */
+interface BoardMetrics {
+  holes: number;
+  coveredCells: number;
+  aggregateHeight: number;
+  bumpiness: number;
+  maxHeight: number;
+  pillars: number;
+  wells: number;
 }
 
 @Injectable()
@@ -49,9 +58,11 @@ export class TetrisAiControllerService {
   private episodePieceCount = 0;
   private episodePeakScore = 0;
   private episodeTotalLinesCleared = 0;
-  private episodeTotalPenalty = 0;
   private episodeTotalReward = 0;
   private pendingDemonstrationPlacements: Placement[] = [];
+
+  /** Previous board metrics for delta computation (null = start of episode). */
+  private prevMetrics: BoardMetrics | null = null;
 
   readonly isEnabled = signal(false);
   readonly isReady = signal(false);
@@ -87,8 +98,8 @@ export class TetrisAiControllerService {
     this.episodePieceCount = 0;
     this.episodePeakScore = 0;
     this.episodeTotalLinesCleared = 0;
-    this.episodeTotalPenalty = 0;
     this.episodeTotalReward = 0;
+    this.prevMetrics = null;
     this.persistEnabledPreference();
   }
 
@@ -123,6 +134,13 @@ export class TetrisAiControllerService {
       return;
     }
 
+    // Capture pre-move metrics from the current (pre-placement) grid
+    if (this.active && this.prevMetrics === null) {
+      this.prevMetrics = this.extractMetrics(
+        this.agent.extractFeatures(state.grid, 0, state.previewQueue),
+      );
+    }
+
     // Log preview queue for verification
     const currentPieceId = this.getPieceIdFromMatrix(state.activePiece.matrix);
     const previewPieceIds = state.previewQueue.map((m) => this.getPieceIdFromMatrix(m));
@@ -152,8 +170,8 @@ export class TetrisAiControllerService {
     this.episodePieceCount = 0;
     this.episodePeakScore = 0;
     this.episodeTotalLinesCleared = 0;
-    this.episodeTotalPenalty = 0;
     this.episodeTotalReward = 0;
+    this.prevMetrics = null;
     this.pendingDemonstrationPlacements = [];
   }
 
@@ -209,7 +227,7 @@ export class TetrisAiControllerService {
 
   /**
    * Called by the facade after a piece is locked.
-   * Computes reward, stores experience, triggers training.
+   * Computes delta-based reward, stores experience, triggers training.
    */
   public onPieceLocked(state: TetrisGameState, linesCleared: number, gameOver: boolean): void {
     this.episodePeakScore = Math.max(this.episodePeakScore, state.score);
@@ -224,23 +242,24 @@ export class TetrisAiControllerService {
 
     this.episodePieceCount++;
     this.episodeTotalLinesCleared += linesCleared;
+
     const reward = this.computeReward(
       this.plan.features,
       linesCleared,
       gameOver,
       this.episodePieceCount,
-      this.plan.placementRow,
-      this.plan.bottomRowCompleteness,
     );
     this.episodeTotalReward += reward;
-    this.episodeTotalPenalty += this.computeBoardPenalty(this.plan.features);
+
     const nextFeatures = this.agent.extractFeatures(state.grid, 0, state.previewQueue);
     this.agent.remember(this.plan.features, reward, nextFeatures, gameOver);
     this.agent.trainStep();
 
+    // Update prevMetrics to post-placement state for next delta computation
+    this.prevMetrics = this.extractMetrics(this.plan.features);
+
     if (gameOver) {
       this.chart.markGameEnd();
-      const avgPenalty = this.episodePieceCount > 0 ? this.episodeTotalPenalty / this.episodePieceCount : 0;
       const avgReward = this.episodePieceCount > 0 ? this.episodeTotalReward / this.episodePieceCount : 0;
       console.log(
         `%c📈 EPISODE DIAGNOSTICS`,
@@ -251,7 +270,7 @@ export class TetrisAiControllerService {
         'color:#c0caf5',
       );
       console.log(
-        `%c  Avg reward: ${avgReward.toFixed(4)} | Avg penalty: ${avgPenalty.toFixed(4)} | Total reward: ${this.episodeTotalReward.toFixed(4)}`,
+        `%c  Avg reward: ${avgReward.toFixed(4)} | Total reward: ${this.episodeTotalReward.toFixed(4)}`,
         avgReward >= 0 ? 'color:#9ece6a' : 'color:#f7768e',
       );
       this.agent.onEpisodeEnd(this.episodePeakScore);
@@ -283,8 +302,8 @@ export class TetrisAiControllerService {
     this.episodePieceCount = 0;
     this.episodePeakScore = 0;
     this.episodeTotalLinesCleared = 0;
-    this.episodeTotalPenalty = 0;
     this.episodeTotalReward = 0;
+    this.prevMetrics = null;
     this.pendingDemonstrationPlacements = [];
     this.stats.set({ ...this.agent.getStats() });
   }
@@ -298,6 +317,7 @@ export class TetrisAiControllerService {
     this.plan = null;
     this.pendingDemonstrationPlacements = [];
     this.episodePieceCount = 0;
+    this.prevMetrics = null;
     this.stats.set({ ...this.agent.getStats() });
   }
 
@@ -360,9 +380,10 @@ export class TetrisAiControllerService {
       bumpiness: +(f[23] * 100).toFixed(1),
       coveredCells: +(f[24] * 120).toFixed(1),
       pillars: +(f[25] * 10).toFixed(1),
+      wells: +(f[26] * 100).toFixed(1),
     });
-    // Decode and log the preview queue one-hot features (indices 26-46)
-    const previewFeatures = f.slice(26, 47);
+    // Decode and log the preview queue one-hot features (indices 27-47)
+    const previewFeatures = f.slice(27, 48);
     const decodedPreview: string[] = [];
     for (let i = 0; i < 3; i++) {
       const oneHot = previewFeatures.slice(i * 7, (i + 1) * 7);
@@ -371,7 +392,7 @@ export class TetrisAiControllerService {
         ? (TetrisAiControllerService.PIECE_NAMES[pieceIdx + 1] ?? '?')
         : 'none');
     }
-    console.log(`Preview features decoded: [${decodedPreview.join(', ')}] (from feature indices 26-46)`);
+    console.log(`Preview features decoded: [${decodedPreview.join(', ')}] (from feature indices 27-47)`);
     console.groupEnd();
 
     return {
@@ -379,7 +400,7 @@ export class TetrisAiControllerService {
       targetX: chosen.x,
       features: chosen.features,
       placementRow: chosen.placementRow,
-      bottomRowCompleteness: chosen.bottomRowCompleteness,
+      linesCleared: chosen.linesCleared,
     };
   }
 
@@ -407,17 +428,6 @@ export class TetrisAiControllerService {
         this.gridService.merge(simGrid, tempPiece);
         const clearResult = this.gridService.clearLines(simGrid);
 
-        // Compute bottom-row completeness (average fill ratio of bottom N rows)
-        const bottomRows = TETRIS_AI_CONFIG.bottomRowCompletenessBonusRows;
-        const gridWidth = TETRIS_GAME_CONFIG.gridWidth;
-        let bottomFilled = 0;
-        for (let r = simGrid.length - bottomRows; r < simGrid.length; r++) {
-          for (let c = 0; c < gridWidth; c++) {
-            if (simGrid[r][c] !== 0) bottomFilled++;
-          }
-        }
-        const bottomRowCompleteness = bottomFilled / (bottomRows * gridWidth);
-
         results.push({
           rotation,
           x,
@@ -425,7 +435,6 @@ export class TetrisAiControllerService {
           features: this.agent.extractFeatures(simGrid, clearResult.clearedCount, state.previewQueue),
           linesCleared: clearResult.clearedCount,
           placementRow: dropY,
-          bottomRowCompleteness,
         });
       }
 
@@ -435,68 +444,66 @@ export class TetrisAiControllerService {
     return results;
   }
 
+  /**
+   * Delta-based reward computation.
+   *
+   * reward = lineClearBonus + survivalReward
+   *        - sum of (delta_i * weight_i) for each board metric
+   *        - dangerZonePenalty (absolute, only when near death)
+   */
   private computeReward(
     features: number[],
     linesCleared: number,
     gameOver: boolean,
     episodePieceCount: number,
-    placementRow: number,
-    bottomRowCompleteness: number,
   ): number {
-    const scoreDelta =
-      ((TETRIS_GAME_CONFIG.linePoints[linesCleared] ?? 0) * 2) /
-      TETRIS_AI_CONFIG.scoreRewardDivisor;
+    const currentMetrics = this.extractMetrics(features);
+    const prev = this.prevMetrics ?? currentMetrics; // first piece: delta = 0
+
+    // ── Positive signals ──
     const lineClearBonus = TETRIS_AI_CONFIG.lineClearRewards[linesCleared] ?? 0;
-    const boardPenalty = this.computeBoardPenalty(features);
-    const piecePlacementReward = TETRIS_AI_CONFIG.rewardPiecePlaced;
-    const gameOverLengthBonus = Math.min(
-      episodePieceCount * TETRIS_AI_CONFIG.rewardGameOverLengthBonusPerPiece,
-      TETRIS_AI_CONFIG.rewardGameOverLengthBonusCap,
-    );
+    const survivalReward = TETRIS_AI_CONFIG.survivalReward;
 
+    // ── Delta penalties (change caused by this move) ──
+    // Positive delta = metric got worse; negative delta = metric improved (rewarded)
+    // Asymmetric compression: sqrt-compress WORSENING deltas to prevent blow-ups,
+    // but leave IMPROVING deltas (negative) at full strength so line clears and
+    // hole fixes get their full reward.
+    const compressDelta = (d: number): number => d > 0 ? Math.sqrt(d) : d;
+
+    const deltaHoles = currentMetrics.holes - prev.holes;
+    const deltaCovered = currentMetrics.coveredCells - prev.coveredCells;
+    const deltaAggHeight = currentMetrics.aggregateHeight - prev.aggregateHeight;
+    const deltaBumpiness = currentMetrics.bumpiness - prev.bumpiness;
+    const deltaMaxHeight = currentMetrics.maxHeight - prev.maxHeight;
+    const deltaPillars = currentMetrics.pillars - prev.pillars;
+    const deltaWells = currentMetrics.wells - prev.wells;
+
+    const deltaPenalty =
+      compressDelta(deltaHoles) * TETRIS_AI_CONFIG.deltaHolesWeight +
+      compressDelta(deltaCovered) * TETRIS_AI_CONFIG.deltaCoveredCellsWeight +
+      compressDelta(deltaAggHeight) * TETRIS_AI_CONFIG.deltaAggregateHeightWeight +
+      compressDelta(deltaBumpiness) * TETRIS_AI_CONFIG.deltaBumpinessWeight +
+      compressDelta(deltaMaxHeight) * TETRIS_AI_CONFIG.deltaMaxHeightWeight +
+      compressDelta(deltaPillars) * TETRIS_AI_CONFIG.deltaPillarsWeight +
+      compressDelta(deltaWells) * TETRIS_AI_CONFIG.deltaWellsWeight;
+
+    // ── Absolute danger zone penalty (prevents ignoring lethal spikes) ──
     const gridHeight = TETRIS_GAME_CONFIG.gridHeight;
-    const threshold = TETRIS_AI_CONFIG.placementHeightThreshold;
-    const stackHeight = gridHeight - placementRow;
-    let placementHeightReward: number;
-    if (stackHeight <= threshold) {
-      placementHeightReward =
-        (threshold - stackHeight) * TETRIS_AI_CONFIG.placementRewardPerRow;
-    } else {
-      placementHeightReward =
-        -(stackHeight - threshold) * TETRIS_AI_CONFIG.placementPenaltyPerRow;
-    }
-
-    // --- Board features for logging (both raw and normalized values) ---
-    const holesNorm = features[21];
-    const coveredCellsNorm = features[24];
-    const maxHeightNorm = features[19];
-    const aggregateHeightNorm = features[20];
-    const bumpinessNorm = features[23];
-    const pillarsNorm = features[25];
-
-    // Danger zone penalty component
-    const dangerThreshold = TETRIS_AI_CONFIG.heightDangerZoneRows / TETRIS_GAME_CONFIG.gridHeight;
+    const dangerThreshold = TETRIS_AI_CONFIG.heightDangerZoneRows;
     let dangerZonePenalty = 0;
-    if (maxHeightNorm > dangerThreshold) {
-      const excess = (maxHeightNorm - dangerThreshold) / (1 - dangerThreshold);
+    if (currentMetrics.maxHeight > dangerThreshold) {
+      const excess = (currentMetrics.maxHeight - dangerThreshold) / (gridHeight - dangerThreshold);
       dangerZonePenalty = excess * excess * TETRIS_AI_CONFIG.heightDangerZoneWeight;
     }
 
-    // Column spread bonus: reward for distributing blocks across more columns
-    const derived = this.computeDerivedMetrics(features);
-    const columnSpreadBonus = derived.columnSpreadRatio * TETRIS_AI_CONFIG.columnSpreadBonusWeight;
+    const rewardTotal = lineClearBonus + survivalReward;
+    const penaltyTotal = deltaPenalty + dangerZonePenalty;
+    let netReward = rewardTotal - penaltyTotal;
 
-    // Bottom-row completeness bonus: reward filling the bottom rows
-    const rowThreshold = TETRIS_AI_CONFIG.bottomRowCompletenessThreshold;
-    const bottomRowBonus = bottomRowCompleteness >= rowThreshold
-      ? (bottomRowCompleteness - rowThreshold) / (1 - rowThreshold) * TETRIS_AI_CONFIG.bottomRowCompletenessBonusWeight
-      : 0;
+    this.chart.pushEntry(netReward, penaltyTotal);
 
-    const rewardTotal = scoreDelta + lineClearBonus + piecePlacementReward + placementHeightReward + columnSpreadBonus + bottomRowBonus;
-
-    this.chart.pushEntry(rewardTotal, boardPenalty);
-
-    const netReward = rewardTotal - boardPenalty;
+    // ── Logging ──
     console.groupCollapsed(
       `%c💰 REWARD %c#${episodePieceCount} %cR=${netReward.toFixed(3)}${linesCleared > 0 ? ` ✨${linesCleared}L` : ''}`,
       'color:#9ece6a;font-weight:bold',
@@ -504,139 +511,70 @@ export class TetrisAiControllerService {
       netReward >= 0 ? 'color:#9ece6a' : 'color:#f7768e',
     );
     console.log('Reward components:', {
-      scoreReward: +scoreDelta.toFixed(4),
       lineClearBonus: +lineClearBonus.toFixed(4),
-      piecePlacementReward: +piecePlacementReward.toFixed(4),
-      placementHeightReward: +placementHeightReward.toFixed(4),
-      columnSpreadBonus: +columnSpreadBonus.toFixed(4),
-      bottomRowBonus: `completeness=${(bottomRowCompleteness * 100).toFixed(0)}% bonus=${+bottomRowBonus.toFixed(4)}`,
+      survivalReward: +survivalReward.toFixed(4),
       rewardSubtotal: +rewardTotal.toFixed(4),
     });
-    console.log('Penalty components (normalized × weight = contribution):', {
-      holes: `raw=${+(holesNorm * 40).toFixed(1)} norm=${holesNorm.toFixed(4)} × ${TETRIS_AI_CONFIG.holePenaltyWeight} = ${+(holesNorm * TETRIS_AI_CONFIG.holePenaltyWeight).toFixed(4)}`,
-      coveredCells: `raw=${+(coveredCellsNorm * 120).toFixed(1)} norm=${coveredCellsNorm.toFixed(4)} × ${TETRIS_AI_CONFIG.coveredCellsPenaltyWeight} = ${+(coveredCellsNorm * TETRIS_AI_CONFIG.coveredCellsPenaltyWeight).toFixed(4)}`,
-      maxHeight: `raw=${+(maxHeightNorm * 20).toFixed(1)} norm=${maxHeightNorm.toFixed(4)} × ${TETRIS_AI_CONFIG.maxHeightPenaltyWeight} = ${+(maxHeightNorm * TETRIS_AI_CONFIG.maxHeightPenaltyWeight).toFixed(4)}`,
-      aggregateHeight: `raw=${+(aggregateHeightNorm * 200).toFixed(1)} norm=${aggregateHeightNorm.toFixed(4)} × ${TETRIS_AI_CONFIG.aggregateHeightPenaltyWeight} = ${+(aggregateHeightNorm * TETRIS_AI_CONFIG.aggregateHeightPenaltyWeight).toFixed(4)}`,
-      bumpiness: `raw=${+(bumpinessNorm * 100).toFixed(1)} norm=${bumpinessNorm.toFixed(4)} × ${TETRIS_AI_CONFIG.bumpinessPenaltyWeight} = ${+(bumpinessNorm * TETRIS_AI_CONFIG.bumpinessPenaltyWeight).toFixed(4)}`,
-      pillars: `raw=${+(pillarsNorm * 10).toFixed(1)} norm=${pillarsNorm.toFixed(4)} × ${TETRIS_AI_CONFIG.pillarPenaltyWeight} = ${+(pillarsNorm * TETRIS_AI_CONFIG.pillarPenaltyWeight).toFixed(4)}`,
-      heightVariance: `var=${derived.heightVariance.toFixed(2)} norm=${derived.normalizedVariance.toFixed(4)} × ${TETRIS_AI_CONFIG.heightVariancePenaltyWeight} = ${+(derived.normalizedVariance * TETRIS_AI_CONFIG.heightVariancePenaltyWeight).toFixed(4)}`,
-      wells: `count=${derived.wellCount} norm=${derived.wells.toFixed(4)} × ${TETRIS_AI_CONFIG.wellPenaltyWeight} = ${+(derived.wells * TETRIS_AI_CONFIG.wellPenaltyWeight).toFixed(4)}`,
-      dangerZone: `maxHeight>${TETRIS_AI_CONFIG.heightDangerZoneRows}? ${maxHeightNorm > dangerThreshold ? 'YES' : 'no'} penalty=${+dangerZonePenalty.toFixed(4)}`,
-      penaltyTotal: +boardPenalty.toFixed(4),
+    console.log('Delta penalties (raw→sqrt × weight = contribution):', {
+      deltaHoles: `${deltaHoles >= 0 ? '+' : ''}${deltaHoles.toFixed(1)}→${compressDelta(deltaHoles).toFixed(2)} × ${TETRIS_AI_CONFIG.deltaHolesWeight} = ${+(compressDelta(deltaHoles) * TETRIS_AI_CONFIG.deltaHolesWeight).toFixed(4)}`,
+      deltaCovered: `${deltaCovered >= 0 ? '+' : ''}${deltaCovered.toFixed(1)}→${compressDelta(deltaCovered).toFixed(2)} × ${TETRIS_AI_CONFIG.deltaCoveredCellsWeight} = ${+(compressDelta(deltaCovered) * TETRIS_AI_CONFIG.deltaCoveredCellsWeight).toFixed(4)}`,
+      deltaAggHeight: `${deltaAggHeight >= 0 ? '+' : ''}${deltaAggHeight.toFixed(1)}→${compressDelta(deltaAggHeight).toFixed(2)} × ${TETRIS_AI_CONFIG.deltaAggregateHeightWeight} = ${+(compressDelta(deltaAggHeight) * TETRIS_AI_CONFIG.deltaAggregateHeightWeight).toFixed(4)}`,
+      deltaBumpiness: `${deltaBumpiness >= 0 ? '+' : ''}${deltaBumpiness.toFixed(1)}→${compressDelta(deltaBumpiness).toFixed(2)} × ${TETRIS_AI_CONFIG.deltaBumpinessWeight} = ${+(compressDelta(deltaBumpiness) * TETRIS_AI_CONFIG.deltaBumpinessWeight).toFixed(4)}`,
+      deltaMaxHeight: `${deltaMaxHeight >= 0 ? '+' : ''}${deltaMaxHeight.toFixed(1)}→${compressDelta(deltaMaxHeight).toFixed(2)} × ${TETRIS_AI_CONFIG.deltaMaxHeightWeight} = ${+(compressDelta(deltaMaxHeight) * TETRIS_AI_CONFIG.deltaMaxHeightWeight).toFixed(4)}`,
+      deltaPillars: `${deltaPillars >= 0 ? '+' : ''}${deltaPillars.toFixed(1)}→${compressDelta(deltaPillars).toFixed(2)} × ${TETRIS_AI_CONFIG.deltaPillarsWeight} = ${+(compressDelta(deltaPillars) * TETRIS_AI_CONFIG.deltaPillarsWeight).toFixed(4)}`,
+      deltaWells: `${deltaWells >= 0 ? '+' : ''}${deltaWells.toFixed(1)}→${compressDelta(deltaWells).toFixed(2)} × ${TETRIS_AI_CONFIG.deltaWellsWeight} = ${+(compressDelta(deltaWells) * TETRIS_AI_CONFIG.deltaWellsWeight).toFixed(4)}`,
+      deltaPenaltySubtotal: +deltaPenalty.toFixed(4),
+      dangerZonePenalty: +dangerZonePenalty.toFixed(4),
+      penaltyTotal: +penaltyTotal.toFixed(4),
     });
-    console.log('Board distribution:', {
-      columnsUsed: `${derived.columnsUsed}/10`,
-      spreadRatio: +derived.columnSpreadRatio.toFixed(2),
-      heightVariance: +derived.heightVariance.toFixed(2),
-      columnHeights: features.slice(0, 10).map((v) => +(v * 20).toFixed(1)),
+    console.log('Board metrics (current | prev):', {
+      holes: `${currentMetrics.holes.toFixed(1)} | ${prev.holes.toFixed(1)}`,
+      covered: `${currentMetrics.coveredCells.toFixed(1)} | ${prev.coveredCells.toFixed(1)}`,
+      aggHeight: `${currentMetrics.aggregateHeight.toFixed(1)} | ${prev.aggregateHeight.toFixed(1)}`,
+      bumpiness: `${currentMetrics.bumpiness.toFixed(1)} | ${prev.bumpiness.toFixed(1)}`,
+      maxHeight: `${currentMetrics.maxHeight.toFixed(1)} | ${prev.maxHeight.toFixed(1)}`,
+      pillars: `${currentMetrics.pillars.toFixed(1)} | ${prev.pillars.toFixed(1)}`,
+      wells: `${currentMetrics.wells.toFixed(1)} | ${prev.wells.toFixed(1)}`,
     });
-    console.log('Placement context:', {
-      placementRow,
-      stackHeight,
-      threshold,
-      linesCleared,
-      heightRewardSign: stackHeight <= threshold ? 'REWARD (below threshold)' : 'PENALTY (above threshold)',
-    });
-    console.log(`Net reward: ${rewardTotal.toFixed(4)} - ${boardPenalty.toFixed(4)} = ${netReward.toFixed(4)}`);
+    console.log(`Net reward: ${rewardTotal.toFixed(4)} - ${penaltyTotal.toFixed(4)} = ${netReward.toFixed(4)}`);
     console.groupEnd();
 
     if (gameOver) {
-      const rawTotal = rewardTotal + gameOverLengthBonus - boardPenalty + TETRIS_AI_CONFIG.rewardGameOver;
+      const gameOverLengthBonus = Math.min(
+        episodePieceCount * TETRIS_AI_CONFIG.rewardGameOverLengthBonusPerPiece,
+        TETRIS_AI_CONFIG.rewardGameOverLengthBonusCap,
+      );
+      const scoreBonus = this.episodePeakScore * TETRIS_AI_CONFIG.rewardGameOverScoreBonusPerPoint;
+      const rawTotal = netReward + TETRIS_AI_CONFIG.rewardGameOver + gameOverLengthBonus + scoreBonus;
       const total = Math.max(TETRIS_AI_CONFIG.rewardClipMin, Math.min(TETRIS_AI_CONFIG.rewardClipMax, rawTotal));
       console.log(
         `%c☠️ GAME OVER — Episode #${this.agent.getStats().totalEpisodes + 1}`,
         'font-size:14px;font-weight:bold;color:#f7768e;background:#1a1a2e;padding:4px 8px;border-radius:4px',
       );
       console.log(
-        `%c  Pieces placed: ${episodePieceCount} | Peak score: ${this.episodePeakScore} | Game-over penalty: ${TETRIS_AI_CONFIG.rewardGameOver} | Length bonus: ${+gameOverLengthBonus.toFixed(4)} | Raw: ${+rawTotal.toFixed(4)} | Clipped: ${+total.toFixed(4)}`,
+        `%c  Pieces placed: ${episodePieceCount} | Peak score: ${this.episodePeakScore} | Game-over penalty: ${TETRIS_AI_CONFIG.rewardGameOver} | Length bonus: ${+gameOverLengthBonus.toFixed(4)} | Score bonus: ${+scoreBonus.toFixed(4)} | Raw: ${+rawTotal.toFixed(4)} | Clipped: ${+total.toFixed(4)}`,
         'color:#bb9af7',
       );
       return total;
     }
 
-    const rawNet = rewardTotal - boardPenalty;
-    return Math.max(TETRIS_AI_CONFIG.rewardClipMin, Math.min(TETRIS_AI_CONFIG.rewardClipMax, rawNet));
-  }
-
-  private computeBoardPenalty(features: number[]): number {
-    const maxHeight = features[19];
-    const aggregateHeight = features[20];
-    const holes = features[21];
-    const bumpiness = features[23];
-    const coveredCells = features[24];
-    const pillars = features[25];
-
-    let penalty =
-      holes * TETRIS_AI_CONFIG.holePenaltyWeight +
-      coveredCells * TETRIS_AI_CONFIG.coveredCellsPenaltyWeight +
-      maxHeight * TETRIS_AI_CONFIG.maxHeightPenaltyWeight +
-      aggregateHeight * TETRIS_AI_CONFIG.aggregateHeightPenaltyWeight +
-      bumpiness * TETRIS_AI_CONFIG.bumpinessPenaltyWeight +
-      pillars * TETRIS_AI_CONFIG.pillarPenaltyWeight;
-
-    // Quadratic danger zone: penalty escalates rapidly when max height exceeds threshold
-    const dangerThreshold = TETRIS_AI_CONFIG.heightDangerZoneRows / TETRIS_GAME_CONFIG.gridHeight;
-    if (maxHeight > dangerThreshold) {
-      const excess = (maxHeight - dangerThreshold) / (1 - dangerThreshold);
-      penalty += excess * excess * TETRIS_AI_CONFIG.heightDangerZoneWeight;
-    }
-
-    // Height variance penalty: penalizes uneven column height distribution (towers/islands)
-    const colHeights = features.slice(0, 10).map((h) => h * 20); // denormalize
-    const meanHeight = colHeights.reduce((s, h) => s + h, 0) / colHeights.length;
-    const variance = colHeights.reduce((s, h) => s + (h - meanHeight) ** 2, 0) / colHeights.length;
-    const normalizedVariance = Math.min(1, variance / 25); // normalize: variance of 25 (stddev ~5) → 1.0
-    penalty += normalizedVariance * TETRIS_AI_CONFIG.heightVariancePenaltyWeight;
-
-    // Well penalty: penalizes columns significantly shorter than both neighbors
-    const wellDepth = TETRIS_AI_CONFIG.wellDepthThreshold;
-    let wells = 0;
-    for (let i = 0; i < colHeights.length; i++) {
-      const left = i > 0 ? colHeights[i - 1] : colHeights[i]; // treat edges as same height
-      const right = i < colHeights.length - 1 ? colHeights[i + 1] : colHeights[i];
-      const depth = Math.min(left, right) - colHeights[i];
-      if (depth >= wellDepth) {
-        wells += depth / 20; // normalized by grid height
-      }
-    }
-    penalty += wells * TETRIS_AI_CONFIG.wellPenaltyWeight;
-
-    return penalty;
+    return Math.max(TETRIS_AI_CONFIG.rewardClipMin, Math.min(TETRIS_AI_CONFIG.rewardClipMax, netReward));
   }
 
   /**
-   * Computes derived board metrics from column height features for logging/rewards.
+   * Extracts raw board metrics from the normalized feature vector.
+   * These are denormalized back to their natural scale for interpretable deltas.
    */
-  private computeDerivedMetrics(features: number[]): {
-    heightVariance: number;
-    normalizedVariance: number;
-    wells: number;
-    wellCount: number;
-    columnsUsed: number;
-    columnSpreadRatio: number;
-  } {
-    const colHeights = features.slice(0, 10).map((h) => h * 20);
-    const meanHeight = colHeights.reduce((s, h) => s + h, 0) / colHeights.length;
-    const variance = colHeights.reduce((s, h) => s + (h - meanHeight) ** 2, 0) / colHeights.length;
-    const normalizedVariance = Math.min(1, variance / 25);
-
-    const wellDepth = TETRIS_AI_CONFIG.wellDepthThreshold;
-    let wells = 0;
-    let wellCount = 0;
-    for (let i = 0; i < colHeights.length; i++) {
-      const left = i > 0 ? colHeights[i - 1] : colHeights[i];
-      const right = i < colHeights.length - 1 ? colHeights[i + 1] : colHeights[i];
-      const depth = Math.min(left, right) - colHeights[i];
-      if (depth >= wellDepth) {
-        wells += depth / 20;
-        wellCount++;
-      }
-    }
-
-    const columnsUsed = colHeights.filter((h) => h > 0).length;
-    const columnSpreadRatio = columnsUsed / colHeights.length;
-
-    return { heightVariance: variance, normalizedVariance, wells, wellCount, columnsUsed, columnSpreadRatio };
+  private extractMetrics(features: number[]): BoardMetrics {
+    return {
+      holes: features[21] * 40,          // normalized by /40
+      coveredCells: features[24] * 120,   // normalized by /120
+      aggregateHeight: features[20] * 200, // normalized by /200
+      bumpiness: features[23] * 100,      // normalized by /100
+      maxHeight: features[19] * 20,       // normalized by /20
+      pillars: features[25] * 10,         // normalized by /10
+      wells: features[26] * 100,          // normalized by /100
+    };
   }
 
   private matricesEqual(a: number[][], b: number[][]): boolean {
