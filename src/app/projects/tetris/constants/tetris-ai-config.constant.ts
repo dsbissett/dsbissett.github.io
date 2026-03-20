@@ -8,14 +8,17 @@ export const TETRIS_AI_CONFIG = {
   replayBufferSize: 5000,
   batchSize: 32,
   gamma: 0.90,
-  learningRate: 0.0005,
-  trainEveryNSteps: 4,
+  learningRate: 0.00035,
+  trainEveryNSteps: 2,
   targetNetworkUpdateFrequency: 50,
+  replayRecentWindowSize: 640,
+  replayRecentFraction: 0.5,
+  replayInformativeFraction: 0.25,
 
   // Exploration (epsilon-greedy)
-  epsilonStart: 1.0,
-  epsilonMin: 0.05,
-  epsilonDecay: 0.995,
+  epsilonStart: 0.35,
+  epsilonMin: 0.02,
+  epsilonDecay: 0.997,
 
   // localStorage keys (TF.js uses localstorage://<key>)
   modelStorageKey: 'tetris-ai-model',
@@ -25,8 +28,8 @@ export const TETRIS_AI_CONFIG = {
   enabledStorageKey: 'tetris-ai-enabled',
 
   // AI visual step interval (ms between each move animation)
-  aiActionIntervalMs: 60,
-  autoRestartDelayMs: 900,
+  aiActionIntervalMs: 30,
+  autoRestartDelayMs: 300,
 
   // Human demonstration learning
   demonstrationBufferSize: 32000,
@@ -35,6 +38,11 @@ export const TETRIS_AI_CONFIG = {
   demonstrationEpochs: 2,
   humanChosenTarget: 1.5,
   humanRejectedTarget: -0.35,
+  teacherWarmupEpisodes: 20,
+  teacherExploreRate: 0.12,
+  teacherNegativeSamplesPerMove: 5,
+  teacherChosenTarget: 1.25,
+  teacherRejectedTarget: -0.75,
 
   // ── Delta-based reward system ──
   // reward = lineClearBonus + survivalReward
@@ -80,6 +88,7 @@ export const TETRIS_AI_CONFIG = {
   rewardGameOverLengthBonusPerPiece: 0.05,
   rewardGameOverLengthBonusCap: 4.0,
   rewardGameOverScoreBonusPerPoint: 0.02, // 40-pt line clear → +0.8, 160 pts → +3.2
+  rewardGameOverMaxTerminalReward: -0.5,
 
   // Reward clipping range (wide enough to preserve gradient for stronger signals)
   rewardClipMin: -12,

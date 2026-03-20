@@ -31,6 +31,7 @@ interface Plan {
   features: number[];
   placementRow: number;
   linesCleared: number;
+  decisionSource: 'model' | 'exploration' | 'teacher';
 }
 
 /** Extracted board metrics used for delta-based reward computation. */
@@ -42,6 +43,13 @@ interface BoardMetrics {
   maxHeight: number;
   pillars: number;
   wells: number;
+}
+
+interface RankedPlacement {
+  index: number;
+  placement: Placement;
+  modelValue: number;
+  heuristicValue: number;
 }
 
 @Injectable()
@@ -251,8 +259,12 @@ export class TetrisAiControllerService {
     );
     this.episodeTotalReward += reward;
 
-    const nextFeatures = this.agent.extractFeatures(state.grid, 0, state.previewQueue);
-    this.agent.remember(this.plan.features, reward, nextFeatures, gameOver);
+    const nextPlacements = gameOver ? [] : this.enumeratePlacements(state);
+    const nextStateValue = gameOver
+      ? 0
+      : this.agent.estimateBestFutureValue(nextPlacements.map((placement) => placement.features));
+
+    this.agent.remember(this.plan.features, reward, nextStateValue, gameOver);
     this.agent.trainStep();
 
     // Update prevMetrics to post-placement state for next delta computation
@@ -355,9 +367,27 @@ export class TetrisAiControllerService {
 
     const featuresBatch = placements.map((p) => p.features);
     const values = this.agent.evaluatePlacements(featuresBatch);
-    const idx = this.agent.selectPlacement(featuresBatch);
+    const rankedPlacements = placements.map((placement, index) => ({
+      index,
+      placement,
+      modelValue: values[index],
+      heuristicValue: this.scorePlacementHeuristically(placement.features),
+    }));
+    const teacherActive = this.shouldUseTeacherWarmup();
+    const bestModelIndex = values.indexOf(Math.max(...values));
+    let decisionSource: Plan['decisionSource'] = 'model';
+    let idx = bestModelIndex;
+
+    if (teacherActive) {
+      idx = this.selectTeacherPlacement(rankedPlacements);
+      decisionSource = 'teacher';
+      this.recordTeacherGuidance(rankedPlacements);
+    } else {
+      idx = this.agent.selectPlacement(values);
+      decisionSource = idx === bestModelIndex ? 'model' : 'exploration';
+    }
+
     const chosen = placements[idx];
-    const wasExploration = idx !== values.indexOf(Math.max(...values));
 
     console.groupCollapsed(
       `%c🎯 PLACEMENT DECISION %c(piece #${this.episodePieceCount + 1})`,
@@ -366,8 +396,20 @@ export class TetrisAiControllerService {
     );
     console.log(`Candidates evaluated: ${placements.length}`);
     console.log(`Chosen: rotation=${chosen.rotation}, x=${chosen.x}, row=${chosen.placementRow}`);
-    console.log(`Q-value: ${values[idx].toFixed(4)} (${wasExploration ? '🎲 EXPLORATION' : '🧠 EXPLOITATION'})`);
+    console.log(
+      `Q-value: ${values[idx].toFixed(4)} (${decisionSource === 'teacher'
+        ? '👨‍🏫 TEACHER WARMUP'
+        : decisionSource === 'exploration'
+          ? '🎲 EXPLORATION'
+          : '🧠 EXPLOITATION'})`,
+    );
     console.log(`Q-value range: [${Math.min(...values).toFixed(4)}, ${Math.max(...values).toFixed(4)}]`);
+    if (teacherActive) {
+      const heuristicValues = rankedPlacements.map((placement) => placement.heuristicValue);
+      console.log(
+        `Teacher heuristic range: [${Math.min(...heuristicValues).toFixed(4)}, ${Math.max(...heuristicValues).toFixed(4)}]`,
+      );
+    }
     console.log(`Epsilon: ${this.agent.getStats().epsilon.toFixed(4)}`);
 
     const f = chosen.features;
@@ -401,6 +443,7 @@ export class TetrisAiControllerService {
       features: chosen.features,
       placementRow: chosen.placementRow,
       linesCleared: chosen.linesCleared,
+      decisionSource,
     };
   }
 
@@ -545,14 +588,22 @@ export class TetrisAiControllerService {
         TETRIS_AI_CONFIG.rewardGameOverLengthBonusCap,
       );
       const scoreBonus = this.episodePeakScore * TETRIS_AI_CONFIG.rewardGameOverScoreBonusPerPoint;
-      const rawTotal = netReward + TETRIS_AI_CONFIG.rewardGameOver + gameOverLengthBonus + scoreBonus;
-      const total = Math.max(TETRIS_AI_CONFIG.rewardClipMin, Math.min(TETRIS_AI_CONFIG.rewardClipMax, rawTotal));
+      const terminalPenalty =
+        TETRIS_AI_CONFIG.rewardGameOver + gameOverLengthBonus + scoreBonus;
+      const rawTotal = Math.min(netReward, 0) + terminalPenalty;
+      const total = Math.max(
+        TETRIS_AI_CONFIG.rewardClipMin,
+        Math.min(
+          TETRIS_AI_CONFIG.rewardGameOverMaxTerminalReward,
+          Math.min(TETRIS_AI_CONFIG.rewardClipMax, rawTotal),
+        ),
+      );
       console.log(
         `%c☠️ GAME OVER — Episode #${this.agent.getStats().totalEpisodes + 1}`,
         'font-size:14px;font-weight:bold;color:#f7768e;background:#1a1a2e;padding:4px 8px;border-radius:4px',
       );
       console.log(
-        `%c  Pieces placed: ${episodePieceCount} | Peak score: ${this.episodePeakScore} | Game-over penalty: ${TETRIS_AI_CONFIG.rewardGameOver} | Length bonus: ${+gameOverLengthBonus.toFixed(4)} | Score bonus: ${+scoreBonus.toFixed(4)} | Raw: ${+rawTotal.toFixed(4)} | Clipped: ${+total.toFixed(4)}`,
+        `%c  Pieces placed: ${episodePieceCount} | Peak score: ${this.episodePeakScore} | Game-over penalty: ${TETRIS_AI_CONFIG.rewardGameOver} | Length bonus: ${+gameOverLengthBonus.toFixed(4)} | Score bonus: ${+scoreBonus.toFixed(4)} | Terminal penalty: ${+terminalPenalty.toFixed(4)} | Raw: ${+rawTotal.toFixed(4)} | Clipped: ${+total.toFixed(4)}`,
         'color:#bb9af7',
       );
       return total;
@@ -575,6 +626,57 @@ export class TetrisAiControllerService {
       pillars: features[25] * 10,         // normalized by /10
       wells: features[26] * 100,          // normalized by /100
     };
+  }
+
+  private shouldUseTeacherWarmup(): boolean {
+    return this.agent.getStats().totalEpisodes < TETRIS_AI_CONFIG.teacherWarmupEpisodes;
+  }
+
+  private selectTeacherPlacement(rankedPlacements: RankedPlacement[]): number {
+    const sorted = [...rankedPlacements].sort((a, b) => b.heuristicValue - a.heuristicValue);
+    const shortlist = sorted.slice(0, Math.min(3, sorted.length));
+    const selected = Math.random() < TETRIS_AI_CONFIG.teacherExploreRate
+      ? shortlist[Math.floor(Math.random() * shortlist.length)]
+      : sorted[0];
+
+    return selected.index;
+  }
+
+  private recordTeacherGuidance(rankedPlacements: RankedPlacement[]): void {
+    const sorted = [...rankedPlacements].sort((a, b) => b.heuristicValue - a.heuristicValue);
+    const preferred = sorted[0];
+    if (!preferred) {
+      return;
+    }
+
+    const rejectedFeaturesBatch = sorted
+      .slice(-TETRIS_AI_CONFIG.teacherNegativeSamplesPerMove)
+      .map((entry) => entry.placement.features);
+
+    this.agent.recordTeacherGuidance(preferred.placement.features, rejectedFeaturesBatch);
+    this.agent.trainOnDemonstrations();
+  }
+
+  private scorePlacementHeuristically(features: number[]): number {
+    const linesCleared = features[22] * 4;
+    const holes = features[21] * 40;
+    const coveredCells = features[24] * 120;
+    const aggregateHeight = features[20] * 200;
+    const bumpiness = features[23] * 100;
+    const maxHeight = features[19] * 20;
+    const pillars = features[25] * 10;
+    const wells = features[26] * 100;
+
+    return (
+      linesCleared * 14 -
+      holes * 5 -
+      coveredCells * 1.8 -
+      aggregateHeight * 0.16 -
+      bumpiness * 0.55 -
+      maxHeight * 1.1 -
+      pillars * 2.4 -
+      wells * 0.95
+    );
   }
 
   private matricesEqual(a: number[][], b: number[][]): boolean {

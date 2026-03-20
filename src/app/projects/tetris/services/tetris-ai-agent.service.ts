@@ -7,7 +7,8 @@ import { TetrisAiStats } from '../interfaces/tetris-ai-stats.interface';
 interface Experience {
   features: number[];
   reward: number;
-  nextFeatures: number[];
+  nextStateValue?: number;
+  nextFeatures?: number[];
   done: boolean;
 }
 
@@ -107,25 +108,41 @@ export class TetrisAiAgentService {
   }
 
   /** Epsilon-greedy selection over candidate placements. Returns the selected index. */
-  public selectPlacement(featuresBatch: number[][]): number {
+  public selectPlacement(values: number[]): number {
     if (Math.random() < this.stats.epsilon) {
-      const idx = Math.floor(Math.random() * featuresBatch.length);
+      const idx = Math.floor(Math.random() * values.length);
       return idx;
     }
-    const values = this.evaluatePlacements(featuresBatch);
     return values.indexOf(Math.max(...values));
   }
 
-  public remember(features: number[], reward: number, nextFeatures: number[], done: boolean): void {
+  public estimateBestFutureValue(featuresBatch: number[][]): number {
+    if (featuresBatch.length === 0) {
+      return 0;
+    }
+
+    return tf.tidy(() => {
+      const input = tf.tensor2d(featuresBatch);
+      const output = this.targetModel.predict(input) as tf.Tensor;
+      return output.max().dataSync()[0] ?? 0;
+    });
+  }
+
+  public remember(
+    features: number[],
+    reward: number,
+    nextStateValue: number,
+    done: boolean,
+  ): void {
     if (this.replayBuffer.length >= TETRIS_AI_CONFIG.replayBufferSize) {
       this.replayBuffer.shift();
     }
-    this.replayBuffer.push({ features, reward, nextFeatures, done });
+    this.replayBuffer.push({ features, reward, nextStateValue, done });
     this.stepCount++;
     this.stats.totalSteps++;
 
     console.log(
-      `%c📦 REPLAY BUFFER %csize=${this.replayBuffer.length}/${TETRIS_AI_CONFIG.replayBufferSize} %cstep=${this.stepCount} %creward=${reward >= 0 ? '+' : ''}${reward.toFixed(4)} done=${done}`,
+      `%c📦 REPLAY BUFFER %csize=${this.replayBuffer.length}/${TETRIS_AI_CONFIG.replayBufferSize} %cstep=${this.stepCount} %creward=${reward >= 0 ? '+' : ''}${reward.toFixed(4)} nextV=${nextStateValue.toFixed(4)} done=${done}`,
       'color:#7dcfff;font-weight:bold',
       'color:#565f89',
       'color:#565f89',
@@ -140,18 +157,24 @@ export class TetrisAiAgentService {
     preferredFeatures: number[],
     rejectedFeaturesBatch: number[][],
   ): void {
-    const examples: DemonstrationExample[] = [
-      {
-        features: preferredFeatures,
-        target: TETRIS_AI_CONFIG.humanChosenTarget,
-      },
-      ...rejectedFeaturesBatch.map((features) => ({
-        features,
-        target: TETRIS_AI_CONFIG.humanRejectedTarget,
-      })),
-    ];
+    this.appendDemonstrations(
+      preferredFeatures,
+      rejectedFeaturesBatch,
+      TETRIS_AI_CONFIG.humanChosenTarget,
+      TETRIS_AI_CONFIG.humanRejectedTarget,
+    );
+  }
 
-    this.appendDemonstrations(examples);
+  public recordTeacherGuidance(
+    preferredFeatures: number[],
+    rejectedFeaturesBatch: number[][],
+  ): void {
+    this.appendDemonstrations(
+      preferredFeatures,
+      rejectedFeaturesBatch,
+      TETRIS_AI_CONFIG.teacherChosenTarget,
+      TETRIS_AI_CONFIG.teacherRejectedTarget,
+    );
   }
 
   public trainStep(): void {
@@ -332,7 +355,7 @@ export class TetrisAiAgentService {
     )) as tf.Sequential;
     this.model.compile({
       optimizer: tf.train.adam(TETRIS_AI_CONFIG.learningRate),
-      loss: 'meanSquaredError',
+      loss: tf.losses.huberLoss,
     });
     this.targetModel = this.createModel();
     this.syncTargetNetwork();
@@ -358,7 +381,7 @@ export class TetrisAiAgentService {
     model.add(tf.layers.dense({ units: 1, activation: 'linear' }));
     model.compile({
       optimizer: tf.train.adam(TETRIS_AI_CONFIG.learningRate),
-      loss: 'meanSquaredError',
+      loss: tf.losses.huberLoss,
     });
     return model;
   }
@@ -378,7 +401,7 @@ export class TetrisAiAgentService {
       this.model = loaded;
       this.model.compile({
         optimizer: tf.train.adam(TETRIS_AI_CONFIG.learningRate),
-        loss: 'meanSquaredError',
+        loss: tf.losses.huberLoss,
       });
       this.targetModel = this.createModel();
       this.syncTargetNetwork();
@@ -502,7 +525,23 @@ export class TetrisAiAgentService {
     }
   }
 
-  private appendDemonstrations(examples: DemonstrationExample[]): void {
+  private appendDemonstrations(
+    preferredFeatures: number[],
+    rejectedFeaturesBatch: number[][],
+    preferredTarget: number,
+    rejectedTarget: number,
+  ): void {
+    const examples: DemonstrationExample[] = [
+      {
+        features: preferredFeatures,
+        target: preferredTarget,
+      },
+      ...rejectedFeaturesBatch.map((features) => ({
+        features,
+        target: rejectedTarget,
+      })),
+    ];
+
     if (examples.length === 0) {
       return;
     }
@@ -555,9 +594,32 @@ export class TetrisAiAgentService {
   private sampleBatch(): Experience[] {
     const buf = this.replayBuffer;
     const batch: Experience[] = [];
+    const recentWindow = buf.slice(-Math.min(buf.length, TETRIS_AI_CONFIG.replayRecentWindowSize));
+    const informativePool = [...buf]
+      .sort((a, b) => this.getExperiencePriority(b) - this.getExperiencePriority(a))
+      .slice(0, Math.max(TETRIS_AI_CONFIG.batchSize, Math.ceil(buf.length * 0.25)));
+
+    const recentCount = Math.round(TETRIS_AI_CONFIG.batchSize * TETRIS_AI_CONFIG.replayRecentFraction);
+    const informativeCount = Math.round(
+      TETRIS_AI_CONFIG.batchSize * TETRIS_AI_CONFIG.replayInformativeFraction,
+    );
+
+    for (let i = 0; i < recentCount && recentWindow.length > 0; i++) {
+      batch.push(recentWindow[Math.floor(Math.random() * recentWindow.length)]);
+    }
+
+    for (let i = 0; i < informativeCount && informativePool.length > 0; i++) {
+      batch.push(informativePool[Math.floor(Math.random() * informativePool.length)]);
+    }
+
     for (let i = 0; i < TETRIS_AI_CONFIG.batchSize; i++) {
+      if (batch.length >= TETRIS_AI_CONFIG.batchSize) {
+        break;
+      }
+
       batch.push(buf[Math.floor(Math.random() * buf.length)]);
     }
+
     return batch;
   }
 
@@ -572,12 +634,7 @@ export class TetrisAiAgentService {
 
   private async runTraining(): Promise<void> {
     const batch = this.sampleBatch();
-
-    // Compute target values using target network
-    const nextValues: number[] = tf.tidy(() => {
-      const nextInput = tf.tensor2d(batch.map((e) => e.nextFeatures));
-      return Array.from((this.targetModel.predict(nextInput) as tf.Tensor).dataSync());
-    });
+    const nextValues = batch.map((e) => e.nextStateValue ?? 0);
 
     const targets = batch.map((e, i) =>
       e.done ? e.reward : e.reward + TETRIS_AI_CONFIG.gamma * nextValues[i],
@@ -693,6 +750,14 @@ export class TetrisAiAgentService {
     const clonedWeights = this.model.getWeights().map((weight) => weight.clone());
     this.targetModel.setWeights(clonedWeights);
     clonedWeights.forEach((weight) => weight.dispose());
+  }
+
+  private getExperiencePriority(experience: Experience): number {
+    return (
+      Math.abs(experience.reward) +
+      (experience.reward > 0 ? 1.5 : 0) +
+      (experience.done ? 2 : 0)
+    );
   }
 
   /**
@@ -966,13 +1031,16 @@ export class TetrisAiAgentService {
     }
 
     const candidate = value as Partial<Experience>;
+    const hasNextStateValue = typeof candidate.nextStateValue === 'number';
+    const hasLegacyNextFeatures =
+      Array.isArray(candidate.nextFeatures) &&
+      candidate.nextFeatures.every((item) => typeof item === 'number');
 
     return (
       Array.isArray(candidate.features) &&
       candidate.features.every((item) => typeof item === 'number') &&
-      Array.isArray(candidate.nextFeatures) &&
-      candidate.nextFeatures.every((item) => typeof item === 'number') &&
       typeof candidate.reward === 'number' &&
+      (hasNextStateValue || hasLegacyNextFeatures) &&
       typeof candidate.done === 'boolean'
     );
   }
