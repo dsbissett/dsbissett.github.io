@@ -36,6 +36,11 @@
               {
                 "glob": "**/*",
                 "input": "public"
+              },
+              {
+                "glob": "**/*",
+                "input": "node_modules/@dsbissett/ngx-clippy/assets",
+                "output": "assets"
               }
             ],
             "styles": [

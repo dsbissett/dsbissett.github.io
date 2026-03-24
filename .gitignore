@@ -38,6 +38,10 @@ yarn-error.log
 testem.log
 /typings
 __screenshots__/
+/.claude/*
+.claude/*
+CLAUDE.md
+/reports/*
 
 # System files
 .DS_Store
@@ -46,3 +50,4 @@ Thumbs.db
 .vscode/launch.json
 .vscode/mcp.json
 .vscode/tasks.json
+.claude/settings.local.json

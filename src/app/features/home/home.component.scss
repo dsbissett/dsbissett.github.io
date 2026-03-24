@@ -114,18 +114,16 @@
   border-left: 20px solid transparent;
 }
 
-h1 {
+h1.glitch-title {
   position: relative;
   z-index: 2;
   margin: 0;
-  color: #fff;
-  font-family: 'Righteous', display;
-  font-size: clamp(40px, 8vw, 80px);
-  line-height: 0.9;
-  letter-spacing: 3px;
-  text-transform: uppercase;
-  text-shadow: 0 0 10px var(--atomic-teal), 0 0 20px var(--atomic-teal);
-  animation: pulse 2s infinite alternate;
+  line-height: 0;
+}
+
+.glitch-canvas {
+  display: block;
+  max-width: 100%;
 }
 
 .subtitle {
@@ -461,18 +459,12 @@ code {
   }
 }
 
-@keyframes pulse {
-  0% {
-    text-shadow: 0 0 10px var(--atomic-teal), 0 0 20px var(--atomic-teal);
-  }
-
-  100% {
-    text-shadow:
-      0 0 20px var(--atomic-teal),
-      0 0 40px var(--atomic-teal),
-      0 0 60px var(--atomic-teal),
-      0 0 80px var(--atomic-teal);
-  }
+@keyframes glitch-skew {
+  0%   { transform: skew(0deg); }
+  25%  { transform: skew(6deg) scaleX(1.02); }
+  50%  { transform: skew(-4deg) scaleX(0.98); }
+  75%  { transform: skew(8deg) scaleX(1.04); }
+  100% { transform: skew(-3deg) scaleX(0.97); }
 }
 
 @keyframes card-glow {

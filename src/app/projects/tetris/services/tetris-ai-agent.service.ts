@@ -52,6 +52,27 @@ export class TetrisAiAgentService {
     const loaded = await this.tryLoadModel();
     if (!loaded) {
       this.buildModels();
+      // CRITICAL FIX: If the model couldn't load but stats existed (e.g., model
+      // key changed, localStorage cleared, or shape mismatch), epsilon may be
+      // stuck at a low value like 0.02 from previous training. A fresh model
+      // with near-zero exploration = exploiting random Q-values = catastrophic.
+      // Reset epsilon and training state so the agent explores properly.
+      if (this.stats.totalEpisodes > 0) {
+        console.warn(
+          `%c⚠️ MODEL LOAD FAILED — resetting training state. ` +
+          `Had ${this.stats.totalEpisodes} episodes but model is freshly built. ` +
+          `Epsilon reset from ${this.stats.epsilon.toFixed(4)} to ${TETRIS_AI_CONFIG.epsilonStart}.`,
+          'color:#f7768e;font-weight:bold',
+        );
+        this.stats = this.defaultStats();
+        this.replayBuffer = [];
+        this.demonstrations = [];
+        this.stepCount = 0;
+        this.demonstrationsSinceLastTraining = 0;
+        this.persistStats();
+        this.clearReplayBuffer();
+        this.clearDemonstrations();
+      }
     }
 
     console.log(
@@ -59,18 +80,31 @@ export class TetrisAiAgentService {
       'font-size:12px;font-weight:bold;color:#7dcfff;background:#1a1a2e;padding:4px 8px;border-radius:4px',
     );
     console.log(`%c  TF.js backend: ${tf.getBackend()} | Model: ${loaded ? 'loaded from storage' : 'freshly built'}`, 'color:#a9b1d6');
-    console.log(`%c  Network: ${TETRIS_AI_CONFIG.featureCount} (27 board + 21 preview) → ${TETRIS_AI_CONFIG.hiddenLayer1} → ${TETRIS_AI_CONFIG.hiddenLayer2} → 1`, 'color:#a9b1d6');
+    console.log(`%c  Network: ${TETRIS_AI_CONFIG.featureCount} (32 board + 21 preview) → ${TETRIS_AI_CONFIG.hiddenLayer1} → ${TETRIS_AI_CONFIG.hiddenLayer2} → 1`, 'color:#a9b1d6');
     console.log(`%c  Episodes: ${this.stats.totalEpisodes} | Steps: ${this.stats.totalSteps} | Epsilon: ${this.stats.epsilon.toFixed(4)} | Best score: ${this.stats.bestScore}`, 'color:#a9b1d6');
     console.log(`%c  Replay buffer: ${this.replayBuffer.length}/${TETRIS_AI_CONFIG.replayBufferSize} | Demonstrations: ${this.demonstrations.length}/${TETRIS_AI_CONFIG.demonstrationBufferSize}`, 'color:#a9b1d6');
     console.log(`%c  Gamma: ${TETRIS_AI_CONFIG.gamma} | LR: ${TETRIS_AI_CONFIG.learningRate} | Batch: ${TETRIS_AI_CONFIG.batchSize} | Train every: ${TETRIS_AI_CONFIG.trainEveryNSteps} steps | Target sync: every ${TETRIS_AI_CONFIG.targetNetworkUpdateFrequency} steps`, 'color:#565f89');
   }
 
   /**
-   * Extracts 48 features from the board state after a simulated placement.
+   * Extracts 53 features from the board state after a simulated placement.
    * Features: column heights (10), height diffs (9), max height (1),
    *           aggregate height (1), holes (1), lines cleared (1), bumpiness (1),
    *           covered cells (1), pillars (1), wells (1),
+   *           row completeness (1),            <-- index 27: sum of (filled/width)^2 per row
+   *           absolute holes normalized (1),   <-- index 28: sqrt-normalized hole count
+   *           low-board density (1),           <-- index 29: fill fraction of bottom 4 rows
+   *           height variance (1),             <-- index 30: variance of column heights (tower detector)
+   *           near-complete rows (1),          <-- index 31: count of rows >= 80% filled
    *           preview piece 1 one-hot (7), preview piece 2 one-hot (7), preview piece 3 one-hot (7)
+   *
+   * heightVariance (index 30): variance of column heights normalized to [0,1].
+   * High variance means uneven surface = towers. Low variance = flat = good.
+   * This gives the network a direct signal for tower detection beyond bumpiness.
+   *
+   * nearCompleteRows (index 31): count of rows that are >= 80% filled (8+ cells in 10-wide grid).
+   * These are rows that are 1-2 pieces from clearing. Normalized by /10 to [0,1].
+   * Provides a stronger signal than rowCompleteness for "board is about to clear".
    */
   public extractFeatures(grid: number[][], linesCleared: number, previewQueue: number[][][]): number[] {
     const heights = this.getColumnHeights(grid);
@@ -82,19 +116,65 @@ export class TetrisAiAgentService {
     const bumpiness = diffs.reduce((s, d) => s + Math.abs(d), 0);
     const pillars = this.countPillars(grid, heights);
     const wells = this.countWells(heights);
+
+    const gridWidth = grid[0]?.length ?? 10;
+    const gridHeight = grid.length;
+
+    // Row completeness: sum of (filled/width)^2 for each non-empty row.
+    let rowCompleteness = 0;
+    let nearCompleteRows = 0;
+    for (const row of grid) {
+      let filled = 0;
+      for (let col = 0; col < gridWidth; col++) {
+        if (row[col] !== 0) filled++;
+      }
+      if (filled > 0) {
+        const ratio = filled / gridWidth;
+        rowCompleteness += ratio * ratio;
+        if (ratio >= 0.8) nearCompleteRows++;
+      }
+    }
+
+    // Low-board density: fill fraction of the bottom 4 rows.
+    const lowBoardRows = 4;
+    let lowBoardFilled = 0;
+    const lowBoardStart = Math.max(0, gridHeight - lowBoardRows);
+    for (let y = lowBoardStart; y < gridHeight; y++) {
+      for (let x = 0; x < gridWidth; x++) {
+        if (grid[y][x] !== 0) lowBoardFilled++;
+      }
+    }
+    const lowBoardDensity = lowBoardFilled / (lowBoardRows * gridWidth);
+
+    // Height variance: measures how uneven the surface is.
+    // Low variance = flat surface (good). High variance = towers (bad).
+    // Normalized by dividing by max possible variance (100 for 20-row grid).
+    const meanHeight = aggregateHeight / heights.length;
+    let heightVariance = 0;
+    for (const h of heights) {
+      const diff = h - meanHeight;
+      heightVariance += diff * diff;
+    }
+    heightVariance /= heights.length;
+
     const clamp = (v: number): number => Math.max(0, Math.min(1, v));
     return [
-      ...heights.map((h) => clamp(h / 20)),
-      ...diffs.map((d) => (d + 20) / 40), // shift to [0,1] range for diffs (-20..+20)
-      clamp(maxHeight / 20),
-      clamp(aggregateHeight / 200),
-      clamp(holes / 40),
-      clamp(linesCleared / 4),
-      clamp(bumpiness / 100),
-      clamp(coveredCells / 120),
-      clamp(pillars / 10),
-      clamp(wells / 100),
-      ...this.encodePreviewQueue(previewQueue),
+      ...heights.map((h) => clamp(h / 20)),                  // indices 0-9
+      ...diffs.map((d) => (d + 20) / 40),                    // indices 10-18 (shift to [0,1])
+      clamp(maxHeight / 20),                                  // index 19
+      clamp(aggregateHeight / 200),                           // index 20
+      clamp(holes / 40),                                      // index 21
+      clamp(linesCleared / 4),                               // index 22
+      clamp(bumpiness / 100),                                 // index 23
+      clamp(coveredCells / 120),                              // index 24
+      clamp(pillars / 10),                                    // index 25
+      clamp(wells / 100),                                     // index 26
+      clamp(rowCompleteness / 20),                            // index 27: row completeness
+      clamp(Math.sqrt(holes) / 6.32),                         // index 28: sqrt-normalised absolute holes
+      clamp(lowBoardDensity),                                 // index 29: low-board density
+      clamp(heightVariance / 100),                            // index 30: height variance (tower detector)
+      clamp(nearCompleteRows / 10),                           // index 31: near-complete rows (>= 80% filled)
+      ...this.encodePreviewQueue(previewQueue),               // indices 32-52
     ];
   }
 
@@ -371,6 +451,10 @@ export class TetrisAiAgentService {
         kernelInitializer: 'heNormal',
       }),
     );
+    // Dropout after first hidden layer: prevents co-adaptation of neurons,
+    // reduces Q-value overfitting to noisy replay samples, and smooths
+    // the Q-value landscape to reduce oscillation between episodes.
+    model.add(tf.layers.dropout({ rate: 0.1 }));
     model.add(
       tf.layers.dense({
         units: TETRIS_AI_CONFIG.hiddenLayer2,
@@ -704,7 +788,9 @@ export class TetrisAiAgentService {
       this.syncTargetNetwork();
     }
 
-    this.decayEpsilon();
+    if (this.stats.totalEpisodes >= TETRIS_AI_CONFIG.teacherWarmupEpisodes) {
+      this.decayEpsilon();
+    }
     this.persistStats();
   }
 

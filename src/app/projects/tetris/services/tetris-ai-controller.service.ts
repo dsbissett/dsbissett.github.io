@@ -23,6 +23,8 @@ interface Placement {
   linesCleared: number;
   /** Row where the piece landed (0 = top, gridHeight-1 = bottom) */
   placementRow: number;
+  /** Sum of (filledCells/width)^2 for each non-empty row — rewards dense, nearly-complete rows */
+  rowCompleteness: number;
 }
 
 interface Plan {
@@ -43,6 +45,14 @@ interface BoardMetrics {
   maxHeight: number;
   pillars: number;
   wells: number;
+  /** Sum of (filledCells/width)^2 per non-empty row — higher = more nearly-complete rows. */
+  rowCompleteness: number;
+  /** Fill fraction of the bottom 4 rows — higher = bottom ready to clear. */
+  lowBoardDensity: number;
+  /** Variance of column heights — higher = more tower-like surface. */
+  heightVariance: number;
+  /** Count of rows that are >= 80% filled — higher = close to clearing. */
+  nearCompleteRows: number;
 }
 
 interface RankedPlacement {
@@ -371,7 +381,7 @@ export class TetrisAiControllerService {
       index,
       placement,
       modelValue: values[index],
-      heuristicValue: this.scorePlacementHeuristically(placement.features),
+      heuristicValue: this.scorePlacementHeuristically(placement),
     }));
     const teacherActive = this.shouldUseTeacherWarmup();
     const bestModelIndex = values.indexOf(Math.max(...values));
@@ -423,9 +433,14 @@ export class TetrisAiControllerService {
       coveredCells: +(f[24] * 120).toFixed(1),
       pillars: +(f[25] * 10).toFixed(1),
       wells: +(f[26] * 100).toFixed(1),
+      rowCompleteness: +(f[27] * 20).toFixed(2),
+      absoluteHolesSqrt: +(f[28] * 6.32).toFixed(2),
+      lowBoardDensity: +f[29].toFixed(2),
+      heightVariance: +(f[30] * 100).toFixed(2),
+      nearCompleteRows: +(f[31] * 10).toFixed(0),
     });
-    // Decode and log the preview queue one-hot features (indices 27-47)
-    const previewFeatures = f.slice(27, 48);
+    // Decode and log the preview queue one-hot features (indices 32-52)
+    const previewFeatures = f.slice(32, 53);
     const decodedPreview: string[] = [];
     for (let i = 0; i < 3; i++) {
       const oneHot = previewFeatures.slice(i * 7, (i + 1) * 7);
@@ -434,7 +449,7 @@ export class TetrisAiControllerService {
         ? (TetrisAiControllerService.PIECE_NAMES[pieceIdx + 1] ?? '?')
         : 'none');
     }
-    console.log(`Preview features decoded: [${decodedPreview.join(', ')}] (from feature indices 27-47)`);
+    console.log(`Preview features decoded: [${decodedPreview.join(', ')}] (from feature indices 32-52)`);
     console.groupEnd();
 
     return {
@@ -471,13 +486,19 @@ export class TetrisAiControllerService {
         this.gridService.merge(simGrid, tempPiece);
         const clearResult = this.gridService.clearLines(simGrid);
 
+        // extractFeatures computes all metrics internally; read back the ones
+        // the heuristic scorer needs without re-computing.
+        const featureVec = this.agent.extractFeatures(simGrid, clearResult.clearedCount, state.previewQueue);
+        const rowCompleteness = featureVec[27] * 20; // denormalise from [0,1] to raw sum (index 27)
+
         results.push({
           rotation,
           x,
           matrix: matrix.map((r) => [...r]),
-          features: this.agent.extractFeatures(simGrid, clearResult.clearedCount, state.previewQueue),
+          features: featureVec,
           linesCleared: clearResult.clearedCount,
           placementRow: dropY,
+          rowCompleteness,
         });
       }
 
@@ -501,18 +522,34 @@ export class TetrisAiControllerService {
     episodePieceCount: number,
   ): number {
     const currentMetrics = this.extractMetrics(features);
-    const prev = this.prevMetrics ?? currentMetrics; // first piece: delta = 0
+    // First piece of episode: use current metrics as prev so delta = 0.
+    // Previously used null-coalesce to currentMetrics (same effect), but this
+    // makes the intent explicit. The first piece should get only survival reward
+    // with zero delta penalty -- comparing against an empty board inflated all
+    // deltas (bumpiness 0->6, maxHeight 0->3, etc.) giving a false -10 to -14
+    // penalty for the very first move.
+    const prev = this.prevMetrics ?? currentMetrics;
 
     // ── Positive signals ──
     const lineClearBonus = TETRIS_AI_CONFIG.lineClearRewards[linesCleared] ?? 0;
     const survivalReward = TETRIS_AI_CONFIG.survivalReward;
+
+    // ── Low-row line clear bonus (extra reward for clears near bottom of board) ──
+    // Uses the placement row from the plan to determine where the clear happened.
+    // Lower rows (higher row index) get more bonus.
+    let lowRowLineClearBonus = 0;
+    if (linesCleared > 0 && this.plan) {
+      const gridHeight = TETRIS_GAME_CONFIG.gridHeight;
+      const rowFraction = this.plan.placementRow / gridHeight; // 0=top, 1=bottom
+      lowRowLineClearBonus = rowFraction * linesCleared * TETRIS_AI_CONFIG.lowRowLineClearWeight;
+    }
 
     // ── Delta penalties (change caused by this move) ──
     // Positive delta = metric got worse; negative delta = metric improved (rewarded)
     // Asymmetric compression: sqrt-compress WORSENING deltas to prevent blow-ups,
     // but leave IMPROVING deltas (negative) at full strength so line clears and
     // hole fixes get their full reward.
-    const compressDelta = (d: number): number => d > 0 ? Math.sqrt(d) : d;
+    const compressDelta = (d: number): number => d > 0 ? Math.pow(d, 0.7) : d;
 
     const deltaHoles = currentMetrics.holes - prev.holes;
     const deltaCovered = currentMetrics.coveredCells - prev.coveredCells;
@@ -521,6 +558,7 @@ export class TetrisAiControllerService {
     const deltaMaxHeight = currentMetrics.maxHeight - prev.maxHeight;
     const deltaPillars = currentMetrics.pillars - prev.pillars;
     const deltaWells = currentMetrics.wells - prev.wells;
+    const deltaHeightVariance = currentMetrics.heightVariance - prev.heightVariance;
 
     const deltaPenalty =
       compressDelta(deltaHoles) * TETRIS_AI_CONFIG.deltaHolesWeight +
@@ -529,7 +567,8 @@ export class TetrisAiControllerService {
       compressDelta(deltaBumpiness) * TETRIS_AI_CONFIG.deltaBumpinessWeight +
       compressDelta(deltaMaxHeight) * TETRIS_AI_CONFIG.deltaMaxHeightWeight +
       compressDelta(deltaPillars) * TETRIS_AI_CONFIG.deltaPillarsWeight +
-      compressDelta(deltaWells) * TETRIS_AI_CONFIG.deltaWellsWeight;
+      compressDelta(deltaWells) * TETRIS_AI_CONFIG.deltaWellsWeight +
+      compressDelta(deltaHeightVariance) * TETRIS_AI_CONFIG.deltaHeightVarianceWeight;
 
     // ── Absolute danger zone penalty (prevents ignoring lethal spikes) ──
     const gridHeight = TETRIS_GAME_CONFIG.gridHeight;
@@ -540,8 +579,12 @@ export class TetrisAiControllerService {
       dangerZonePenalty = excess * excess * TETRIS_AI_CONFIG.heightDangerZoneWeight;
     }
 
-    const rewardTotal = lineClearBonus + survivalReward;
-    const penaltyTotal = deltaPenalty + dangerZonePenalty;
+    // ── Absolute holes penalty (continuous pressure to fix all existing holes) ──
+    // sqrt(holes) grows quickly for small counts but tapers off to avoid dominating.
+    const absoluteHolesPenalty = Math.sqrt(currentMetrics.holes) * TETRIS_AI_CONFIG.absoluteHolesWeight;
+
+    const rewardTotal = lineClearBonus + survivalReward + lowRowLineClearBonus;
+    const penaltyTotal = deltaPenalty + dangerZonePenalty + absoluteHolesPenalty;
     let netReward = rewardTotal - penaltyTotal;
 
     this.chart.pushEntry(netReward, penaltyTotal);
@@ -556,18 +599,21 @@ export class TetrisAiControllerService {
     console.log('Reward components:', {
       lineClearBonus: +lineClearBonus.toFixed(4),
       survivalReward: +survivalReward.toFixed(4),
+      lowRowLineClearBonus: +lowRowLineClearBonus.toFixed(4),
       rewardSubtotal: +rewardTotal.toFixed(4),
     });
-    console.log('Delta penalties (raw→sqrt × weight = contribution):', {
-      deltaHoles: `${deltaHoles >= 0 ? '+' : ''}${deltaHoles.toFixed(1)}→${compressDelta(deltaHoles).toFixed(2)} × ${TETRIS_AI_CONFIG.deltaHolesWeight} = ${+(compressDelta(deltaHoles) * TETRIS_AI_CONFIG.deltaHolesWeight).toFixed(4)}`,
-      deltaCovered: `${deltaCovered >= 0 ? '+' : ''}${deltaCovered.toFixed(1)}→${compressDelta(deltaCovered).toFixed(2)} × ${TETRIS_AI_CONFIG.deltaCoveredCellsWeight} = ${+(compressDelta(deltaCovered) * TETRIS_AI_CONFIG.deltaCoveredCellsWeight).toFixed(4)}`,
-      deltaAggHeight: `${deltaAggHeight >= 0 ? '+' : ''}${deltaAggHeight.toFixed(1)}→${compressDelta(deltaAggHeight).toFixed(2)} × ${TETRIS_AI_CONFIG.deltaAggregateHeightWeight} = ${+(compressDelta(deltaAggHeight) * TETRIS_AI_CONFIG.deltaAggregateHeightWeight).toFixed(4)}`,
-      deltaBumpiness: `${deltaBumpiness >= 0 ? '+' : ''}${deltaBumpiness.toFixed(1)}→${compressDelta(deltaBumpiness).toFixed(2)} × ${TETRIS_AI_CONFIG.deltaBumpinessWeight} = ${+(compressDelta(deltaBumpiness) * TETRIS_AI_CONFIG.deltaBumpinessWeight).toFixed(4)}`,
-      deltaMaxHeight: `${deltaMaxHeight >= 0 ? '+' : ''}${deltaMaxHeight.toFixed(1)}→${compressDelta(deltaMaxHeight).toFixed(2)} × ${TETRIS_AI_CONFIG.deltaMaxHeightWeight} = ${+(compressDelta(deltaMaxHeight) * TETRIS_AI_CONFIG.deltaMaxHeightWeight).toFixed(4)}`,
-      deltaPillars: `${deltaPillars >= 0 ? '+' : ''}${deltaPillars.toFixed(1)}→${compressDelta(deltaPillars).toFixed(2)} × ${TETRIS_AI_CONFIG.deltaPillarsWeight} = ${+(compressDelta(deltaPillars) * TETRIS_AI_CONFIG.deltaPillarsWeight).toFixed(4)}`,
-      deltaWells: `${deltaWells >= 0 ? '+' : ''}${deltaWells.toFixed(1)}→${compressDelta(deltaWells).toFixed(2)} × ${TETRIS_AI_CONFIG.deltaWellsWeight} = ${+(compressDelta(deltaWells) * TETRIS_AI_CONFIG.deltaWellsWeight).toFixed(4)}`,
+    console.log('Delta penalties (raw->compressed x weight = contribution):', {
+      deltaHoles: `${deltaHoles >= 0 ? '+' : ''}${deltaHoles.toFixed(1)}->${compressDelta(deltaHoles).toFixed(2)} x ${TETRIS_AI_CONFIG.deltaHolesWeight} = ${+(compressDelta(deltaHoles) * TETRIS_AI_CONFIG.deltaHolesWeight).toFixed(4)}`,
+      deltaCovered: `${deltaCovered >= 0 ? '+' : ''}${deltaCovered.toFixed(1)}->${compressDelta(deltaCovered).toFixed(2)} x ${TETRIS_AI_CONFIG.deltaCoveredCellsWeight} = ${+(compressDelta(deltaCovered) * TETRIS_AI_CONFIG.deltaCoveredCellsWeight).toFixed(4)}`,
+      deltaAggHeight: `${deltaAggHeight >= 0 ? '+' : ''}${deltaAggHeight.toFixed(1)}->${compressDelta(deltaAggHeight).toFixed(2)} x ${TETRIS_AI_CONFIG.deltaAggregateHeightWeight} = ${+(compressDelta(deltaAggHeight) * TETRIS_AI_CONFIG.deltaAggregateHeightWeight).toFixed(4)}`,
+      deltaBumpiness: `${deltaBumpiness >= 0 ? '+' : ''}${deltaBumpiness.toFixed(1)}->${compressDelta(deltaBumpiness).toFixed(2)} x ${TETRIS_AI_CONFIG.deltaBumpinessWeight} = ${+(compressDelta(deltaBumpiness) * TETRIS_AI_CONFIG.deltaBumpinessWeight).toFixed(4)}`,
+      deltaMaxHeight: `${deltaMaxHeight >= 0 ? '+' : ''}${deltaMaxHeight.toFixed(1)}->${compressDelta(deltaMaxHeight).toFixed(2)} x ${TETRIS_AI_CONFIG.deltaMaxHeightWeight} = ${+(compressDelta(deltaMaxHeight) * TETRIS_AI_CONFIG.deltaMaxHeightWeight).toFixed(4)}`,
+      deltaPillars: `${deltaPillars >= 0 ? '+' : ''}${deltaPillars.toFixed(1)}->${compressDelta(deltaPillars).toFixed(2)} x ${TETRIS_AI_CONFIG.deltaPillarsWeight} = ${+(compressDelta(deltaPillars) * TETRIS_AI_CONFIG.deltaPillarsWeight).toFixed(4)}`,
+      deltaWells: `${deltaWells >= 0 ? '+' : ''}${deltaWells.toFixed(1)}->${compressDelta(deltaWells).toFixed(2)} x ${TETRIS_AI_CONFIG.deltaWellsWeight} = ${+(compressDelta(deltaWells) * TETRIS_AI_CONFIG.deltaWellsWeight).toFixed(4)}`,
+      deltaHeightVar: `${deltaHeightVariance >= 0 ? '+' : ''}${deltaHeightVariance.toFixed(1)}->${compressDelta(deltaHeightVariance).toFixed(2)} x ${TETRIS_AI_CONFIG.deltaHeightVarianceWeight} = ${+(compressDelta(deltaHeightVariance) * TETRIS_AI_CONFIG.deltaHeightVarianceWeight).toFixed(4)}`,
       deltaPenaltySubtotal: +deltaPenalty.toFixed(4),
       dangerZonePenalty: +dangerZonePenalty.toFixed(4),
+      absoluteHolesPenalty: +absoluteHolesPenalty.toFixed(4),
       penaltyTotal: +penaltyTotal.toFixed(4),
     });
     console.log('Board metrics (current | prev):', {
@@ -578,6 +624,10 @@ export class TetrisAiControllerService {
       maxHeight: `${currentMetrics.maxHeight.toFixed(1)} | ${prev.maxHeight.toFixed(1)}`,
       pillars: `${currentMetrics.pillars.toFixed(1)} | ${prev.pillars.toFixed(1)}`,
       wells: `${currentMetrics.wells.toFixed(1)} | ${prev.wells.toFixed(1)}`,
+      heightVar: `${currentMetrics.heightVariance.toFixed(2)} | ${prev.heightVariance.toFixed(2)}`,
+      rowCompleteness: `${currentMetrics.rowCompleteness.toFixed(2)} | ${prev.rowCompleteness.toFixed(2)}`,
+      lowBoardDensity: `${currentMetrics.lowBoardDensity.toFixed(2)} | ${prev.lowBoardDensity.toFixed(2)}`,
+      nearCompleteRows: `${currentMetrics.nearCompleteRows.toFixed(0)} | ${prev.nearCompleteRows.toFixed(0)}`,
     });
     console.log(`Net reward: ${rewardTotal.toFixed(4)} - ${penaltyTotal.toFixed(4)} = ${netReward.toFixed(4)}`);
     console.groupEnd();
@@ -615,16 +665,38 @@ export class TetrisAiControllerService {
   /**
    * Extracts raw board metrics from the normalized feature vector.
    * These are denormalized back to their natural scale for interpretable deltas.
+   *
+   * Feature indices (53 total):
+   *   0-9:   column heights (×20)
+   *   10-18: height diffs (×40 - 20)
+   *   19:    max height (×20)
+   *   20:    aggregate height (×200)
+   *   21:    holes (×40)
+   *   22:    lines cleared (×4)
+   *   23:    bumpiness (×100)
+   *   24:    covered cells (×120)
+   *   25:    pillars (×10)
+   *   26:    wells (×100)
+   *   27:    row completeness (×20, sum of (filled/width)^2 per row)
+   *   28:    absolute holes sqrt-normalized (×6.32, then squared back)
+   *   29:    low-board density (fill fraction of bottom 4 rows, already [0,1])
+   *   30:    height variance (×100, variance of column heights)
+   *   31:    near-complete rows (×10, count of rows >= 80% filled)
+   *   32-52: preview one-hot (3 pieces × 7)
    */
   private extractMetrics(features: number[]): BoardMetrics {
     return {
-      holes: features[21] * 40,          // normalized by /40
-      coveredCells: features[24] * 120,   // normalized by /120
+      holes: features[21] * 40,           // normalized by /40
+      coveredCells: features[24] * 120,    // normalized by /120
       aggregateHeight: features[20] * 200, // normalized by /200
-      bumpiness: features[23] * 100,      // normalized by /100
-      maxHeight: features[19] * 20,       // normalized by /20
-      pillars: features[25] * 10,         // normalized by /10
-      wells: features[26] * 100,          // normalized by /100
+      bumpiness: features[23] * 100,       // normalized by /100
+      maxHeight: features[19] * 20,        // normalized by /20
+      pillars: features[25] * 10,          // normalized by /10
+      wells: features[26] * 100,           // normalized by /100
+      rowCompleteness: features[27] * 20,  // normalized by /20
+      lowBoardDensity: features[29],       // already [0,1] (fill fraction of bottom 4 rows)
+      heightVariance: features[30] * 100,  // normalized by /100
+      nearCompleteRows: features[31] * 10, // normalized by /10
     };
   }
 
@@ -657,25 +729,66 @@ export class TetrisAiControllerService {
     this.agent.trainOnDemonstrations();
   }
 
-  private scorePlacementHeuristically(features: number[]): number {
+  private scorePlacementHeuristically(placement: Placement): number {
+    const features = placement.features;
     const linesCleared = features[22] * 4;
     const holes = features[21] * 40;
-    const coveredCells = features[24] * 120;
-    const aggregateHeight = features[20] * 200;
     const bumpiness = features[23] * 100;
     const maxHeight = features[19] * 20;
-    const pillars = features[25] * 10;
-    const wells = features[26] * 100;
+    const aggregateHeight = features[20] * 200;
+    const coveredCells = features[24] * 120;
+    const lowBoardDensity = features[29]; // [0,1] fill fraction of bottom 4 rows
+    const heightVariance = features[30] * 100;
+    const nearCompleteRows = features[31] * 10;
+
+    // Line-clear bonus -- clearing rows is the top priority.
+    // Lower placements (higher row index) get a stronger multiplier bonus (Goal 3).
+    const gridHeight = TETRIS_GAME_CONFIG.gridHeight;
+    const rowFraction = placement.placementRow / gridHeight; // 0=top, 1=bottom
+    const lowRowMultiplier = linesCleared > 0 ? 1 + rowFraction * 0.8 : 1;
+    const lineClearBonus = linesCleared > 0
+      ? (100 + linesCleared * linesCleared * 30) * lowRowMultiplier
+      : 0;
+
+    // Row completeness bonus -- reward boards where rows are densely filled.
+    const completenessBonus = placement.rowCompleteness * 8.0;
+
+    // Near-complete rows bonus -- rows >= 80% filled are close to clearing.
+    const nearCompleteBonus = nearCompleteRows * 15.0;
+
+    // Low-board density bonus -- reward filling the bottom rows.
+    const lowBoardBonus = lowBoardDensity * 25.0;
+
+    // Aggregate height penalty: keeps the board as empty as possible.
+    const aggHeightPenalty = aggregateHeight * 0.12;
+
+    // Quadratic height penalty on max column: towers become catastrophically bad.
+    // Threshold at 8: allow stacking up to 7 rows for healthy pre-clear building.
+    const heightPenalty = maxHeight > 8
+      ? (maxHeight - 8) * (maxHeight - 8) * 2.5
+      : 0;
+
+    // Height variance penalty: directly penalizes uneven surfaces (towers).
+    // Increased from 1.5 to 2.5 to more strongly discourage tower formation (Goal 5).
+    const variancePenalty = heightVariance * 2.5;
+
+    // Holes penalty: linear with a flat penalty for any holes.
+    // 1 hole = 55, 2 holes = 80. A single line clear = ~130.
+    // Allows the teacher to accept 1-hole placements that clear lines.
+    const holesPenalty = holes > 0 ? holes * 25 + 30 : 0;
+    const coveredPenalty = coveredCells * 2.0;
 
     return (
-      linesCleared * 14 -
-      holes * 5 -
-      coveredCells * 1.8 -
-      aggregateHeight * 0.16 -
-      bumpiness * 0.55 -
-      maxHeight * 1.1 -
-      pillars * 2.4 -
-      wells * 0.95
+      lineClearBonus +
+      completenessBonus +
+      nearCompleteBonus +
+      lowBoardBonus -
+      holesPenalty -
+      coveredPenalty -
+      bumpiness * 3.5 -
+      aggHeightPenalty -
+      heightPenalty -
+      variancePenalty
     );
   }
 
