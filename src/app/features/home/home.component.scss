@@ -102,6 +102,32 @@
   box-shadow: 0 0 30px rgb(0 255 245 / 30%);
 }
 
+.googie-sign::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      rgb(0 0 0 / 25%) 0px,
+      rgb(0 0 0 / 25%) 1px,
+      transparent 1px,
+      transparent 4px
+    );
+  animation: scanline-scroll 8s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes scanline-scroll {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 0 200px;
+  }
+}
+
 .googie-sign::before {
   content: '';
   position: absolute;
