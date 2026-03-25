@@ -187,6 +187,10 @@ export class HomeComponent implements OnInit {
   }
 
   private glitchTimer: ReturnType<typeof setTimeout> | null = null;
+  private flickerTimer: ReturnType<typeof setTimeout> | null = null;
+  private flickerActive = false;
+  private activeFlickerSource: AudioBufferSourceNode | null = null;
+  private activeFlickerGain: GainNode | null = null;
 
   private initGlitchCanvas(): void {
     // Wait a frame for the canvas to be in the DOM and font to load
@@ -218,9 +222,11 @@ export class HomeComponent implements OnInit {
       this.cleanImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
       this.scheduleGlitch();
+      this.scheduleFlicker();
 
       this.destroyRef.onDestroy(() => {
         if (this.glitchTimer) clearTimeout(this.glitchTimer);
+        if (this.flickerTimer) clearTimeout(this.flickerTimer);
       });
     });
   }
@@ -271,6 +277,10 @@ export class HomeComponent implements OnInit {
       this.scheduleGlitch();
       return;
     }
+
+    // Pause flicker during glitch
+    if (this.flickerTimer) clearTimeout(this.flickerTimer);
+    this.flickerActive = true;
 
     const w = this.canvasW;
     const h = this.canvasH;
@@ -325,6 +335,8 @@ export class HomeComponent implements OnInit {
         // Phase 3: triple-pulse scramble translation → reveal English
         this.playTriplePulseBurst(ctx, canvas, w, h, scrambleTranslation, translationImage, glitch2Duration, () => {
           ctx.putImageData(this.cleanImageData!, 0, 0);
+          this.flickerActive = false;
+          this.scheduleFlicker();
           this.scheduleGlitch();
         });
       }, holdTime);
@@ -481,7 +493,7 @@ export class HomeComponent implements OnInit {
     source.buffer = buffer;
 
     const gain = ctx.createGain();
-    gain.gain.value = 0.15;
+    gain.gain.value = 0.05;
     source.connect(gain);
     gain.connect(ctx.destination);
 
@@ -502,6 +514,41 @@ export class HomeComponent implements OnInit {
         // Already stopped
       }
       this.activeGlitchSource = null;
+    }
+  }
+
+  private startFlickerSound(): void {
+    const ctx = this.getAudioContext();
+    if (!ctx || !this.glitchAudioBuffer) return;
+
+    this.stopFlickerSound();
+
+    const buffer = this.glitchAudioBuffer;
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+
+    const gain = ctx.createGain();
+    gain.gain.value = 0.03;
+    source.connect(gain);
+    gain.connect(ctx.destination);
+
+    const maxOffset = Math.max(0, buffer.duration - 0.8);
+    const offset = Math.random() * maxOffset;
+
+    source.start(0, offset);
+    this.activeFlickerSource = source;
+    this.activeFlickerGain = gain;
+  }
+
+  private stopFlickerSound(): void {
+    if (this.activeFlickerSource) {
+      try {
+        this.activeFlickerSource.stop();
+      } catch {
+        // Already stopped
+      }
+      this.activeFlickerSource = null;
+      this.activeFlickerGain = null;
     }
   }
 
@@ -538,6 +585,162 @@ export class HomeComponent implements OnInit {
     ctx.shadowBlur = 0;
 
     return ctx.getImageData(0, 0, canvas.width, canvas.height);
+  }
+
+  private scheduleFlicker(): void {
+    const delay = 2000 + Math.random() * 6000;
+    this.flickerTimer = setTimeout(() => this.runFlicker(), delay);
+  }
+
+  private runFlicker(): void {
+    const canvas = this.glitchCanvas()?.nativeElement;
+    const ctx = this.canvasCtx;
+    if (!canvas || !ctx || !this.cleanImageData) {
+      this.scheduleFlicker();
+      return;
+    }
+
+    // Don't flicker during a glitch cycle
+    if (this.flickerActive) {
+      this.scheduleFlicker();
+      return;
+    }
+    this.flickerActive = true;
+
+    const fullText = TITLE_LINE1.toUpperCase() + TITLE_LINE2.toUpperCase();
+    const nonSpaceIndices = [...fullText]
+      .map((ch, i) => (ch !== ' ' ? i : -1))
+      .filter((i) => i >= 0);
+    const charIdx = nonSpaceIndices[Math.floor(Math.random() * nonSpaceIndices.length)];
+
+    // Determine which line and position the character is on
+    const line1 = TITLE_LINE1.toUpperCase();
+    const line2 = TITLE_LINE2.toUpperCase();
+    const isLine1 = charIdx < line1.length;
+    const lineText = isLine1 ? line1 : line2;
+    const posInLine = isLine1 ? charIdx : charIdx - line1.length;
+
+    const w = this.canvasW;
+    const h = this.canvasH;
+    const fontSize = Math.min(80, Math.max(40, w * 0.08));
+    const lineHeight = fontSize * 0.95;
+
+    // Build a flicker pattern: rapid on/off stutters like a dying fluorescent tube
+    // Each entry is [dimmed: boolean, duration in ms]
+    const pattern: [boolean, number][] = [
+      [true, 60],   // off
+      [false, 40],  // on
+      [true, 80],   // off
+      [false, 30],  // on
+      [true, 120],  // off (longer struggle)
+      [false, 50],  // on
+      [true, 40],   // off
+      [false, 25],  // on
+      [true, 200],  // off (nearly dies)
+      [false, 35],  // on
+      [true, 50],   // off
+      [false, 0],   // back on (end)
+    ];
+
+    // Play glitch sound at 25% volume for the flicker
+    this.startFlickerSound();
+
+    let step = 0;
+
+    const tick = () => {
+      if (step >= pattern.length) {
+        this.stopFlickerSound();
+        // Restore clean image and schedule next flicker
+        ctx.putImageData(this.cleanImageData!, 0, 0);
+        this.flickerActive = false;
+        this.scheduleFlicker();
+        return;
+      }
+
+      const [dimmed, duration] = pattern[step];
+      this.drawTitleWithFlicker(ctx, w, h, fontSize, lineHeight, dimmed ? { lineText, posInLine, isLine1 } : null);
+      step++;
+      this.flickerTimer = setTimeout(tick, duration);
+    };
+
+    tick();
+  }
+
+  private drawTitleWithFlicker(
+    ctx: CanvasRenderingContext2D,
+    w: number,
+    h: number,
+    fontSize: number,
+    lineHeight: number,
+    dimChar: { lineText: string; posInLine: number; isLine1: boolean } | null,
+  ): void {
+    const line1 = TITLE_LINE1.toUpperCase();
+    const line2 = TITLE_LINE2.toUpperCase();
+
+    ctx.clearRect(0, 0, w, h);
+    ctx.font = `${fontSize}px 'Righteous', sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.letterSpacing = '3px';
+
+    if (!dimChar) {
+      // Draw normally
+      ctx.shadowColor = '#00fff5';
+      ctx.shadowBlur = 20;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(line1, w / 2, 0);
+      ctx.fillText(line2, w / 2, lineHeight);
+      ctx.shadowBlur = 10;
+      ctx.fillText(line1, w / 2, 0);
+      ctx.fillText(line2, w / 2, lineHeight);
+      ctx.shadowBlur = 0;
+      return;
+    }
+
+    // Draw both lines character by character, dimming the target char
+    const drawLine = (text: string, y: number, dimPos: number | null) => {
+      // Measure full line to find starting x (centered)
+      const fullWidth = ctx.measureText(text).width;
+      let x = w / 2 - fullWidth / 2;
+
+      for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        const charWidth = ctx.measureText(ch).width;
+
+        if (i === dimPos) {
+          // Burned-out bulb: dark but visible letter, no glow
+          ctx.shadowColor = 'transparent';
+          ctx.shadowBlur = 0;
+          ctx.fillStyle = '#1a2a40';
+          ctx.textAlign = 'left';
+          ctx.fillText(ch, x, y);
+          // Slight outline to show the "tube" shape
+          ctx.strokeStyle = 'rgba(0, 255, 245, 0.08)';
+          ctx.lineWidth = 0.5;
+          ctx.strokeText(ch, x, y);
+        } else {
+          // Normal glow
+          ctx.shadowColor = '#00fff5';
+          ctx.shadowBlur = 20;
+          ctx.fillStyle = '#ffffff';
+          ctx.textAlign = 'left';
+          ctx.fillText(ch, x, y);
+          ctx.shadowBlur = 10;
+          ctx.fillText(ch, x, y);
+          ctx.shadowBlur = 0;
+        }
+
+        x += charWidth;
+      }
+
+      // Reset alignment
+      ctx.textAlign = 'center';
+    };
+
+    const dimPosLine1 = dimChar.isLine1 ? dimChar.posInLine : null;
+    const dimPosLine2 = !dimChar.isLine1 ? dimChar.posInLine : null;
+    drawLine(line1, 0, dimPosLine1);
+    drawLine(line2, lineHeight, dimPosLine2);
   }
 
   private pickEffects(): ((
