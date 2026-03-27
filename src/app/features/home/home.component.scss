@@ -274,7 +274,8 @@ h1.glitch-title {
   border: 1px solid rgb(255 255 255 / 10%);
   border-radius: 20px 0 20px 0;
   background: rgb(255 255 255 / 5%);
-  box-shadow: 0 5px 15px rgb(0 0 0 / 20%);
+  box-shadow: 0 5px 15px rgb(0 0 0 / 20%);  
+  -webkit-backdrop-filter: blur(5px);
   backdrop-filter: blur(5px);
 }
 
