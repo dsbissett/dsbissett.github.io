@@ -45,6 +45,7 @@ export class TetrisAiAgentService {
 
   public async initialize(): Promise<void> {
     await tf.ready();
+    this.cleanupLegacyStorage();
     this.loadStats();
     this.loadReplayBuffer();
     this.loadDemonstrations();
@@ -52,26 +53,25 @@ export class TetrisAiAgentService {
     const loaded = await this.tryLoadModel();
     if (!loaded) {
       this.buildModels();
-      // CRITICAL FIX: If the model couldn't load but stats existed (e.g., model
-      // key changed, localStorage cleared, or shape mismatch), epsilon may be
-      // stuck at a low value like 0.02 from previous training. A fresh model
-      // with near-zero exploration = exploiting random Q-values = catastrophic.
-      // Reset epsilon and training state so the agent explores properly.
-      if (this.stats.totalEpisodes > 0) {
+      // If the model couldn't load, keep the saved replay/demonstration data and
+      // restore exploration to a safe value. This preserves the user's training
+      // corpus instead of wiping it on a transient model-load issue.
+      const hadSavedTrainingState =
+        this.stats.totalEpisodes > 0 ||
+        this.replayBuffer.length > 0 ||
+        this.demonstrations.length > 0;
+      if (hadSavedTrainingState) {
+        const previousEpsilon = this.stats.epsilon;
+        this.stats.epsilon = TETRIS_AI_CONFIG.epsilonStart;
+        this.stepCount = this.stats.totalSteps;
         console.warn(
-          `%c⚠️ MODEL LOAD FAILED — resetting training state. ` +
-          `Had ${this.stats.totalEpisodes} episodes but model is freshly built. ` +
-          `Epsilon reset from ${this.stats.epsilon.toFixed(4)} to ${TETRIS_AI_CONFIG.epsilonStart}.`,
+          `%c⚠️ MODEL LOAD FAILED — keeping saved stats/buffers but rebuilding the model. ` +
+          `Episodes=${this.stats.totalEpisodes}, replay=${this.replayBuffer.length}, demonstrations=${this.demonstrations.length}. ` +
+          `Epsilon reset from ${previousEpsilon.toFixed(4)} to ${TETRIS_AI_CONFIG.epsilonStart}.`,
           'color:#f7768e;font-weight:bold',
         );
-        this.stats = this.defaultStats();
-        this.replayBuffer = [];
-        this.demonstrations = [];
-        this.stepCount = 0;
         this.demonstrationsSinceLastTraining = 0;
         this.persistStats();
-        this.clearReplayBuffer();
-        this.clearDemonstrations();
       }
     }
 
@@ -281,6 +281,9 @@ export class TetrisAiAgentService {
 
   public onEpisodeEnd(score: number): void {
     this.stats.totalEpisodes++;
+    if (this.stats.totalEpisodes >= TETRIS_AI_CONFIG.teacherWarmupEpisodes) {
+      this.decayEpsilon();
+    }
     const isNewBest = score > this.stats.bestScore;
     if (isNewBest) {
       this.stats.bestScore = score;
@@ -339,6 +342,7 @@ export class TetrisAiAgentService {
   }
 
   public reset(): void {
+    this.cleanupLegacyStorage();
     this.stats = this.defaultStats();
     this.replayBuffer = [];
     this.demonstrations = [];
@@ -473,16 +477,19 @@ export class TetrisAiAgentService {
   private async tryLoadModel(): Promise<boolean> {
     try {
       const key = `localstorage://${TETRIS_AI_CONFIG.modelStorageKey}`;
-      const loaded = (await tf.loadLayersModel(key)) as tf.Sequential;
+      const loaded = await tf.loadLayersModel(key);
 
       // Reject stale models whose input shape doesn't match the current config
-      const inputShape = loaded.inputLayers[0]?.batchInputShape;
-      if (!inputShape || inputShape[inputShape.length - 1] !== TETRIS_AI_CONFIG.featureCount) {
+      const inputSize = this.getLoadedModelInputSize(loaded);
+      if (inputSize !== TETRIS_AI_CONFIG.featureCount) {
+        console.warn(
+          `AI model shape mismatch: expected ${TETRIS_AI_CONFIG.featureCount} features, got ${inputSize ?? 'unknown'}.`,
+        );
         loaded.dispose();
         return false;
       }
 
-      this.model = loaded;
+      this.model = loaded as tf.Sequential;
       this.model.compile({
         optimizer: tf.train.adam(TETRIS_AI_CONFIG.learningRate),
         loss: tf.losses.huberLoss,
@@ -490,9 +497,33 @@ export class TetrisAiAgentService {
       this.targetModel = this.createModel();
       this.syncTargetNetwork();
       return true;
-    } catch {
+    } catch (error) {
+      console.warn('AI model load failed:', error);
       return false;
     }
+  }
+
+  private getLoadedModelInputSize(model: tf.LayersModel): number | null {
+    const primaryShape = model.inputs[0]?.shape;
+    if (Array.isArray(primaryShape)) {
+      const last = primaryShape[primaryShape.length - 1];
+      if (typeof last === 'number') {
+        return last;
+      }
+    }
+
+    const firstLayer = model.layers[0] as {
+      batchInputShape?: Array<number | null>;
+    } | undefined;
+    const layerShape = firstLayer?.batchInputShape;
+    if (Array.isArray(layerShape)) {
+      const last = layerShape[layerShape.length - 1];
+      if (typeof last === 'number') {
+        return last;
+      }
+    }
+
+    return null;
   }
 
   private async captureModelArtifacts(): Promise<tf.io.ModelArtifacts> {
@@ -679,32 +710,53 @@ export class TetrisAiAgentService {
     const buf = this.replayBuffer;
     const batch: Experience[] = [];
     const recentWindow = buf.slice(-Math.min(buf.length, TETRIS_AI_CONFIG.replayRecentWindowSize));
+    const strongPositivePool = buf.filter(
+      (experience) =>
+        experience.reward >= TETRIS_AI_CONFIG.replayStrongPositiveRewardThreshold,
+    );
+    const terminalPool = buf.filter((experience) => experience.done);
     const informativePool = [...buf]
+      .filter(
+        (experience) =>
+          !experience.done &&
+          experience.reward > TETRIS_AI_CONFIG.replayStrongNegativeRewardThreshold &&
+          experience.reward < TETRIS_AI_CONFIG.replayStrongPositiveRewardThreshold,
+      )
       .sort((a, b) => this.getExperiencePriority(b) - this.getExperiencePriority(a))
       .slice(0, Math.max(TETRIS_AI_CONFIG.batchSize, Math.ceil(buf.length * 0.25)));
 
     const recentCount = Math.round(TETRIS_AI_CONFIG.batchSize * TETRIS_AI_CONFIG.replayRecentFraction);
+    const strongPositiveCount = Math.round(
+      TETRIS_AI_CONFIG.batchSize * TETRIS_AI_CONFIG.replayStrongPositiveFraction,
+    );
+    const terminalCount = Math.round(
+      TETRIS_AI_CONFIG.batchSize * TETRIS_AI_CONFIG.replayTerminalFraction,
+    );
     const informativeCount = Math.round(
       TETRIS_AI_CONFIG.batchSize * TETRIS_AI_CONFIG.replayInformativeFraction,
     );
 
-    for (let i = 0; i < recentCount && recentWindow.length > 0; i++) {
-      batch.push(recentWindow[Math.floor(Math.random() * recentWindow.length)]);
-    }
-
-    for (let i = 0; i < informativeCount && informativePool.length > 0; i++) {
-      batch.push(informativePool[Math.floor(Math.random() * informativePool.length)]);
-    }
-
-    for (let i = 0; i < TETRIS_AI_CONFIG.batchSize; i++) {
-      if (batch.length >= TETRIS_AI_CONFIG.batchSize) {
-        break;
-      }
-
-      batch.push(buf[Math.floor(Math.random() * buf.length)]);
-    }
+    this.pushRandomBatchSamples(batch, recentWindow, recentCount);
+    this.pushRandomBatchSamples(batch, strongPositivePool, strongPositiveCount);
+    this.pushRandomBatchSamples(batch, terminalPool, terminalCount);
+    this.pushRandomBatchSamples(batch, informativePool, informativeCount);
+    this.pushRandomBatchSamples(batch, buf, TETRIS_AI_CONFIG.batchSize - batch.length);
 
     return batch;
+  }
+
+  private pushRandomBatchSamples(
+    batch: Experience[],
+    pool: Experience[],
+    count: number,
+  ): void {
+    for (
+      let i = 0;
+      i < count && batch.length < TETRIS_AI_CONFIG.batchSize && pool.length > 0;
+      i++
+    ) {
+      batch.push(pool[Math.floor(Math.random() * pool.length)]);
+    }
   }
 
   private sampleDemonstrationBatch(): DemonstrationExample[] {
@@ -745,6 +797,13 @@ export class TetrisAiAgentService {
 
     const batchRewards = batch.map((e) => e.reward);
     const doneCount = batch.filter((e) => e.done).length;
+    const strongPositiveCount = batch.filter(
+      (e) => e.reward >= TETRIS_AI_CONFIG.replayStrongPositiveRewardThreshold,
+    ).length;
+    const strongNegativeCount = batch.filter(
+      (e) =>
+        !e.done && e.reward <= TETRIS_AI_CONFIG.replayStrongNegativeRewardThreshold,
+    ).length;
 
     console.groupCollapsed(
       `%c🧠 TRAINING STEP %c#${this.stepCount} %closs=${loss?.toFixed(6) ?? '?'}`,
@@ -755,6 +814,8 @@ export class TetrisAiAgentService {
     console.log('Batch stats:', {
       batchSize: batch.length,
       doneExperiences: doneCount,
+      strongPositiveExperiences: strongPositiveCount,
+      strongNegativeExperiences: strongNegativeCount,
       rewardRange: `[${Math.min(...batchRewards).toFixed(4)}, ${Math.max(...batchRewards).toFixed(4)}]`,
       meanReward: +(batchRewards.reduce((s, r) => s + r, 0) / batchRewards.length).toFixed(4),
     });
@@ -788,9 +849,6 @@ export class TetrisAiAgentService {
       this.syncTargetNetwork();
     }
 
-    if (this.stats.totalEpisodes >= TETRIS_AI_CONFIG.teacherWarmupEpisodes) {
-      this.decayEpsilon();
-    }
     this.persistStats();
   }
 
@@ -987,6 +1045,37 @@ export class TetrisAiAgentService {
     );
     localStorage.removeItem(`tensorflowjs_models/${TETRIS_AI_CONFIG.modelStorageKey}/weight_specs`);
     localStorage.removeItem(`tensorflowjs_models/${TETRIS_AI_CONFIG.modelStorageKey}/weight_data`);
+    localStorage.removeItem(
+      `tensorflowjs_models/${TETRIS_AI_CONFIG.modelStorageKey}/model_metadata`,
+    );
+  }
+
+  private cleanupLegacyStorage(): void {
+    const legacyModelKeys = [
+      'tetris-ai-model',
+      'tetris-ai-model-v4',
+      'tetris-ai-model-v5',
+    ];
+    const legacyStorageKeys = [
+      'tetris-ai-stats',
+      'tetris-ai-replay-buffer',
+      'tetris-ai-demonstrations',
+      'tetris-ai-stats-v5',
+      'tetris-ai-replay-buffer-v5',
+      'tetris-ai-demonstrations-v5',
+    ];
+
+    for (const key of legacyStorageKeys) {
+      localStorage.removeItem(key);
+    }
+
+    for (const modelKey of legacyModelKeys) {
+      localStorage.removeItem(`tensorflowjs_models/${modelKey}/info`);
+      localStorage.removeItem(`tensorflowjs_models/${modelKey}/model_topology`);
+      localStorage.removeItem(`tensorflowjs_models/${modelKey}/weight_specs`);
+      localStorage.removeItem(`tensorflowjs_models/${modelKey}/weight_data`);
+      localStorage.removeItem(`tensorflowjs_models/${modelKey}/model_metadata`);
+    }
   }
 
   private clearReplayBuffer(): void {

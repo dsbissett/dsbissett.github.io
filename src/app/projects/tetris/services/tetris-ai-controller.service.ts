@@ -533,14 +533,15 @@ export class TetrisAiControllerService {
     // ── Positive signals ──
     const lineClearBonus = TETRIS_AI_CONFIG.lineClearRewards[linesCleared] ?? 0;
     const survivalReward = TETRIS_AI_CONFIG.survivalReward;
+    const gridHeight = TETRIS_GAME_CONFIG.gridHeight;
+    const rowFraction = this.plan ? this.plan.placementRow / gridHeight : 0;
+    const lowPlacementBonus = rowFraction * 0.75;
 
     // ── Low-row line clear bonus (extra reward for clears near bottom of board) ──
     // Uses the placement row from the plan to determine where the clear happened.
     // Lower rows (higher row index) get more bonus.
     let lowRowLineClearBonus = 0;
     if (linesCleared > 0 && this.plan) {
-      const gridHeight = TETRIS_GAME_CONFIG.gridHeight;
-      const rowFraction = this.plan.placementRow / gridHeight; // 0=top, 1=bottom
       lowRowLineClearBonus = rowFraction * linesCleared * TETRIS_AI_CONFIG.lowRowLineClearWeight;
     }
 
@@ -570,8 +571,19 @@ export class TetrisAiControllerService {
       compressDelta(deltaWells) * TETRIS_AI_CONFIG.deltaWellsWeight +
       compressDelta(deltaHeightVariance) * TETRIS_AI_CONFIG.deltaHeightVarianceWeight;
 
+    // ── Absolute board-shape penalties (preserve move flexibility) ──
+    const columnHeights = features.slice(0, 10).map((value) => value * 20);
+    const stackOverflowPenalty = columnHeights.reduce(
+      (sum, height) =>
+        sum + Math.max(0, height - TETRIS_AI_CONFIG.preferredStackHeightRows),
+      0,
+    ) * TETRIS_AI_CONFIG.stackOverflowPenaltyWeight;
+    const absoluteCoveredCellsPenalty =
+      currentMetrics.coveredCells * TETRIS_AI_CONFIG.absoluteCoveredCellsWeight;
+    const absoluteHeightVariancePenalty =
+      currentMetrics.heightVariance * TETRIS_AI_CONFIG.absoluteHeightVarianceWeight;
+
     // ── Absolute danger zone penalty (prevents ignoring lethal spikes) ──
-    const gridHeight = TETRIS_GAME_CONFIG.gridHeight;
     const dangerThreshold = TETRIS_AI_CONFIG.heightDangerZoneRows;
     let dangerZonePenalty = 0;
     if (currentMetrics.maxHeight > dangerThreshold) {
@@ -583,8 +595,14 @@ export class TetrisAiControllerService {
     // sqrt(holes) grows quickly for small counts but tapers off to avoid dominating.
     const absoluteHolesPenalty = Math.sqrt(currentMetrics.holes) * TETRIS_AI_CONFIG.absoluteHolesWeight;
 
-    const rewardTotal = lineClearBonus + survivalReward + lowRowLineClearBonus;
-    const penaltyTotal = deltaPenalty + dangerZonePenalty + absoluteHolesPenalty;
+    const rewardTotal = lineClearBonus + survivalReward + lowPlacementBonus + lowRowLineClearBonus;
+    const penaltyTotal =
+      deltaPenalty +
+      stackOverflowPenalty +
+      absoluteCoveredCellsPenalty +
+      absoluteHeightVariancePenalty +
+      dangerZonePenalty +
+      absoluteHolesPenalty;
     let netReward = rewardTotal - penaltyTotal;
 
     this.chart.pushEntry(netReward, penaltyTotal);
@@ -599,6 +617,7 @@ export class TetrisAiControllerService {
     console.log('Reward components:', {
       lineClearBonus: +lineClearBonus.toFixed(4),
       survivalReward: +survivalReward.toFixed(4),
+      lowPlacementBonus: +lowPlacementBonus.toFixed(4),
       lowRowLineClearBonus: +lowRowLineClearBonus.toFixed(4),
       rewardSubtotal: +rewardTotal.toFixed(4),
     });
@@ -612,6 +631,9 @@ export class TetrisAiControllerService {
       deltaWells: `${deltaWells >= 0 ? '+' : ''}${deltaWells.toFixed(1)}->${compressDelta(deltaWells).toFixed(2)} x ${TETRIS_AI_CONFIG.deltaWellsWeight} = ${+(compressDelta(deltaWells) * TETRIS_AI_CONFIG.deltaWellsWeight).toFixed(4)}`,
       deltaHeightVar: `${deltaHeightVariance >= 0 ? '+' : ''}${deltaHeightVariance.toFixed(1)}->${compressDelta(deltaHeightVariance).toFixed(2)} x ${TETRIS_AI_CONFIG.deltaHeightVarianceWeight} = ${+(compressDelta(deltaHeightVariance) * TETRIS_AI_CONFIG.deltaHeightVarianceWeight).toFixed(4)}`,
       deltaPenaltySubtotal: +deltaPenalty.toFixed(4),
+      stackOverflowPenalty: +stackOverflowPenalty.toFixed(4),
+      absoluteCoveredCellsPenalty: +absoluteCoveredCellsPenalty.toFixed(4),
+      absoluteHeightVariancePenalty: +absoluteHeightVariancePenalty.toFixed(4),
       dangerZonePenalty: +dangerZonePenalty.toFixed(4),
       absoluteHolesPenalty: +absoluteHolesPenalty.toFixed(4),
       penaltyTotal: +penaltyTotal.toFixed(4),
@@ -731,64 +753,68 @@ export class TetrisAiControllerService {
 
   private scorePlacementHeuristically(placement: Placement): number {
     const features = placement.features;
+    const columnHeights = features.slice(0, 10).map((value) => value * 20);
     const linesCleared = features[22] * 4;
     const holes = features[21] * 40;
     const bumpiness = features[23] * 100;
     const maxHeight = features[19] * 20;
     const aggregateHeight = features[20] * 200;
     const coveredCells = features[24] * 120;
+    const wells = features[26] * 100;
     const lowBoardDensity = features[29]; // [0,1] fill fraction of bottom 4 rows
     const heightVariance = features[30] * 100;
     const nearCompleteRows = features[31] * 10;
+    const previewHasI = features[32] === 1 || features[39] === 1 || features[46] === 1;
 
     // Line-clear bonus -- clearing rows is the top priority.
-    // Lower placements (higher row index) get a stronger multiplier bonus (Goal 3).
+    // Lower placements (higher row index) get a stronger multiplier bonus.
     const gridHeight = TETRIS_GAME_CONFIG.gridHeight;
     const rowFraction = placement.placementRow / gridHeight; // 0=top, 1=bottom
-    const lowRowMultiplier = linesCleared > 0 ? 1 + rowFraction * 0.8 : 1;
+    const lowRowMultiplier = linesCleared > 0 ? 1 + rowFraction * 1.1 : 1;
     const lineClearBonus = linesCleared > 0
-      ? (100 + linesCleared * linesCleared * 30) * lowRowMultiplier
+      ? (110 + linesCleared * linesCleared * 34) * lowRowMultiplier
       : 0;
 
-    // Row completeness bonus -- reward boards where rows are densely filled.
-    const completenessBonus = placement.rowCompleteness * 8.0;
+    // Favor placements that stay low and keep the floor dense.
+    const lowPlacementBonus = rowFraction * 22.0;
+    const completenessBonus = placement.rowCompleteness * 10.0;
+    const nearCompleteBonus = nearCompleteRows * 18.0;
+    const lowBoardBonus = lowBoardDensity * 32.0;
+    const surfaceStabilityBonus = Math.max(0, 20 - bumpiness) * 0.9;
 
-    // Near-complete rows bonus -- rows >= 80% filled are close to clearing.
-    const nearCompleteBonus = nearCompleteRows * 15.0;
+    const stackOverflowPenalty = columnHeights.reduce(
+      (sum, height) => sum + Math.pow(Math.max(0, height - 7), 2),
+      0,
+    ) * 0.28;
 
-    // Low-board density bonus -- reward filling the bottom rows.
-    const lowBoardBonus = lowBoardDensity * 25.0;
-
-    // Aggregate height penalty: keeps the board as empty as possible.
-    const aggHeightPenalty = aggregateHeight * 0.12;
-
-    // Quadratic height penalty on max column: towers become catastrophically bad.
-    // Threshold at 8: allow stacking up to 7 rows for healthy pre-clear building.
-    const heightPenalty = maxHeight > 8
-      ? (maxHeight - 8) * (maxHeight - 8) * 2.5
+    // Height penalty starts early and spikes once the board gets close to the top.
+    const heightPenalty =
+      Math.max(0, maxHeight - 6) * 16 +
+      (maxHeight > 9 ? Math.pow(maxHeight - 9, 2) * 18 : 0);
+    const aggHeightPenalty = aggregateHeight * 0.18;
+    const variancePenalty = heightVariance * 4.5;
+    const bumpinessPenalty = bumpiness * 4.8;
+    const holesPenalty = holes > 0
+      ? holes * 90 + (linesCleared > 0 ? 110 : 220)
       : 0;
-
-    // Height variance penalty: directly penalizes uneven surfaces (towers).
-    // Increased from 1.5 to 2.5 to more strongly discourage tower formation (Goal 5).
-    const variancePenalty = heightVariance * 2.5;
-
-    // Holes penalty: linear with a flat penalty for any holes.
-    // 1 hole = 55, 2 holes = 80. A single line clear = ~130.
-    // Allows the teacher to accept 1-hole placements that clear lines.
-    const holesPenalty = holes > 0 ? holes * 25 + 30 : 0;
-    const coveredPenalty = coveredCells * 2.0;
+    const coveredPenalty = coveredCells * (linesCleared > 0 ? 8.0 : 12.0);
+    const wellPenalty = wells * (previewHasI ? 0.2 : 1.1);
 
     return (
       lineClearBonus +
+      lowPlacementBonus +
       completenessBonus +
       nearCompleteBonus +
-      lowBoardBonus -
+      lowBoardBonus +
+      surfaceStabilityBonus -
       holesPenalty -
       coveredPenalty -
-      bumpiness * 3.5 -
+      wellPenalty -
+      bumpinessPenalty -
       aggHeightPenalty -
       heightPenalty -
-      variancePenalty
+      variancePenalty -
+      stackOverflowPenalty
     );
   }
 

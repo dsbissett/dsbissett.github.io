@@ -7,6 +7,18 @@
   <div class="stars stars-mid"></div>
   <div class="stars stars-near"></div>
   <div class="aurora"></div>
+  @for (star of shootingStars(); track star.id) {
+    <div
+      class="shooting-star"
+      [style.top.%]="star.topPercent"
+      [style.left.%]="star.leftPercent"
+      [style.width.px]="star.tailLengthPx"
+      [style.--shooting-star-angle]="star.angleDeg + 'deg'"
+      [style.--shooting-star-duration]="star.durationMs + 'ms'"
+      [style.--shooting-star-travel-x]="star.travelXPx + 'px'"
+      [style.--shooting-star-travel-y]="star.travelYPx + 'px'"
+    ></div>
+  }
   <div class="boomerang boomerang-left"></div>
   <div class="boomerang boomerang-right"></div>
 </div>

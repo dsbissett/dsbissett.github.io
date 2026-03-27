@@ -124,7 +124,7 @@ export class TetrisComponent implements AfterViewInit, OnDestroy {
       : 'Record human play to bootstrap the AI from your placements.';
   });
   protected readonly averageScoreText = computed(() => this.aiStats().averageScore.toFixed(1));
-  protected readonly epsilonText = computed(() => this.aiStats().epsilon.toFixed(3));
+  protected readonly epsilonText = computed(() => this.aiStats().epsilon.toFixed(4));
   protected readonly demonstrationSamplesText = computed(() =>
     this.aiStats().demonstrationSamples.toLocaleString(),
   );

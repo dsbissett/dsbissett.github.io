@@ -22,24 +22,29 @@ export const TETRIS_AI_CONFIG = {
   // oscillation that caused the ep55-59 regression in R3.
   targetNetworkUpdateFrequency: 250,
   replayRecentWindowSize: 1000,
-  replayRecentFraction: 0.35,
-  replayInformativeFraction: 0.35,
+  replayRecentFraction: 0.30,
+  replayInformativeFraction: 0.15,
+  replayStrongPositiveFraction: 0.20,
+  replayTerminalFraction: 0.10,
+  replayStrongPositiveRewardThreshold: 8.0,
+  replayStrongNegativeRewardThreshold: -8.0,
 
   // Exploration (epsilon-greedy)
   // Start at 0.20 post-teacher for broader coverage of the placement space.
   epsilonStart: 0.20,
   epsilonMin: 0.03,
-  // Slower decay: ~120 post-teacher episodes to reach minimum.
-  // This prevents premature exploitation of a still-noisy Q-function.
-  epsilonDecay: 0.9980,
+  // Per-episode decay: ~125 post-teacher episodes to reach minimum.
+  // This keeps exploration high just after warmup without pinning it at 0.20.
+  epsilonDecay: 0.9850,
 
   // localStorage keys (TF.js uses localstorage://<key>)
-  // Key updated to v5: reward rebalancing (scaled-down deltas, heightVariance penalty,
-  // first-piece delta fix, model-load-failure epsilon reset).
-  modelStorageKey: 'tetris-ai-model-v5',
-  statsStorageKey: 'tetris-ai-stats-v5',
-  replayBufferStorageKey: 'tetris-ai-replay-buffer-v5',
-  demonstrationStorageKey: 'tetris-ai-demonstrations-v5',
+  // Key updated to v6: stronger anti-hole / anti-tower shaping for both
+  // teacher warmup and RL reward. Bump storage keys so stale v5 data does not
+  // keep training the new objective toward tower-building.
+  modelStorageKey: 'tetris-ai-model-v6',
+  statsStorageKey: 'tetris-ai-stats-v6',
+  replayBufferStorageKey: 'tetris-ai-replay-buffer-v6',
+  demonstrationStorageKey: 'tetris-ai-demonstrations-v6',
   enabledStorageKey: 'tetris-ai-enabled',
 
   // AI visual step interval (ms between each move animation)
@@ -62,11 +67,12 @@ export const TETRIS_AI_CONFIG = {
   teacherChosenTarget: 2.0,
   teacherRejectedTarget: -2.0,
 
-  // ── Delta-based reward system (R4) ──
-  // reward = lineClearBonus + survivalReward + lowRowLineClearBonus
-  //        - sum of delta penalties (scaled down so clean placements are positive)
-  //        - dangerZonePenalty (absolute, near death)
-  //        - absoluteHolesPenalty (gentle, continuous)
+  // ── Delta-based reward system (R5) ──
+  // reward = lineClearBonus + survivalReward + lowPlacementBonus + lowRowLineClearBonus
+  //        - sum of delta penalties
+  //        - absolute board-shape penalties (stack overflow, buried cells, height variance)
+  //        - dangerZonePenalty
+  //        - absoluteHolesPenalty
   //
   // R3 POSTMORTEM: Delta penalties were far too large. A typical clean placement
   // (bumpiness +3, maxHeight +1, aggHeight +4) yielded penalty ~4.5 vs survival 2.0,
@@ -87,9 +93,10 @@ export const TETRIS_AI_CONFIG = {
 
   // Low-row line clear bonus: extra reward when lines are cleared at low rows.
   // Applied as: weight * rowFraction * linesCleared where rowFraction = placementRow/gridHeight.
-  lowRowLineClearWeight: 4.0,
+  lowRowLineClearWeight: 5.0,
 
-  // Delta penalty weights -- SCALED DOWN from R3 so clean placements are positive.
+  // Delta penalty weights -- still shaped so clean placements stay positive,
+  // but now strong enough to reject tower-building and new holes sooner.
   // Typical clean placement budget:
   //   bumpiness delta ~2 * 0.4 = 0.8
   //   maxHeight delta ~1 * 0.3 = 0.3
@@ -98,30 +105,35 @@ export const TETRIS_AI_CONFIG = {
   //   Total clean penalty: ~1.4  (survival 2.5 gives net +1.1)
   //
   // Hole-creating move:
-  //   holes delta 1 * 5.0 = 5.0
-  //   covered delta 1 * 1.0 = 1.0
-  //   + normal deltas ~1.4 = total ~7.4  (survival 2.5 gives net -4.9)
-  deltaHolesWeight: 5.0,             // creating 1 hole: -5.0 (still dominant bad-move signal)
-  deltaCoveredCellsWeight: 1.0,      // buried cells: moderate penalty
-  deltaAggregateHeightWeight: 0.03,  // very low -- height increase is unavoidable per piece
-  deltaBumpinessWeight: 0.4,         // typical delta 2-3: penalty 0.8-1.2 (halved from R3's 0.8)
-  deltaMaxHeightWeight: 0.3,         // typical delta 1: penalty 0.3 (reduced from R3's 0.5)
-  deltaPillarsWeight: 0.6,           // vertical gaps trap pieces
-  deltaWellsWeight: 0.3,             // wells needed for I-piece Tetris clears
+  //   holes delta 1 * 6.5 = 6.5
+  //   covered delta 1 * 1.8 = 1.8
+  //   + normal deltas ~1.5-2.0 = clearly net negative
+  deltaHolesWeight: 6.5,             // hole creation must lose to almost every non-clearing alternative
+  deltaCoveredCellsWeight: 1.8,      // buried cells often precede hard-to-fix holes
+  deltaAggregateHeightWeight: 0.05,  // still gentle, but no longer effectively free
+  deltaBumpinessWeight: 0.6,         // stronger pressure toward flatter surfaces
+  deltaMaxHeightWeight: 0.6,         // towers constrain future placements quickly
+  deltaPillarsWeight: 0.8,           // vertical gaps trap pieces
+  deltaWellsWeight: 0.35,            // tolerate wells a little, but not gratuitously
   // NEW: height variance delta penalty -- directly targets tower creation (Goal 5).
   // A tower spike increases variance by 2-5; flat play changes variance by 0-1.
-  deltaHeightVarianceWeight: 0.2,
+  deltaHeightVarianceWeight: 0.45,
 
   // Absolute hole penalty: continuous pressure to avoid boards with holes.
-  // Reduced from 0.6 to 0.4: delta penalty (5.0) is primary deterrent.
-  absoluteHolesWeight: 0.4,
+  // Kept strong enough that the learner keeps preferring hole repair.
+  absoluteHolesWeight: 0.9,
 
-  // Danger zone: quadratic penalty when max column height exceeds threshold.
-  // Threshold at 10: allows healthy stacking up to 8-9 rows without penalty.
-  // Healthy Tetris play stacks 6-8 rows before clearing; threshold at 8 was
-  // too aggressive and penalized normal pre-clear building.
-  heightDangerZoneRows: 10,
-  heightDangerZoneWeight: 4.0,
+  // Absolute board-shape pressure: keeps post-warmup learning from accepting
+  // a "stable but tall" board that leaves too few future placements.
+  preferredStackHeightRows: 7,
+  stackOverflowPenaltyWeight: 0.18,
+  absoluteCoveredCellsWeight: 0.35,
+  absoluteHeightVarianceWeight: 0.08,
+
+  // Danger zone: quadratic penalty once the tallest column moves above the
+  // preferred mid-board stack and starts squeezing future placements.
+  heightDangerZoneRows: 8,
+  heightDangerZoneWeight: 8.0,
 
   // Game-over penalty
   rewardGameOver: -10.0,

@@ -64,6 +64,17 @@ const CLIPPY_QUIPS = [
   "Between you and me, the 'Return to Orbit' button is just window.scrollTo. Don't tell anyone.",
 ];
 
+interface ShootingStar {
+  id: number;
+  angleDeg: number;
+  durationMs: number;
+  leftPercent: number;
+  tailLengthPx: number;
+  topPercent: number;
+  travelXPx: number;
+  travelYPx: number;
+}
+
 @Component({
   selector: 'app-home',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -75,12 +86,19 @@ export class HomeComponent implements OnInit {
   protected readonly year = new Date().getFullYear();
   protected readonly query = signal('');
   protected readonly projects = projectDefinitions;
+  protected readonly shootingStars = signal<ShootingStar[]>([]);
   private readonly filterInput =
     viewChild<ElementRef<HTMLInputElement>>('filterInput');
   private readonly glitchCanvas =
     viewChild<ElementRef<HTMLCanvasElement>>('glitchCanvas');
   private readonly destroyRef = inject(DestroyRef);
   private readonly ngZone = inject(NgZone);
+  private shootingStarTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly shootingStarCleanupTimers = new Map<
+    number,
+    ReturnType<typeof setTimeout>
+  >();
+  private nextShootingStarId = 0;
   private cleanImageData: ImageData | null = null;
   private canvasCtx: CanvasRenderingContext2D | null = null;
   private canvasW = 0;
@@ -141,6 +159,7 @@ export class HomeComponent implements OnInit {
 
     this.initGlitchCanvas();
     this.initParallax();
+    this.initShootingStars();
   }
 
   protected updateQuery(value: string): void {
@@ -153,6 +172,15 @@ export class HomeComponent implements OnInit {
 
   protected handleWindowKeydown(event: KeyboardEvent): void {
     const input = this.filterInput()?.nativeElement;
+    const target =
+      event.target instanceof HTMLElement ? event.target : null;
+
+    if (event.key === 'Backspace' && !this.isEditableTarget(target)) {
+      event.preventDefault();
+      this.triggerShootingStar();
+      return;
+    }
+
     if (!input) {
       return;
     }
@@ -173,6 +201,14 @@ export class HomeComponent implements OnInit {
     return document.activeElement !== input;
   }
 
+  private isEditableTarget(target: HTMLElement | null): boolean {
+    return (
+      target?.closest(
+        'input, textarea, select, [contenteditable=""], [contenteditable="true"]',
+      ) !== null
+    );
+  }
+
   private nextQuip(): string {
     const quip = CLIPPY_QUIPS[this.quipIndex % CLIPPY_QUIPS.length];
     this.quipIndex++;
@@ -190,18 +226,17 @@ export class HomeComponent implements OnInit {
   }
 
   private initParallax(): void {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      return;
+    }
+
     this.ngZone.runOutsideAngular(() => {
-      // Layer definitions: selector → parallax speed multiplier
-      // Nebula layers are excluded — they use CSS transform animations which
-      // would conflict with JS-set transforms (CSS animations win the cascade).
       const layerDefs: { selector: string; speed: number }[] = [
-        { selector: '.cosmic-bg',     speed: 0.02 },
-        { selector: '.stars-far',     speed: 0.05 },
-        { selector: '.stars-mid',     speed: 0.10 },
-        { selector: '.stars-near',    speed: 0.18 },
-        { selector: '.aurora',        speed: 0.04 },
-        { selector: '.boomerang-left',  speed: 0.12 },
-        { selector: '.boomerang-right', speed: 0.15 },
+        { selector: '.cosmic-bg', speed: 0.035 },
+        { selector: '.stars-far', speed: 0.045 },
+        { selector: '.stars-mid', speed: 0.16 },
+        { selector: '.stars-near', speed: 0.34 },
+        { selector: '.aurora', speed: 0.06 },
       ];
 
       let elements: { el: HTMLElement; speed: number }[] | null = null;
@@ -209,29 +244,109 @@ export class HomeComponent implements OnInit {
 
       const resolveElements = (): { el: HTMLElement; speed: number }[] => {
         const root = document.querySelector('.parallax-bg') as HTMLElement | null;
-        if (!root) return [];
+        if (!root) {
+          return [];
+        }
+
         return layerDefs
-          .map((l) => ({ el: root.querySelector(l.selector) as HTMLElement | null, speed: l.speed }))
-          .filter((l): l is { el: HTMLElement; speed: number } => l.el !== null);
+          .map((layer) => ({
+            el: root.querySelector(layer.selector) as HTMLElement | null,
+            speed: layer.speed,
+          }))
+          .filter(
+            (layer): layer is { el: HTMLElement; speed: number } =>
+              layer.el !== null,
+          );
       };
 
       const onScroll = () => {
-        if (ticking) return;
+        if (ticking) {
+          return;
+        }
+
         ticking = true;
-        requestAnimationFrame(() => {
-          // Lazily resolve elements on first scroll (DOM is guaranteed ready by then)
-          if (!elements) elements = resolveElements();
+        window.requestAnimationFrame(() => {
+          if (!elements) {
+            elements = resolveElements();
+          }
+
           const scrollY = window.scrollY;
           for (const layer of elements) {
             layer.el.style.transform = `translate3d(0, ${-(scrollY * layer.speed)}px, 0)`;
           }
+
           ticking = false;
         });
       };
 
+      onScroll();
       window.addEventListener('scroll', onScroll, { passive: true });
-      this.destroyRef.onDestroy(() => window.removeEventListener('scroll', onScroll));
+      this.destroyRef.onDestroy(() =>
+        window.removeEventListener('scroll', onScroll),
+      );
     });
+  }
+
+  private initShootingStars(): void {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      return;
+    }
+
+    const scheduleNext = () => {
+      const delayMs = 20_000 + Math.random() * 10_000;
+      this.shootingStarTimer = setTimeout(() => {
+        if (document.visibilityState === 'hidden') {
+          scheduleNext();
+          return;
+        }
+
+        this.triggerShootingStar();
+        scheduleNext();
+      }, delayMs);
+    };
+
+    scheduleNext();
+    this.destroyRef.onDestroy(() => {
+      if (this.shootingStarTimer) {
+        clearTimeout(this.shootingStarTimer);
+      }
+
+      for (const timer of this.shootingStarCleanupTimers.values()) {
+        clearTimeout(timer);
+      }
+      this.shootingStarCleanupTimers.clear();
+    });
+  }
+
+  private triggerShootingStar(): void {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      return;
+    }
+
+    const star = this.createShootingStar();
+    this.shootingStars.update((stars) => [...stars, star]);
+
+    const cleanupTimer = setTimeout(() => {
+      this.shootingStars.update((stars) =>
+        stars.filter((item) => item.id !== star.id),
+      );
+      this.shootingStarCleanupTimers.delete(star.id);
+    }, star.durationMs + 250);
+
+    this.shootingStarCleanupTimers.set(star.id, cleanupTimer);
+  }
+
+  private createShootingStar(): ShootingStar {
+    return {
+      id: this.nextShootingStarId++,
+      topPercent: 6 + Math.random() * 22,
+      leftPercent: 3 + Math.random() * 28,
+      tailLengthPx: 140 + Math.random() * 90,
+      travelXPx: 260 + Math.random() * 140,
+      travelYPx: 110 + Math.random() * 90,
+      angleDeg: 18 + Math.random() * 8,
+      durationMs: 900 + Math.round(Math.random() * 450),
+    };
   }
 
   private glitchTimer: ReturnType<typeof setTimeout> | null = null;

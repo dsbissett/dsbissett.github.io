@@ -38,7 +38,7 @@
   will-change: transform;
 }
 
-// Base cosmic gradient — slow hue-rotating mesh
+// Base cosmic gradient with slow drifting motion that stays in the site palette.
 .cosmic-bg {
   z-index: 0;
   background:
@@ -48,7 +48,7 @@
     radial-gradient(ellipse 60% 90% at 70% 20%, rgb(255 211 105 / 6%) 0%, transparent 40%),
     var(--void);
   background-size: 200% 200%;
-  animation: cosmic-drift 45s ease-in-out infinite alternate;
+  animation: cosmic-drift 55s ease-in-out infinite alternate;
 }
 
 // Nebula layers — large soft color blobs that drift independently
@@ -61,8 +61,6 @@
   animation-direction: alternate;
 }
 
-// Nebula layers use background-position animation (not transform) so they don't
-// conflict with the JS parallax scroll handler which sets transform on other layers.
 .nebula-1 {
   background: radial-gradient(ellipse 60% 50% at 30% 40%, rgb(0 255 245 / 12%) 0%, transparent 70%);
   background-size: 200% 200%;
@@ -84,80 +82,7 @@
 // Star layers at different depths for parallax
 .stars {
   z-index: 2;
-}
-
-// Each layer uses three independently-tiling sub-grids with prime-ish sizes.
-// The grids never align at the same point, so the repetition period is
-// effectively tile-A × tile-B × tile-C — far too large to notice.
-
-.stars-far {
-  // Grid A — 317×211, Grid B — 431×293, Grid C — 257×379
-  background-image:
-    radial-gradient(1px 1px at  23px  47px, rgb(255 255 255 / 55%), transparent),
-    radial-gradient(1px 1px at 189px  82px, rgb(255 255 255 / 45%), transparent),
-    radial-gradient(1px 1px at  78px 178px, rgb(255 255 255 / 60%), transparent),
-    radial-gradient(1px 1px at 270px 130px, rgb(255 255 255 / 40%), transparent),
-    radial-gradient(1px 1px at 305px  19px, rgb(255 255 255 / 50%), transparent),
-    radial-gradient(1px 1px at 140px 200px, rgb(255 255 255 / 35%), transparent),
-
-    radial-gradient(1px 1px at  55px  60px, rgb(255 255 255 / 50%), transparent),
-    radial-gradient(1px 1px at 210px 240px, rgb(255 255 255 / 45%), transparent),
-    radial-gradient(1px 1px at 380px  95px, rgb(255 255 255 / 55%), transparent),
-    radial-gradient(1px 1px at 120px 275px, rgb(255 255 255 / 40%), transparent),
-    radial-gradient(1px 1px at 310px 190px, rgb(255 255 255 / 35%), transparent),
-    radial-gradient(1px 1px at  30px 285px, rgb(255 255 255 / 60%), transparent),
-
-    radial-gradient(1px 1px at 100px  33px, rgb(255 255 255 / 45%), transparent),
-    radial-gradient(1px 1px at 220px 310px, rgb(255 255 255 / 55%), transparent),
-    radial-gradient(1px 1px at  15px 195px, rgb(255 255 255 / 40%), transparent),
-    radial-gradient(1px 1px at 180px 370px, rgb(255 255 255 / 50%), transparent);
-  background-size: 317px 211px, 317px 211px, 317px 211px, 317px 211px, 317px 211px, 317px 211px,
-                   431px 293px, 431px 293px, 431px 293px, 431px 293px, 431px 293px, 431px 293px,
-                   257px 379px, 257px 379px, 257px 379px, 257px 379px;
-  animation: drift-far 120s linear infinite, twinkle-slow 7s ease-in-out infinite alternate;
-}
-
-.stars-mid {
-  // Grid A — 241×173, Grid B — 373×257, Grid C — 197×311
-  background-image:
-    radial-gradient(1.3px 1.3px at  44px  28px, rgb(255 255 255 / 70%), transparent),
-    radial-gradient(1.3px 1.3px at 160px 145px, rgb(255 255 255 / 65%), transparent),
-    radial-gradient(1.3px 1.3px at  95px  88px, rgb(255 255 255 / 80%), transparent),
-    radial-gradient(1.3px 1.3px at 210px  60px, rgb(255 255 255 / 55%), transparent),
-    radial-gradient(1.3px 1.3px at  20px 155px, rgb(255 255 255 / 75%), transparent),
-
-    radial-gradient(1.3px 1.3px at  70px 200px, rgb(255 255 255 / 70%), transparent),
-    radial-gradient(1.3px 1.3px at 280px  75px, rgb(255 255 255 / 65%), transparent),
-    radial-gradient(1.3px 1.3px at 190px 220px, rgb(255 255 255 / 80%), transparent),
-    radial-gradient(1.3px 1.3px at 340px 170px, rgb(255 255 255 / 60%), transparent),
-    radial-gradient(1.3px 1.3px at  30px  90px, rgb(255 255 255 / 75%), transparent),
-
-    radial-gradient(1.5px 1.5px at 130px  55px, rgb(255 255 255 / 70%), transparent),
-    radial-gradient(1.5px 1.5px at  55px 270px, rgb(255 255 255 / 65%), transparent),
-    radial-gradient(1.5px 1.5px at 165px 300px, rgb(255 255 255 / 80%), transparent);
-  background-size: 241px 173px, 241px 173px, 241px 173px, 241px 173px, 241px 173px,
-                   373px 257px, 373px 257px, 373px 257px, 373px 257px, 373px 257px,
-                   197px 311px, 197px 311px, 197px 311px;
-  animation: drift-mid 80s linear infinite, twinkle-mid 5s ease-in-out infinite alternate;
-}
-
-.stars-near {
-  // Grid A — 179×233, Grid B — 311×197 — sparser, brighter, some tinted
-  background-image:
-    radial-gradient(1.8px 1.8px at  62px  18px, rgb(255 255 255 / 90%), transparent),
-    radial-gradient(2px   2px   at 148px 195px, rgb(255 255 255 / 85%), transparent),
-    radial-gradient(1.6px 1.6px at  25px 115px, rgb(255 255 255 / 95%), transparent),
-    radial-gradient(2.2px 2.2px at 120px  72px, rgb(0   255 245 / 55%), transparent),
-    radial-gradient(1.5px 1.5px at  85px 218px, rgb(255 211 105 / 45%), transparent),
-
-    radial-gradient(2px   2px   at 240px  60px, rgb(255 255 255 / 85%), transparent),
-    radial-gradient(1.8px 1.8px at  90px 155px, rgb(255 255 255 / 90%), transparent),
-    radial-gradient(2.5px 2.5px at 275px 180px, rgb(184 41 255 / 40%), transparent),
-    radial-gradient(1.5px 1.5px at 165px  30px, rgb(255 255 255 / 80%), transparent),
-    radial-gradient(2px   2px   at  40px  75px, rgb(255 211 105 / 35%), transparent);
-  background-size: 179px 233px, 179px 233px, 179px 233px, 179px 233px, 179px 233px,
-                   311px 197px, 311px 197px, 311px 197px, 311px 197px, 311px 197px;
-  animation: drift-near 50s linear infinite, twinkle-near 3s ease-in-out infinite alternate;
+  inset: 0;
 }
 
 // Aurora / color wash that drifts across
@@ -183,8 +108,8 @@
   height: 300px;
   border: 20px solid rgb(255 255 255 / 5%);
   border-radius: 50% 10%;
-  transform: rotate(45deg);
   z-index: 4;
+  transform: rotate(45deg);
   animation: spin 20s linear infinite;
   inset: auto;
   position: absolute;
@@ -587,15 +512,15 @@ code {
 @keyframes cosmic-drift {
   0% {
     background-position: 0% 0%;
-    filter: hue-rotate(0deg);
+    background-size: 200% 200%;
   }
   50% {
     background-position: 80% 60%;
-    filter: hue-rotate(25deg);
+    background-size: 220% 220%;
   }
   100% {
     background-position: 30% 100%;
-    filter: hue-rotate(-15deg);
+    background-size: 210% 210%;
   }
 }
 
@@ -618,55 +543,6 @@ code {
   0% { opacity: 0.3; }
   50% { opacity: 0.7; }
   100% { opacity: 0.5; }
-}
-
-// Stars drift diagonally at different speeds — further layers move slower (parallax depth)
-@keyframes drift-far {
-  from { background-position: 0 0; }
-  to   { background-position: -280px 180px; }
-}
-
-@keyframes drift-mid {
-  from { background-position: 0 0; }
-  to   { background-position: -200px 160px; }
-}
-
-@keyframes drift-near {
-  from { background-position: 0 0; }
-  to   { background-position: -150px 150px; }
-}
-
-@keyframes twinkle-slow {
-  0%   { opacity: 0.25; }
-  40%  { opacity: 0.5; }
-  100% { opacity: 0.35; }
-}
-
-@keyframes twinkle-mid {
-  0%   { opacity: 0.45; }
-  60%  { opacity: 0.75; }
-  100% { opacity: 0.55; }
-}
-
-@keyframes twinkle-near {
-  0%   { opacity: 0.6; }
-  50%  { opacity: 1; }
-  100% { opacity: 0.7; }
-}
-
-@keyframes aurora-sweep {
-  0% { background-position: 0% 0%; }
-  100% { background-position: 100% 100%; }
-}
-
-@keyframes spin {
-  0% {
-    transform: rotate(0deg);
-  }
-
-  100% {
-    transform: rotate(360deg);
-  }
 }
 
 @keyframes glitch-skew {
