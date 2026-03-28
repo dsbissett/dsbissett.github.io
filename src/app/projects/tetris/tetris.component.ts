@@ -27,6 +27,20 @@ import { TetrisPreviewRendererService } from './services/tetris-preview-renderer
 import { TetrisRendererService } from './services/tetris-renderer.service';
 import { TetrisScoringService } from './services/tetris-scoring.service';
 import { TetrisStateService } from './services/tetris-state.service';
+import { TetrisAiPersistenceService } from './services/tetris-ai-persistence.service';
+import { TetrisAiStatsService } from './services/tetris-ai-stats.service';
+import { TetrisReplayBufferService } from './services/tetris-replay-buffer.service';
+import { TetrisDemonstrationBufferService } from './services/tetris-demonstration-buffer.service';
+import { TetrisBoardAnalyzerService } from './services/tetris-board-analyzer.service';
+import { TetrisModelService } from './services/tetris-model.service';
+import { TetrisTrainerService } from './services/tetris-trainer.service';
+import { TetrisAiSerializerService } from './services/tetris-ai-serializer.service';
+import { TetrisAiDiagnosticsService } from './services/tetris-ai-diagnostics.service';
+import { TetrisBoardMetricsService } from './services/tetris-board-metrics.service';
+import { TetrisAiExecutorService } from './services/tetris-ai-executor.service';
+import { TetrisPlacementEnumeratorService } from './services/tetris-placement-enumerator.service';
+import { TetrisPlanSelectorService } from './services/tetris-plan-selector.service';
+import { TetrisRewardCalculatorService } from './services/tetris-reward-calculator.service';
 
 @Component({
   selector: 'app-tetris',
@@ -49,6 +63,20 @@ import { TetrisStateService } from './services/tetris-state.service';
     TetrisRendererService,
     TetrisScoringService,
     TetrisStateService,
+    TetrisAiPersistenceService,
+    TetrisAiStatsService,
+    TetrisReplayBufferService,
+    TetrisDemonstrationBufferService,
+    TetrisBoardAnalyzerService,
+    TetrisModelService,
+    TetrisTrainerService,
+    TetrisAiSerializerService,
+    TetrisAiDiagnosticsService,
+    TetrisBoardMetricsService,
+    TetrisAiExecutorService,
+    TetrisPlacementEnumeratorService,
+    TetrisPlanSelectorService,
+    TetrisRewardCalculatorService,
   ],
   templateUrl: './tetris.component.html',
   styleUrl: './tetris.component.scss',

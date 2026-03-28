@@ -1,243 +1,117 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import * as tf from '@tensorflow/tfjs';
 
 import { TETRIS_AI_CONFIG } from '../constants/tetris-ai-config.constant';
 import { TetrisAiStats } from '../interfaces/tetris-ai-stats.interface';
-
-interface Experience {
-  features: number[];
-  reward: number;
-  nextStateValue?: number;
-  nextFeatures?: number[];
-  done: boolean;
-}
-
-interface DemonstrationExample {
-  features: number[];
-  target: number;
-}
-
-interface SerializedModelArtifacts {
-  modelTopology: tf.io.ModelArtifacts['modelTopology'];
-  weightSpecs: tf.io.WeightsManifestEntry[];
-  weightDataBase64: string;
-}
-
-interface TetrisAiTrainingExport {
-  version: 1;
-  exportedAt: string;
-  stats: TetrisAiStats;
-  replayBuffer: Experience[];
-  demonstrations: DemonstrationExample[];
-  model: SerializedModelArtifacts;
-}
+import { TetrisAiDiagnosticsService } from './tetris-ai-diagnostics.service';
+import { TetrisAiPersistenceService } from './tetris-ai-persistence.service';
+import { TetrisAiSerializerService } from './tetris-ai-serializer.service';
+import { TetrisAiStatsService } from './tetris-ai-stats.service';
+import { TetrisBoardAnalyzerService } from './tetris-board-analyzer.service';
+import { TetrisDemonstrationBufferService } from './tetris-demonstration-buffer.service';
+import { TetrisModelService } from './tetris-model.service';
+import { TetrisReplayBufferService } from './tetris-replay-buffer.service';
+import { TetrisTrainerService } from './tetris-trainer.service';
 
 @Injectable()
 export class TetrisAiAgentService {
-  private model!: tf.Sequential;
-  private targetModel!: tf.Sequential;
-  private replayBuffer: Experience[] = [];
-  private demonstrations: DemonstrationExample[] = [];
-  private stepCount = 0;
-  private isTraining = false;
-  private demonstrationsSinceLastTraining = 0;
-  private stats: TetrisAiStats = this.defaultStats();
+  private readonly persistence = inject(TetrisAiPersistenceService);
+  private readonly stats = inject(TetrisAiStatsService);
+  private readonly replayBuffer = inject(TetrisReplayBufferService);
+  private readonly demoBuffer = inject(TetrisDemonstrationBufferService);
+  private readonly model = inject(TetrisModelService);
+  private readonly trainer = inject(TetrisTrainerService);
+  private readonly boardAnalyzer = inject(TetrisBoardAnalyzerService);
+  private readonly serializer = inject(TetrisAiSerializerService);
+  private readonly diagnostics = inject(TetrisAiDiagnosticsService);
 
+  /** Initialises TF.js, loads persisted state, and builds or restores the model. */
   public async initialize(): Promise<void> {
     await tf.ready();
-    this.cleanupLegacyStorage();
-    this.loadStats();
-    this.loadReplayBuffer();
-    this.loadDemonstrations();
-    this.stepCount = this.stats.totalSteps;
-    const loaded = await this.tryLoadModel();
+    this.persistence.cleanupLegacyStorage();
+    this.stats.initialize();
+    this.replayBuffer.load();
+    this.demoBuffer.load();
+    const loaded = await this.model.tryLoadModel();
     if (!loaded) {
-      this.buildModels();
-      // If the model couldn't load, keep the saved replay/demonstration data and
-      // restore exploration to a safe value. This preserves the user's training
-      // corpus instead of wiping it on a transient model-load issue.
-      const hadSavedTrainingState =
-        this.stats.totalEpisodes > 0 ||
-        this.replayBuffer.length > 0 ||
-        this.demonstrations.length > 0;
-      if (hadSavedTrainingState) {
-        const previousEpsilon = this.stats.epsilon;
-        this.stats.epsilon = TETRIS_AI_CONFIG.epsilonStart;
-        this.stepCount = this.stats.totalSteps;
-        console.warn(
-          `%c⚠️ MODEL LOAD FAILED — keeping saved stats/buffers but rebuilding the model. ` +
-          `Episodes=${this.stats.totalEpisodes}, replay=${this.replayBuffer.length}, demonstrations=${this.demonstrations.length}. ` +
-          `Epsilon reset from ${previousEpsilon.toFixed(4)} to ${TETRIS_AI_CONFIG.epsilonStart}.`,
-          'color:#f7768e;font-weight:bold',
+      this.model.buildModels();
+      const hadSavedState =
+        this.stats.getStats().totalEpisodes > 0 ||
+        this.replayBuffer.size > 0 ||
+        this.demoBuffer.size > 0;
+      if (hadSavedState) {
+        const previousEpsilon = this.stats.getEpsilon();
+        this.diagnostics.logModelLoadFailure(
+          previousEpsilon,
+          this.stats.getStats().totalEpisodes,
+          this.replayBuffer.size,
+          this.demoBuffer.size,
         );
-        this.demonstrationsSinceLastTraining = 0;
-        this.persistStats();
       }
     }
-
-    console.log(
-      `%c🤖 AI AGENT INITIALIZED`,
-      'font-size:12px;font-weight:bold;color:#7dcfff;background:#1a1a2e;padding:4px 8px;border-radius:4px',
+    this.diagnostics.logAgentInitialized(
+      tf.getBackend() ?? 'unknown',
+      loaded,
+      this.stats.getStats(),
+      this.replayBuffer.size,
+      this.demoBuffer.size,
     );
-    console.log(`%c  TF.js backend: ${tf.getBackend()} | Model: ${loaded ? 'loaded from storage' : 'freshly built'}`, 'color:#a9b1d6');
-    console.log(`%c  Network: ${TETRIS_AI_CONFIG.featureCount} (32 board + 21 preview) → ${TETRIS_AI_CONFIG.hiddenLayer1} → ${TETRIS_AI_CONFIG.hiddenLayer2} → 1`, 'color:#a9b1d6');
-    console.log(`%c  Episodes: ${this.stats.totalEpisodes} | Steps: ${this.stats.totalSteps} | Epsilon: ${this.stats.epsilon.toFixed(4)} | Best score: ${this.stats.bestScore}`, 'color:#a9b1d6');
-    console.log(`%c  Replay buffer: ${this.replayBuffer.length}/${TETRIS_AI_CONFIG.replayBufferSize} | Demonstrations: ${this.demonstrations.length}/${TETRIS_AI_CONFIG.demonstrationBufferSize}`, 'color:#a9b1d6');
-    console.log(`%c  Gamma: ${TETRIS_AI_CONFIG.gamma} | LR: ${TETRIS_AI_CONFIG.learningRate} | Batch: ${TETRIS_AI_CONFIG.batchSize} | Train every: ${TETRIS_AI_CONFIG.trainEveryNSteps} steps | Target sync: every ${TETRIS_AI_CONFIG.targetNetworkUpdateFrequency} steps`, 'color:#565f89');
   }
 
   /**
-   * Extracts 53 features from the board state after a simulated placement.
-   * Features: column heights (10), height diffs (9), max height (1),
-   *           aggregate height (1), holes (1), lines cleared (1), bumpiness (1),
-   *           covered cells (1), pillars (1), wells (1),
-   *           row completeness (1),            <-- index 27: sum of (filled/width)^2 per row
-   *           absolute holes normalized (1),   <-- index 28: sqrt-normalized hole count
-   *           low-board density (1),           <-- index 29: fill fraction of bottom 4 rows
-   *           height variance (1),             <-- index 30: variance of column heights (tower detector)
-   *           near-complete rows (1),          <-- index 31: count of rows >= 80% filled
-   *           preview piece 1 one-hot (7), preview piece 2 one-hot (7), preview piece 3 one-hot (7)
-   *
-   * heightVariance (index 30): variance of column heights normalized to [0,1].
-   * High variance means uneven surface = towers. Low variance = flat = good.
-   * This gives the network a direct signal for tower detection beyond bumpiness.
-   *
-   * nearCompleteRows (index 31): count of rows that are >= 80% filled (8+ cells in 10-wide grid).
-   * These are rows that are 1-2 pieces from clearing. Normalized by /10 to [0,1].
-   * Provides a stronger signal than rowCompleteness for "board is about to clear".
+   * Extracts the 53-element normalised feature vector from a board state.
+   * Delegates entirely to TetrisBoardAnalyzerService.
    */
-  public extractFeatures(grid: number[][], linesCleared: number, previewQueue: number[][][]): number[] {
-    const heights = this.getColumnHeights(grid);
-    const diffs = this.getHeightDiffs(heights);
-    const maxHeight = Math.max(...heights);
-    const aggregateHeight = heights.reduce((s, h) => s + h, 0);
-    const holes = this.countHoles(grid, heights);
-    const coveredCells = this.countCoveredCells(grid, heights);
-    const bumpiness = diffs.reduce((s, d) => s + Math.abs(d), 0);
-    const pillars = this.countPillars(grid, heights);
-    const wells = this.countWells(heights);
-
-    const gridWidth = grid[0]?.length ?? 10;
-    const gridHeight = grid.length;
-
-    // Row completeness: sum of (filled/width)^2 for each non-empty row.
-    let rowCompleteness = 0;
-    let nearCompleteRows = 0;
-    for (const row of grid) {
-      let filled = 0;
-      for (let col = 0; col < gridWidth; col++) {
-        if (row[col] !== 0) filled++;
-      }
-      if (filled > 0) {
-        const ratio = filled / gridWidth;
-        rowCompleteness += ratio * ratio;
-        if (ratio >= 0.8) nearCompleteRows++;
-      }
-    }
-
-    // Low-board density: fill fraction of the bottom 4 rows.
-    const lowBoardRows = 4;
-    let lowBoardFilled = 0;
-    const lowBoardStart = Math.max(0, gridHeight - lowBoardRows);
-    for (let y = lowBoardStart; y < gridHeight; y++) {
-      for (let x = 0; x < gridWidth; x++) {
-        if (grid[y][x] !== 0) lowBoardFilled++;
-      }
-    }
-    const lowBoardDensity = lowBoardFilled / (lowBoardRows * gridWidth);
-
-    // Height variance: measures how uneven the surface is.
-    // Low variance = flat surface (good). High variance = towers (bad).
-    // Normalized by dividing by max possible variance (100 for 20-row grid).
-    const meanHeight = aggregateHeight / heights.length;
-    let heightVariance = 0;
-    for (const h of heights) {
-      const diff = h - meanHeight;
-      heightVariance += diff * diff;
-    }
-    heightVariance /= heights.length;
-
-    const clamp = (v: number): number => Math.max(0, Math.min(1, v));
-    return [
-      ...heights.map((h) => clamp(h / 20)),                  // indices 0-9
-      ...diffs.map((d) => (d + 20) / 40),                    // indices 10-18 (shift to [0,1])
-      clamp(maxHeight / 20),                                  // index 19
-      clamp(aggregateHeight / 200),                           // index 20
-      clamp(holes / 40),                                      // index 21
-      clamp(linesCleared / 4),                               // index 22
-      clamp(bumpiness / 100),                                 // index 23
-      clamp(coveredCells / 120),                              // index 24
-      clamp(pillars / 10),                                    // index 25
-      clamp(wells / 100),                                     // index 26
-      clamp(rowCompleteness / 20),                            // index 27: row completeness
-      clamp(Math.sqrt(holes) / 6.32),                         // index 28: sqrt-normalised absolute holes
-      clamp(lowBoardDensity),                                 // index 29: low-board density
-      clamp(heightVariance / 100),                            // index 30: height variance (tower detector)
-      clamp(nearCompleteRows / 10),                           // index 31: near-complete rows (>= 80% filled)
-      ...this.encodePreviewQueue(previewQueue),               // indices 32-52
-    ];
+  public extractFeatures(
+    grid: number[][],
+    linesCleared: number,
+    previewQueue: number[][][],
+  ): number[] {
+    return this.boardAnalyzer.extractFeatures(grid, linesCleared, previewQueue);
   }
 
-  /** Returns predicted value for each set of placement features (batch). */
+  /** Returns predicted Q-values for a batch of feature vectors. */
   public evaluatePlacements(featuresBatch: number[][]): number[] {
-    return tf.tidy(() => {
-      const input = tf.tensor2d(featuresBatch);
-      const output = this.model.predict(input) as tf.Tensor;
-      return Array.from(output.dataSync());
-    });
+    return this.model.evaluatePlacements(featuresBatch);
   }
 
-  /** Epsilon-greedy selection over candidate placements. Returns the selected index. */
-  public selectPlacement(values: number[]): number {
-    if (Math.random() < this.stats.epsilon) {
-      const idx = Math.floor(Math.random() * values.length);
-      return idx;
-    }
-    return values.indexOf(Math.max(...values));
-  }
-
+  /** Returns the maximum predicted future value across a batch using the target network. */
   public estimateBestFutureValue(featuresBatch: number[][]): number {
-    if (featuresBatch.length === 0) {
-      return 0;
-    }
-
-    return tf.tidy(() => {
-      const input = tf.tensor2d(featuresBatch);
-      const output = this.targetModel.predict(input) as tf.Tensor;
-      return output.max().dataSync()[0] ?? 0;
-    });
+    return this.model.estimateBestFutureValue(featuresBatch);
   }
 
+  /** Epsilon-greedy selection: returns the index of the chosen placement. */
+  public selectPlacement(values: number[]): number {
+    return this.model.selectPlacement(values);
+  }
+
+  /** Stores a transition in the replay buffer, increments step counter, and persists. */
   public remember(
     features: number[],
     reward: number,
     nextStateValue: number,
     done: boolean,
   ): void {
-    if (this.replayBuffer.length >= TETRIS_AI_CONFIG.replayBufferSize) {
-      this.replayBuffer.shift();
-    }
-    this.replayBuffer.push({ features, reward, nextStateValue, done });
-    this.stepCount++;
-    this.stats.totalSteps++;
-
-    console.log(
-      `%c📦 REPLAY BUFFER %csize=${this.replayBuffer.length}/${TETRIS_AI_CONFIG.replayBufferSize} %cstep=${this.stepCount} %creward=${reward >= 0 ? '+' : ''}${reward.toFixed(4)} nextV=${nextStateValue.toFixed(4)} done=${done}`,
-      'color:#7dcfff;font-weight:bold',
-      'color:#565f89',
-      'color:#565f89',
-      reward >= 0 ? 'color:#9ece6a' : 'color:#f7768e',
+    this.replayBuffer.add({ features, reward, nextStateValue, done });
+    this.stats.incrementSteps();
+    this.diagnostics.logReplayBufferEntry(
+      this.replayBuffer.size,
+      TETRIS_AI_CONFIG.replayBufferSize,
+      this.stats.getStepCount(),
+      reward,
+      nextStateValue,
+      done,
     );
-
-    this.persistStats();
-    this.persistReplayBuffer();
+    this.replayBuffer.persist();
+    this.stats.persist();
   }
 
+  /** Stores a human-demonstrated placement pair in the demonstration buffer. */
   public recordDemonstrations(
     preferredFeatures: number[],
     rejectedFeaturesBatch: number[][],
   ): void {
-    this.appendDemonstrations(
+    this.demoBuffer.append(
       preferredFeatures,
       rejectedFeaturesBatch,
       TETRIS_AI_CONFIG.humanChosenTarget,
@@ -245,11 +119,12 @@ export class TetrisAiAgentService {
     );
   }
 
+  /** Stores a teacher-guided placement pair in the demonstration buffer. */
   public recordTeacherGuidance(
     preferredFeatures: number[],
     rejectedFeaturesBatch: number[][],
   ): void {
-    this.appendDemonstrations(
+    this.demoBuffer.append(
       preferredFeatures,
       rejectedFeaturesBatch,
       TETRIS_AI_CONFIG.teacherChosenTarget,
@@ -257,980 +132,75 @@ export class TetrisAiAgentService {
     );
   }
 
+  /** Triggers an RL training step if the buffer and step-count conditions are met. */
   public trainStep(): void {
-    if (
-      this.isTraining ||
-      this.replayBuffer.length < TETRIS_AI_CONFIG.batchSize ||
-      this.stepCount % TETRIS_AI_CONFIG.trainEveryNSteps !== 0
-    ) {
-      return;
-    }
-
-    this.isTraining = true;
-    this.runTraining().finally(() => {
-      this.isTraining = false;
-    });
+    this.trainer.trainStep();
   }
 
-  public decayEpsilon(): void {
-    this.stats.epsilon = Math.max(
-      TETRIS_AI_CONFIG.epsilonMin,
-      this.stats.epsilon * TETRIS_AI_CONFIG.epsilonDecay,
-    );
-  }
-
-  public onEpisodeEnd(score: number): void {
-    this.stats.totalEpisodes++;
-    if (this.stats.totalEpisodes >= TETRIS_AI_CONFIG.teacherWarmupEpisodes) {
-      this.decayEpsilon();
-    }
-    const isNewBest = score > this.stats.bestScore;
-    if (isNewBest) {
-      this.stats.bestScore = score;
-    }
-    this.stats.recentScores.push(score);
-    if (this.stats.recentScores.length > 20) {
-      this.stats.recentScores.shift();
-    }
-    this.stats.averageScore =
-      this.stats.recentScores.reduce((s, x) => s + x, 0) / this.stats.recentScores.length;
-
-    const recentScores = this.stats.recentScores;
-    const scoreTrend = recentScores.length >= 4
-      ? (recentScores.slice(-2).reduce((s, x) => s + x, 0) / 2) -
-        (recentScores.slice(-4, -2).reduce((s, x) => s + x, 0) / 2)
-      : 0;
-
-    console.log(
-      `%c📊 EPISODE #${this.stats.totalEpisodes} SUMMARY`,
-      'font-size:12px;font-weight:bold;color:#7aa2f7;background:#1a1a2e;padding:4px 8px;border-radius:4px',
-    );
-    console.log(
-      `%c  Score: ${score}${isNewBest ? ' 🏆 NEW BEST!' : ''} | Avg(${recentScores.length}): ${this.stats.averageScore.toFixed(1)} | Best: ${this.stats.bestScore} | Trend: ${scoreTrend >= 0 ? '📈+' : '📉'}${scoreTrend.toFixed(1)}`,
-      'color:#c0caf5',
-    );
-    console.log(
-      `%c  Total steps: ${this.stats.totalSteps} | Epsilon: ${this.stats.epsilon.toFixed(4)} | Buffer: ${this.replayBuffer.length}/${TETRIS_AI_CONFIG.replayBufferSize} | Demonstrations: ${this.demonstrations.length}`,
-      'color:#a9b1d6',
-    );
-    console.log(
-      `%c  Recent scores: [${recentScores.join(', ')}]`,
-      'color:#565f89',
-    );
-
-    this.persistStats();
-    this.persistModel();
-  }
-
-  public getStats(): Readonly<TetrisAiStats> {
-    return this.stats;
-  }
-
+  /** Triggers a demonstration training pass if enough new samples have been collected. */
   public trainOnDemonstrations(): void {
-    if (
-      this.isTraining ||
-      this.demonstrations.length < TETRIS_AI_CONFIG.demonstrationBatchSize ||
-      this.demonstrationsSinceLastTraining < TETRIS_AI_CONFIG.demonstrationTrainEveryNSamples
-    ) {
-      return;
+    this.trainer.trainOnDemonstrations();
+  }
+
+  /** Decays epsilon according to the configured decay rate and minimum. */
+  public decayEpsilon(): void {
+    this.stats.decayEpsilon();
+  }
+
+  /** Updates stats at episode end, decays epsilon after warmup, logs summary, and saves model. */
+  public onEpisodeEnd(score: number): void {
+    const isNewBest = this.stats.onEpisodeEnd(score);
+    if (this.stats.getStats().totalEpisodes >= TETRIS_AI_CONFIG.teacherWarmupEpisodes) {
+      this.stats.decayEpsilon();
     }
-
-    this.isTraining = true;
-    this.runDemonstrationTraining().finally(() => {
-      this.isTraining = false;
-    });
+    this.diagnostics.logEpisodeSummary(
+      this.stats.getStats(),
+      score,
+      isNewBest,
+      this.replayBuffer.size,
+      this.demoBuffer.size,
+    );
+    this.model.persistModel();
   }
 
+  /** Returns a readonly snapshot of the current training statistics. */
+  public getStats(): Readonly<TetrisAiStats> {
+    return this.stats.getStats();
+  }
+
+  /** Wipes all training state: stats, buffers, and model. */
   public reset(): void {
-    this.cleanupLegacyStorage();
-    this.stats = this.defaultStats();
-    this.replayBuffer = [];
-    this.demonstrations = [];
-    this.stepCount = 0;
-    this.demonstrationsSinceLastTraining = 0;
-    this.persistStats();
-    this.clearReplayBuffer();
-    this.clearDemonstrations();
-    this.buildModels();
+    this.persistence.cleanupLegacyStorage();
+    this.stats.reset();
+    this.replayBuffer.clear();
+    this.demoBuffer.clear();
+    this.trainer.reset();
+    this.model.buildModels();
     void tf.io.removeModel(`localstorage://${TETRIS_AI_CONFIG.modelStorageKey}`).catch(() => {
-      this.removeStoredModelArtifacts();
+      this.model.removeStoredModelArtifacts();
     });
   }
 
+  /** Serialises all training state (stats, buffers, model weights) to a JSON string. */
   public async exportTrainingData(): Promise<string> {
-    const modelArtifacts = await this.captureModelArtifacts();
-
-    const payload: TetrisAiTrainingExport = {
-      version: 1,
-      exportedAt: new Date().toISOString(),
-      stats: structuredClone(this.stats),
-      replayBuffer: structuredClone(this.replayBuffer),
-      demonstrations: structuredClone(this.demonstrations),
-      model: {
-        modelTopology: modelArtifacts.modelTopology ?? {},
-        weightSpecs: modelArtifacts.weightSpecs ?? [],
-        weightDataBase64: this.arrayBufferToBase64(
-          this.normalizeWeightData(modelArtifacts.weightData),
-        ),
-      },
-    };
-
-    return JSON.stringify(payload, null, 2);
+    return this.serializer.exportTrainingData(
+      this.stats.getStats(),
+      this.replayBuffer.getBuffer(),
+      this.demoBuffer.getBuffer(),
+    );
   }
 
+  /** Restores training state from a previously exported JSON string. */
   public async importTrainingData(json: string): Promise<void> {
-    const payload = this.parseTrainingExport(json);
-
-    this.stats = {
-      ...this.defaultStats(),
+    const payload = this.serializer.parseTrainingExport(json);
+    this.stats.restoreStats({
       ...payload.stats,
       demonstrationSamples: payload.demonstrations.length,
-    };
-    this.replayBuffer = payload.replayBuffer.slice(-TETRIS_AI_CONFIG.replayBufferSize);
-    this.demonstrations = payload.demonstrations.slice(-TETRIS_AI_CONFIG.demonstrationBufferSize);
-    this.stepCount = this.stats.totalSteps;
-    this.demonstrationsSinceLastTraining = 0;
-
-    this.persistStats();
-    this.persistReplayBuffer();
-    this.persistDemonstrations();
-    await this.loadImportedModel(payload.model);
-    this.persistModel();
-  }
-
-  private defaultStats(): TetrisAiStats {
-    return {
-      totalEpisodes: 0,
-      totalSteps: 0,
-      bestScore: 0,
-      epsilon: TETRIS_AI_CONFIG.epsilonStart,
-      averageScore: 0,
-      recentScores: [],
-      demonstrationSamples: 0,
-    };
-  }
-
-  private buildModels(): void {
-    if (this.model) {
-      this.model.dispose();
-    }
-    if (this.targetModel) {
-      this.targetModel.dispose();
-    }
-    this.model = this.createModel();
-    this.targetModel = this.createModel();
-    this.syncTargetNetwork();
-  }
-
-  private async loadImportedModel(model: SerializedModelArtifacts): Promise<void> {
-    if (this.model) {
-      this.model.dispose();
-    }
-    if (this.targetModel) {
-      this.targetModel.dispose();
-    }
-
-    this.model = (await tf.loadLayersModel(
-      tf.io.fromMemory({
-        modelTopology: model.modelTopology,
-        weightSpecs: model.weightSpecs,
-        weightData: this.base64ToArrayBuffer(model.weightDataBase64),
-      }),
-    )) as tf.Sequential;
-    this.model.compile({
-      optimizer: tf.train.adam(TETRIS_AI_CONFIG.learningRate),
-      loss: tf.losses.huberLoss,
     });
-    this.targetModel = this.createModel();
-    this.syncTargetNetwork();
-  }
-
-  private createModel(): tf.Sequential {
-    const model = tf.sequential();
-    model.add(
-      tf.layers.dense({
-        inputShape: [TETRIS_AI_CONFIG.featureCount],
-        units: TETRIS_AI_CONFIG.hiddenLayer1,
-        activation: 'relu',
-        kernelInitializer: 'heNormal',
-      }),
-    );
-    // Dropout after first hidden layer: prevents co-adaptation of neurons,
-    // reduces Q-value overfitting to noisy replay samples, and smooths
-    // the Q-value landscape to reduce oscillation between episodes.
-    model.add(tf.layers.dropout({ rate: 0.1 }));
-    model.add(
-      tf.layers.dense({
-        units: TETRIS_AI_CONFIG.hiddenLayer2,
-        activation: 'relu',
-        kernelInitializer: 'heNormal',
-      }),
-    );
-    model.add(tf.layers.dense({ units: 1, activation: 'linear' }));
-    model.compile({
-      optimizer: tf.train.adam(TETRIS_AI_CONFIG.learningRate),
-      loss: tf.losses.huberLoss,
-    });
-    return model;
-  }
-
-  private async tryLoadModel(): Promise<boolean> {
-    try {
-      const key = `localstorage://${TETRIS_AI_CONFIG.modelStorageKey}`;
-      const loaded = await tf.loadLayersModel(key);
-
-      // Reject stale models whose input shape doesn't match the current config
-      const inputSize = this.getLoadedModelInputSize(loaded);
-      if (inputSize !== TETRIS_AI_CONFIG.featureCount) {
-        console.warn(
-          `AI model shape mismatch: expected ${TETRIS_AI_CONFIG.featureCount} features, got ${inputSize ?? 'unknown'}.`,
-        );
-        loaded.dispose();
-        return false;
-      }
-
-      this.model = loaded as tf.Sequential;
-      this.model.compile({
-        optimizer: tf.train.adam(TETRIS_AI_CONFIG.learningRate),
-        loss: tf.losses.huberLoss,
-      });
-      this.targetModel = this.createModel();
-      this.syncTargetNetwork();
-      return true;
-    } catch (error) {
-      console.warn('AI model load failed:', error);
-      return false;
-    }
-  }
-
-  private getLoadedModelInputSize(model: tf.LayersModel): number | null {
-    const primaryShape = model.inputs[0]?.shape;
-    if (Array.isArray(primaryShape)) {
-      const last = primaryShape[primaryShape.length - 1];
-      if (typeof last === 'number') {
-        return last;
-      }
-    }
-
-    const firstLayer = model.layers[0] as {
-      batchInputShape?: Array<number | null>;
-    } | undefined;
-    const layerShape = firstLayer?.batchInputShape;
-    if (Array.isArray(layerShape)) {
-      const last = layerShape[layerShape.length - 1];
-      if (typeof last === 'number') {
-        return last;
-      }
-    }
-
-    return null;
-  }
-
-  private async captureModelArtifacts(): Promise<tf.io.ModelArtifacts> {
-    let artifacts: tf.io.ModelArtifacts | null = null;
-
-    await this.model.save(
-      tf.io.withSaveHandler(async (modelArtifacts) => {
-        artifacts = modelArtifacts;
-        return {
-          modelArtifactsInfo: tf.io.getModelArtifactsInfoForJSON(modelArtifacts),
-        };
-      }),
-    );
-
-    if (!artifacts) {
-      throw new Error('AI model export failed.');
-    }
-
-    return artifacts;
-  }
-
-  private persistModel(): void {
-    const key = `localstorage://${TETRIS_AI_CONFIG.modelStorageKey}`;
-    this.model.save(key).catch((e) => console.warn('AI model save failed:', e));
-  }
-
-  private loadStats(): void {
-    try {
-      const raw = localStorage.getItem(TETRIS_AI_CONFIG.statsStorageKey);
-      if (raw) {
-        this.stats = {
-          ...this.defaultStats(),
-          ...JSON.parse(raw),
-        };
-      }
-    } catch {
-      // ignore corrupt data
-    }
-  }
-
-  private persistStats(): void {
-    localStorage.setItem(TETRIS_AI_CONFIG.statsStorageKey, JSON.stringify(this.stats));
-  }
-
-  private loadReplayBuffer(): void {
-    try {
-      const raw = localStorage.getItem(TETRIS_AI_CONFIG.replayBufferStorageKey);
-      if (!raw) {
-        return;
-      }
-
-      const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed)) {
-        return;
-      }
-
-      this.replayBuffer = parsed
-        .filter((item): item is Experience => this.isExperience(item))
-        .slice(-TETRIS_AI_CONFIG.replayBufferSize);
-    } catch {
-      this.replayBuffer = [];
-    }
-  }
-
-  private persistReplayBuffer(): void {
-    if (this.replayBuffer.length === 0) {
-      this.clearReplayBuffer();
-      return;
-    }
-
-    let bufferToStore = this.replayBuffer;
-
-    while (bufferToStore.length > 0) {
-      try {
-        localStorage.setItem(
-          TETRIS_AI_CONFIG.replayBufferStorageKey,
-          JSON.stringify(bufferToStore),
-        );
-
-        if (bufferToStore.length !== this.replayBuffer.length) {
-          this.replayBuffer = bufferToStore;
-        }
-
-        return;
-      } catch {
-        bufferToStore = bufferToStore.slice(Math.ceil(bufferToStore.length / 2));
-      }
-    }
-
-    this.replayBuffer = [];
-    this.clearReplayBuffer();
-    console.warn('AI replay buffer persistence failed: localStorage quota exceeded.');
-  }
-
-  private loadDemonstrations(): void {
-    try {
-      const raw = localStorage.getItem(TETRIS_AI_CONFIG.demonstrationStorageKey);
-      if (!raw) {
-        return;
-      }
-
-      const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed)) {
-        return;
-      }
-
-      this.demonstrations = parsed
-        .filter((item): item is DemonstrationExample => this.isDemonstrationExample(item))
-        .slice(-TETRIS_AI_CONFIG.demonstrationBufferSize);
-      this.stats.demonstrationSamples = this.demonstrations.length;
-    } catch {
-      this.demonstrations = [];
-      this.stats.demonstrationSamples = 0;
-    }
-  }
-
-  private appendDemonstrations(
-    preferredFeatures: number[],
-    rejectedFeaturesBatch: number[][],
-    preferredTarget: number,
-    rejectedTarget: number,
-  ): void {
-    const examples: DemonstrationExample[] = [
-      {
-        features: preferredFeatures,
-        target: preferredTarget,
-      },
-      ...rejectedFeaturesBatch.map((features) => ({
-        features,
-        target: rejectedTarget,
-      })),
-    ];
-
-    if (examples.length === 0) {
-      return;
-    }
-
-    this.demonstrations.push(...examples);
-    if (this.demonstrations.length > TETRIS_AI_CONFIG.demonstrationBufferSize) {
-      this.demonstrations = this.demonstrations.slice(-TETRIS_AI_CONFIG.demonstrationBufferSize);
-    }
-
-    this.demonstrationsSinceLastTraining += examples.length;
-    this.stats.demonstrationSamples = this.demonstrations.length;
-    this.persistStats();
-    this.persistDemonstrations();
-  }
-
-  private persistDemonstrations(): void {
-    if (this.demonstrations.length === 0) {
-      this.clearDemonstrations();
-      return;
-    }
-
-    let bufferToStore = this.demonstrations;
-
-    while (bufferToStore.length > 0) {
-      try {
-        localStorage.setItem(
-          TETRIS_AI_CONFIG.demonstrationStorageKey,
-          JSON.stringify(bufferToStore),
-        );
-
-        if (bufferToStore.length !== this.demonstrations.length) {
-          this.demonstrations = bufferToStore;
-          this.stats.demonstrationSamples = bufferToStore.length;
-          this.persistStats();
-        }
-
-        return;
-      } catch {
-        bufferToStore = bufferToStore.slice(Math.ceil(bufferToStore.length / 2));
-      }
-    }
-
-    this.demonstrations = [];
-    this.stats.demonstrationSamples = 0;
-    this.persistStats();
-    this.clearDemonstrations();
-    console.warn('AI demonstration persistence failed: localStorage quota exceeded.');
-  }
-
-  private sampleBatch(): Experience[] {
-    const buf = this.replayBuffer;
-    const batch: Experience[] = [];
-    const recentWindow = buf.slice(-Math.min(buf.length, TETRIS_AI_CONFIG.replayRecentWindowSize));
-    const strongPositivePool = buf.filter(
-      (experience) =>
-        experience.reward >= TETRIS_AI_CONFIG.replayStrongPositiveRewardThreshold,
-    );
-    const terminalPool = buf.filter((experience) => experience.done);
-    const informativePool = [...buf]
-      .filter(
-        (experience) =>
-          !experience.done &&
-          experience.reward > TETRIS_AI_CONFIG.replayStrongNegativeRewardThreshold &&
-          experience.reward < TETRIS_AI_CONFIG.replayStrongPositiveRewardThreshold,
-      )
-      .sort((a, b) => this.getExperiencePriority(b) - this.getExperiencePriority(a))
-      .slice(0, Math.max(TETRIS_AI_CONFIG.batchSize, Math.ceil(buf.length * 0.25)));
-
-    const recentCount = Math.round(TETRIS_AI_CONFIG.batchSize * TETRIS_AI_CONFIG.replayRecentFraction);
-    const strongPositiveCount = Math.round(
-      TETRIS_AI_CONFIG.batchSize * TETRIS_AI_CONFIG.replayStrongPositiveFraction,
-    );
-    const terminalCount = Math.round(
-      TETRIS_AI_CONFIG.batchSize * TETRIS_AI_CONFIG.replayTerminalFraction,
-    );
-    const informativeCount = Math.round(
-      TETRIS_AI_CONFIG.batchSize * TETRIS_AI_CONFIG.replayInformativeFraction,
-    );
-
-    this.pushRandomBatchSamples(batch, recentWindow, recentCount);
-    this.pushRandomBatchSamples(batch, strongPositivePool, strongPositiveCount);
-    this.pushRandomBatchSamples(batch, terminalPool, terminalCount);
-    this.pushRandomBatchSamples(batch, informativePool, informativeCount);
-    this.pushRandomBatchSamples(batch, buf, TETRIS_AI_CONFIG.batchSize - batch.length);
-
-    return batch;
-  }
-
-  private pushRandomBatchSamples(
-    batch: Experience[],
-    pool: Experience[],
-    count: number,
-  ): void {
-    for (
-      let i = 0;
-      i < count && batch.length < TETRIS_AI_CONFIG.batchSize && pool.length > 0;
-      i++
-    ) {
-      batch.push(pool[Math.floor(Math.random() * pool.length)]);
-    }
-  }
-
-  private sampleDemonstrationBatch(): DemonstrationExample[] {
-    const dataset = this.demonstrations;
-    const batch: DemonstrationExample[] = [];
-    for (let i = 0; i < TETRIS_AI_CONFIG.demonstrationBatchSize; i++) {
-      batch.push(dataset[Math.floor(Math.random() * dataset.length)]);
-    }
-    return batch;
-  }
-
-  private async runTraining(): Promise<void> {
-    const batch = this.sampleBatch();
-    const nextValues = batch.map((e) => e.nextStateValue ?? 0);
-
-    const targets = batch.map((e, i) =>
-      e.done ? e.reward : e.reward + TETRIS_AI_CONFIG.gamma * nextValues[i],
-    );
-
-    // Compute current predictions for loss tracking
-    const currentPredictions: number[] = tf.tidy(() => {
-      const input = tf.tensor2d(batch.map((e) => e.features));
-      const pred = Array.from((this.model.predict(input) as tf.Tensor).dataSync());
-      input.dispose();
-      return pred;
-    });
-
-    const xs = tf.tensor2d(batch.map((e) => e.features));
-    const ys = tf.tensor2d(targets, [targets.length, 1]);
-
-    const result = await this.model.fit(xs, ys, { epochs: 1, verbose: 0 });
-    const loss = result.history['loss']?.[0] as number | undefined;
-
-    // Compute TD errors for diagnosing learning
-    const tdErrors = targets.map((t, i) => t - currentPredictions[i]);
-    const meanAbsTdError = tdErrors.reduce((s, e) => s + Math.abs(e), 0) / tdErrors.length;
-    const maxAbsTdError = Math.max(...tdErrors.map(Math.abs));
-
-    const batchRewards = batch.map((e) => e.reward);
-    const doneCount = batch.filter((e) => e.done).length;
-    const strongPositiveCount = batch.filter(
-      (e) => e.reward >= TETRIS_AI_CONFIG.replayStrongPositiveRewardThreshold,
-    ).length;
-    const strongNegativeCount = batch.filter(
-      (e) =>
-        !e.done && e.reward <= TETRIS_AI_CONFIG.replayStrongNegativeRewardThreshold,
-    ).length;
-
-    console.groupCollapsed(
-      `%c🧠 TRAINING STEP %c#${this.stepCount} %closs=${loss?.toFixed(6) ?? '?'}`,
-      'color:#bb9af7;font-weight:bold',
-      'color:#565f89',
-      loss !== undefined && loss < 0.1 ? 'color:#9ece6a' : 'color:#e0af68',
-    );
-    console.log('Batch stats:', {
-      batchSize: batch.length,
-      doneExperiences: doneCount,
-      strongPositiveExperiences: strongPositiveCount,
-      strongNegativeExperiences: strongNegativeCount,
-      rewardRange: `[${Math.min(...batchRewards).toFixed(4)}, ${Math.max(...batchRewards).toFixed(4)}]`,
-      meanReward: +(batchRewards.reduce((s, r) => s + r, 0) / batchRewards.length).toFixed(4),
-    });
-    console.log('TD error:', {
-      meanAbsolute: +meanAbsTdError.toFixed(6),
-      maxAbsolute: +maxAbsTdError.toFixed(6),
-    });
-    console.log('Q-value predictions:', {
-      currentRange: `[${Math.min(...currentPredictions).toFixed(4)}, ${Math.max(...currentPredictions).toFixed(4)}]`,
-      targetRange: `[${Math.min(...targets).toFixed(4)}, ${Math.max(...targets).toFixed(4)}]`,
-      nextValueRange: `[${Math.min(...nextValues).toFixed(4)}, ${Math.max(...nextValues).toFixed(4)}]`,
-    });
-    console.log('Hyperparameters:', {
-      gamma: TETRIS_AI_CONFIG.gamma,
-      learningRate: TETRIS_AI_CONFIG.learningRate,
-      epsilon: +this.stats.epsilon.toFixed(6),
-      trainEveryNSteps: TETRIS_AI_CONFIG.trainEveryNSteps,
-    });
-    console.log(`TF.js tensors in memory: ${tf.memory().numTensors}`);
-    console.groupEnd();
-
-    xs.dispose();
-    ys.dispose();
-
-    if (this.stepCount % TETRIS_AI_CONFIG.targetNetworkUpdateFrequency === 0) {
-      console.log(
-        `%c🔄 TARGET NETWORK SYNC %cat step ${this.stepCount}`,
-        'color:#ff9e64;font-weight:bold',
-        'color:#565f89',
-      );
-      this.syncTargetNetwork();
-    }
-
-    this.persistStats();
-  }
-
-  private async runDemonstrationTraining(): Promise<void> {
-    const batch = this.sampleDemonstrationBatch();
-    const xs = tf.tensor2d(batch.map((example) => example.features));
-    const ys = tf.tensor2d(
-      batch.map((example) => example.target),
-      [batch.length, 1],
-    );
-
-    const result = await this.model.fit(xs, ys, {
-      epochs: TETRIS_AI_CONFIG.demonstrationEpochs,
-      verbose: 0,
-      shuffle: true,
-    });
-
-    const loss = result.history['loss']?.[result.history['loss'].length - 1] as number | undefined;
-    const positiveCount = batch.filter((e) => e.target > 0).length;
-
-    console.groupCollapsed(
-      `%c👨‍🏫 DEMONSTRATION TRAINING %closs=${loss?.toFixed(6) ?? '?'}`,
-      'color:#e0af68;font-weight:bold',
-      loss !== undefined && loss < 0.1 ? 'color:#9ece6a' : 'color:#e0af68',
-    );
-    console.log('Batch:', {
-      size: batch.length,
-      positiveExamples: positiveCount,
-      negativeExamples: batch.length - positiveCount,
-      epochs: TETRIS_AI_CONFIG.demonstrationEpochs,
-      totalDemonstrations: this.demonstrations.length,
-    });
-    console.groupEnd();
-
-    xs.dispose();
-    ys.dispose();
-    this.demonstrationsSinceLastTraining = 0;
-    this.syncTargetNetwork();
-    this.persistModel();
-  }
-
-  private syncTargetNetwork(): void {
-    const clonedWeights = this.model.getWeights().map((weight) => weight.clone());
-    this.targetModel.setWeights(clonedWeights);
-    clonedWeights.forEach((weight) => weight.dispose());
-  }
-
-  private getExperiencePriority(experience: Experience): number {
-    return (
-      Math.abs(experience.reward) +
-      (experience.reward > 0 ? 1.5 : 0) +
-      (experience.done ? 2 : 0)
-    );
-  }
-
-  /**
-   * Encodes the preview queue as 3 × 7 one-hot vectors (21 values).
-   * Piece identity is determined by the non-zero cell value in the matrix:
-   * 1=I, 2=O, 3=T, 4=L, 5=J, 6=S, 7=Z
-   */
-  private encodePreviewQueue(previewQueue: number[][][]): number[] {
-    const encoded: number[] = [];
-    for (let i = 0; i < 3; i++) {
-      const oneHot = [0, 0, 0, 0, 0, 0, 0];
-      const matrix = previewQueue[i];
-      if (matrix) {
-        const pieceId = this.getPieceId(matrix);
-        if (pieceId >= 1 && pieceId <= 7) {
-          oneHot[pieceId - 1] = 1;
-        }
-      }
-      encoded.push(...oneHot);
-    }
-    return encoded;
-  }
-
-  /** Returns the non-zero cell value from a piece matrix (1–7). */
-  private getPieceId(matrix: number[][]): number {
-    for (const row of matrix) {
-      for (const cell of row) {
-        if (cell !== 0) return cell;
-      }
-    }
-    return 0;
-  }
-
-  private getColumnHeights(grid: number[][]): number[] {
-    const rows = grid.length;
-    const cols = grid[0].length;
-    const heights: number[] = Array(cols).fill(0);
-    for (let x = 0; x < cols; x++) {
-      for (let y = 0; y < rows; y++) {
-        if (grid[y][x] !== 0) {
-          heights[x] = rows - y;
-          break;
-        }
-      }
-    }
-    return heights;
-  }
-
-  private getHeightDiffs(heights: number[]): number[] {
-    const diffs: number[] = [];
-    for (let i = 0; i < heights.length - 1; i++) {
-      diffs.push(heights[i + 1] - heights[i]);
-    }
-    return diffs;
-  }
-
-  private countHoles(grid: number[][], heights: number[]): number {
-    const rows = grid.length;
-    let holes = 0;
-    for (let x = 0; x < grid[0].length; x++) {
-      const topY = rows - heights[x];
-      for (let y = topY; y < rows; y++) {
-        if (grid[y][x] === 0) holes++;
-      }
-    }
-    return holes;
-  }
-
-  /**
-   * Counts filled cells that sit above holes (blockades).
-   * A higher count means holes are more deeply buried and harder to clear.
-   */
-  private countCoveredCells(grid: number[][], heights: number[]): number {
-    const rows = grid.length;
-    let covered = 0;
-    for (let x = 0; x < grid[0].length; x++) {
-      const topY = rows - heights[x];
-      let filledAbove = 0;
-      for (let y = topY; y < rows; y++) {
-        if (grid[y][x] !== 0) {
-          filledAbove++;
-        } else {
-          // This is a hole — all filled cells above it are blockades
-          covered += filledAbove;
-        }
-      }
-    }
-    return covered;
-  }
-
-  /**
-   * Counts the number of pillars (runs of 2+ consecutive empty cells)
-   * within the occupied portion of each column.
-   */
-  private countPillars(grid: number[][], heights: number[]): number {
-    const rows = grid.length;
-    let pillars = 0;
-    for (let x = 0; x < grid[0].length; x++) {
-      const topY = rows - heights[x];
-      let consecutiveEmpty = 0;
-      for (let y = topY; y < rows; y++) {
-        if (grid[y][x] === 0) {
-          consecutiveEmpty++;
-        } else {
-          if (consecutiveEmpty >= 2) {
-            pillars++;
-          }
-          consecutiveEmpty = 0;
-        }
-      }
-      if (consecutiveEmpty >= 2) {
-        pillars++;
-      }
-    }
-    return pillars;
-  }
-
-  /**
-   * Sums up well depths across all columns.
-   * A well is a column that is lower than both its neighbors.
-   * Well depth = min(leftHeight, rightHeight) - columnHeight.
-   * Directly targets the "island" pattern where isolated clusters leave gaps.
-   */
-  private countWells(heights: number[]): number {
-    let wells = 0;
-    for (let i = 0; i < heights.length; i++) {
-      const left = i > 0 ? heights[i - 1] : heights[i];
-      const right = i < heights.length - 1 ? heights[i + 1] : heights[i];
-      const minNeighbor = Math.min(left, right);
-      if (heights[i] < minNeighbor) {
-        wells += minNeighbor - heights[i];
-      }
-    }
-    return wells;
-  }
-
-  private removeStoredModelArtifacts(): void {
-    localStorage.removeItem(`tensorflowjs_models/${TETRIS_AI_CONFIG.modelStorageKey}/info`);
-    localStorage.removeItem(
-      `tensorflowjs_models/${TETRIS_AI_CONFIG.modelStorageKey}/model_topology`,
-    );
-    localStorage.removeItem(`tensorflowjs_models/${TETRIS_AI_CONFIG.modelStorageKey}/weight_specs`);
-    localStorage.removeItem(`tensorflowjs_models/${TETRIS_AI_CONFIG.modelStorageKey}/weight_data`);
-    localStorage.removeItem(
-      `tensorflowjs_models/${TETRIS_AI_CONFIG.modelStorageKey}/model_metadata`,
-    );
-  }
-
-  private cleanupLegacyStorage(): void {
-    const legacyModelKeys = [
-      'tetris-ai-model',
-      'tetris-ai-model-v4',
-      'tetris-ai-model-v5',
-    ];
-    const legacyStorageKeys = [
-      'tetris-ai-stats',
-      'tetris-ai-replay-buffer',
-      'tetris-ai-demonstrations',
-      'tetris-ai-stats-v5',
-      'tetris-ai-replay-buffer-v5',
-      'tetris-ai-demonstrations-v5',
-    ];
-
-    for (const key of legacyStorageKeys) {
-      localStorage.removeItem(key);
-    }
-
-    for (const modelKey of legacyModelKeys) {
-      localStorage.removeItem(`tensorflowjs_models/${modelKey}/info`);
-      localStorage.removeItem(`tensorflowjs_models/${modelKey}/model_topology`);
-      localStorage.removeItem(`tensorflowjs_models/${modelKey}/weight_specs`);
-      localStorage.removeItem(`tensorflowjs_models/${modelKey}/weight_data`);
-      localStorage.removeItem(`tensorflowjs_models/${modelKey}/model_metadata`);
-    }
-  }
-
-  private clearReplayBuffer(): void {
-    localStorage.removeItem(TETRIS_AI_CONFIG.replayBufferStorageKey);
-  }
-
-  private clearDemonstrations(): void {
-    localStorage.removeItem(TETRIS_AI_CONFIG.demonstrationStorageKey);
-  }
-
-  private parseTrainingExport(json: string): TetrisAiTrainingExport {
-    let parsed: unknown;
-
-    try {
-      parsed = JSON.parse(json);
-    } catch {
-      throw new Error('Training data import failed: invalid JSON.');
-    }
-
-    if (!parsed || typeof parsed !== 'object') {
-      throw new Error('Training data import failed: JSON payload is invalid.');
-    }
-
-    const candidate = parsed as Partial<TetrisAiTrainingExport>;
-    const replayBuffer = Array.isArray(candidate.replayBuffer)
-      ? candidate.replayBuffer.filter((item): item is Experience => this.isExperience(item))
-      : [];
-    const demonstrations = Array.isArray(candidate.demonstrations)
-      ? candidate.demonstrations.filter((item): item is DemonstrationExample =>
-          this.isDemonstrationExample(item),
-        )
-      : [];
-
-    if (
-      candidate.version !== 1 ||
-      !this.isStats(candidate.stats) ||
-      !this.isSerializedModelArtifacts(candidate.model)
-    ) {
-      throw new Error('Training data import failed: unsupported training data format.');
-    }
-
-    return {
-      version: 1,
-      exportedAt:
-        typeof candidate.exportedAt === 'string' ? candidate.exportedAt : new Date().toISOString(),
-      stats: candidate.stats,
-      replayBuffer,
-      demonstrations,
-      model: candidate.model,
-    };
-  }
-
-  private isStats(value: unknown): value is TetrisAiStats {
-    if (!value || typeof value !== 'object') {
-      return false;
-    }
-
-    const candidate = value as Partial<TetrisAiStats>;
-
-    return (
-      typeof candidate.totalEpisodes === 'number' &&
-      typeof candidate.totalSteps === 'number' &&
-      typeof candidate.bestScore === 'number' &&
-      typeof candidate.epsilon === 'number' &&
-      typeof candidate.averageScore === 'number' &&
-      Array.isArray(candidate.recentScores) &&
-      candidate.recentScores.every((item) => typeof item === 'number') &&
-      typeof candidate.demonstrationSamples === 'number'
-    );
-  }
-
-  private isSerializedModelArtifacts(value: unknown): value is SerializedModelArtifacts {
-    if (!value || typeof value !== 'object') {
-      return false;
-    }
-
-    const candidate = value as Partial<SerializedModelArtifacts>;
-
-    return (
-      typeof candidate.weightDataBase64 === 'string' &&
-      Array.isArray(candidate.weightSpecs) &&
-      candidate.weightSpecs.every((entry) => !!entry && typeof entry.name === 'string')
-    );
-  }
-
-  private arrayBufferToBase64(buffer?: ArrayBuffer): string {
-    if (!buffer) {
-      return '';
-    }
-
-    const bytes = new Uint8Array(buffer);
-    let binary = '';
-
-    for (let i = 0; i < bytes.length; i += 0x8000) {
-      const chunk = bytes.subarray(i, i + 0x8000);
-      binary += String.fromCharCode(...chunk);
-    }
-
-    return btoa(binary);
-  }
-
-  private base64ToArrayBuffer(value: string): ArrayBuffer {
-    if (!value) {
-      return new ArrayBuffer(0);
-    }
-
-    const binary = atob(value);
-    const bytes = new Uint8Array(binary.length);
-
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-
-    return bytes.buffer;
-  }
-
-  private normalizeWeightData(weightData?: tf.io.WeightData): ArrayBuffer | undefined {
-    if (!weightData) {
-      return undefined;
-    }
-
-    return Array.isArray(weightData) ? tf.io.concatenateArrayBuffers(weightData) : weightData;
-  }
-
-  private isExperience(value: unknown): value is Experience {
-    if (!value || typeof value !== 'object') {
-      return false;
-    }
-
-    const candidate = value as Partial<Experience>;
-    const hasNextStateValue = typeof candidate.nextStateValue === 'number';
-    const hasLegacyNextFeatures =
-      Array.isArray(candidate.nextFeatures) &&
-      candidate.nextFeatures.every((item) => typeof item === 'number');
-
-    return (
-      Array.isArray(candidate.features) &&
-      candidate.features.every((item) => typeof item === 'number') &&
-      typeof candidate.reward === 'number' &&
-      (hasNextStateValue || hasLegacyNextFeatures) &&
-      typeof candidate.done === 'boolean'
-    );
-  }
-
-  private isDemonstrationExample(value: unknown): value is DemonstrationExample {
-    if (!value || typeof value !== 'object') {
-      return false;
-    }
-
-    const candidate = value as Partial<DemonstrationExample>;
-
-    return (
-      Array.isArray(candidate.features) &&
-      candidate.features.every((item) => typeof item === 'number') &&
-      typeof candidate.target === 'number'
-    );
+    this.replayBuffer.setBuffer(payload.replayBuffer);
+    this.demoBuffer.setBuffer(payload.demonstrations);
+    this.trainer.reset();
+    await this.model.loadImportedModel(payload.model);
+    this.model.persistModel();
   }
 }

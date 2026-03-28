@@ -1,91 +1,55 @@
-import { Injectable, inject, signal } from '@angular/core';
+import { Injectable, WritableSignal, inject, signal } from '@angular/core';
 
 import { TETRIS_AI_CONFIG } from '../constants/tetris-ai-config.constant';
-import { TETRIS_GAME_CONFIG } from '../constants/tetris-game-config.constant';
-import { TetrisActivePiece } from '../classes/tetris-active-piece.class';
-import { TetrisMatrix } from '../classes/tetris-matrix.class';
+import { TetrisBoardMetrics } from '../interfaces/tetris-board-metrics.interface';
 import { TetrisGameState } from '../interfaces/tetris-game-state.interface';
+import { TetrisPlacement } from '../interfaces/tetris-placement.interface';
+import { TetrisPlan } from '../interfaces/tetris-plan.interface';
 import { TetrisAiStats } from '../interfaces/tetris-ai-stats.interface';
 import { TetrisAiAgentService } from './tetris-ai-agent.service';
 import { TetrisAiChartService } from './tetris-ai-chart.service';
-import { TetrisCollisionService } from './tetris-collision.service';
-import { TetrisGridService } from './tetris-grid.service';
-
-interface Placement {
-  /** Number of CW rotations from spawn orientation */
-  rotation: number;
-  /** Target column offset */
-  x: number;
-  /** The rotated piece matrix */
-  matrix: number[][];
-  /** Board features after simulating this placement */
-  features: number[];
-  linesCleared: number;
-  /** Row where the piece landed (0 = top, gridHeight-1 = bottom) */
-  placementRow: number;
-  /** Sum of (filledCells/width)^2 for each non-empty row — rewards dense, nearly-complete rows */
-  rowCompleteness: number;
-}
-
-interface Plan {
-  targetMatrix: number[][];
-  targetX: number;
-  features: number[];
-  placementRow: number;
-  linesCleared: number;
-  decisionSource: 'model' | 'exploration' | 'teacher';
-}
-
-/** Extracted board metrics used for delta-based reward computation. */
-interface BoardMetrics {
-  holes: number;
-  coveredCells: number;
-  aggregateHeight: number;
-  bumpiness: number;
-  maxHeight: number;
-  pillars: number;
-  wells: number;
-  /** Sum of (filledCells/width)^2 per non-empty row — higher = more nearly-complete rows. */
-  rowCompleteness: number;
-  /** Fill fraction of the bottom 4 rows — higher = bottom ready to clear. */
-  lowBoardDensity: number;
-  /** Variance of column heights — higher = more tower-like surface. */
-  heightVariance: number;
-  /** Count of rows that are >= 80% filled — higher = close to clearing. */
-  nearCompleteRows: number;
-}
-
-interface RankedPlacement {
-  index: number;
-  placement: Placement;
-  modelValue: number;
-  heuristicValue: number;
-}
+import { TetrisAiDiagnosticsService } from './tetris-ai-diagnostics.service';
+import { TetrisAiExecutorService } from './tetris-ai-executor.service';
+import { TetrisBoardMetricsService } from './tetris-board-metrics.service';
+import { TetrisPlacementEnumeratorService } from './tetris-placement-enumerator.service';
+import { TetrisPlanSelectorService } from './tetris-plan-selector.service';
+import { TetrisRewardCalculatorService } from './tetris-reward-calculator.service';
 
 @Injectable()
 export class TetrisAiControllerService {
   private readonly agent = inject(TetrisAiAgentService);
   private readonly chart = inject(TetrisAiChartService);
-  private readonly collision = inject(TetrisCollisionService);
-  private readonly gridService = inject(TetrisGridService);
+  private readonly diagnostics = inject(TetrisAiDiagnosticsService);
+  private readonly executor = inject(TetrisAiExecutorService);
+  private readonly boardMetrics = inject(TetrisBoardMetricsService);
+  private readonly placer = inject(TetrisPlacementEnumeratorService);
+  private readonly planSelector = inject(TetrisPlanSelectorService);
+  private readonly rewardCalc = inject(TetrisRewardCalculatorService);
+
+  // ---------------------------------------------------------------------------
+  // Lifecycle / coordination state
+  // ---------------------------------------------------------------------------
 
   private active = false;
   private initialized = false;
-  private plan: Plan | null = null;
-  private aiCounterMs = 0;
+  private plan: TetrisPlan | null = null;
   private episodePieceCount = 0;
   private episodePeakScore = 0;
   private episodeTotalLinesCleared = 0;
   private episodeTotalReward = 0;
-  private pendingDemonstrationPlacements: Placement[] = [];
+  private pendingDemonstrationPlacements: TetrisPlacement[] = [];
 
   /** Previous board metrics for delta computation (null = start of episode). */
-  private prevMetrics: BoardMetrics | null = null;
+  private prevMetrics: TetrisBoardMetrics | null = null;
 
-  readonly isEnabled = signal(false);
-  readonly isReady = signal(false);
-  readonly isRecordingDemonstrations = signal(false);
-  readonly stats = signal<TetrisAiStats>({
+  // ---------------------------------------------------------------------------
+  // Public signals
+  // ---------------------------------------------------------------------------
+
+  readonly isEnabled: WritableSignal<boolean> = signal(false);
+  readonly isReady: WritableSignal<boolean> = signal(false);
+  readonly isRecordingDemonstrations: WritableSignal<boolean> = signal(false);
+  readonly stats: WritableSignal<TetrisAiStats> = signal<TetrisAiStats>({
     totalEpisodes: 0,
     totalSteps: 0,
     bestScore: 0,
@@ -95,6 +59,11 @@ export class TetrisAiControllerService {
     demonstrationSamples: 0,
   });
 
+  // ---------------------------------------------------------------------------
+  // Initialisation
+  // ---------------------------------------------------------------------------
+
+  /** Initialises the AI agent and loads the persisted enabled preference. */
   public async initialize(): Promise<void> {
     if (this.initialized) {
       return;
@@ -108,11 +77,15 @@ export class TetrisAiControllerService {
     this.stats.set({ ...this.agent.getStats() });
   }
 
+  // ---------------------------------------------------------------------------
+  // Enable / disable
+  // ---------------------------------------------------------------------------
+
+  /** Enables or disables the AI and resets all episode state. */
   public setEnabled(value: boolean): void {
     this.active = value;
     this.isEnabled.set(value);
     this.plan = null;
-    this.aiCounterMs = 0;
     this.episodePieceCount = 0;
     this.episodePeakScore = 0;
     this.episodeTotalLinesCleared = 0;
@@ -121,54 +94,34 @@ export class TetrisAiControllerService {
     this.persistEnabledPreference();
   }
 
+  /** Returns true when the AI is currently active. */
   public isActive(): boolean {
     return this.active;
   }
 
+  /** Enables or disables human-demonstration recording. */
   public setDemonstrationRecordingEnabled(value: boolean): void {
     this.isRecordingDemonstrations.set(value);
     this.pendingDemonstrationPlacements = [];
   }
 
+  // ---------------------------------------------------------------------------
+  // Game-event hooks
+  // ---------------------------------------------------------------------------
+
   /**
    * Called after a new piece has been spawned.
-   * Plans the optimal placement immediately.
+   * Enumerates placements and computes the plan when the AI is active.
    */
-  private static readonly PIECE_NAMES: Record<number, string> = {
-    1: 'I', 2: 'O', 3: 'T', 4: 'L', 5: 'J', 6: 'S', 7: 'Z',
-  };
-
-  private getPieceIdFromMatrix(matrix: number[][]): number {
-    for (const row of matrix) {
-      for (const cell of row) {
-        if (cell !== 0) return cell;
-      }
-    }
-    return 0;
-  }
-
   public onNewPiece(state: TetrisGameState): void {
     if (!this.active && !this.isRecordingDemonstrations()) {
       return;
     }
 
-    // Capture pre-move metrics from the current (pre-placement) grid
-    if (this.active && this.prevMetrics === null) {
-      this.prevMetrics = this.extractMetrics(
-        this.agent.extractFeatures(state.grid, 0, state.previewQueue),
-      );
-    }
+    this.captureInitialMetricsIfNeeded(state);
+    this.logPieceQueue(state);
 
-    // Log preview queue for verification
-    const currentPieceId = this.getPieceIdFromMatrix(state.activePiece.matrix);
-    const previewPieceIds = state.previewQueue.map((m) => this.getPieceIdFromMatrix(m));
-    console.log(
-      `%c🧩 PIECE QUEUE %cActive: ${TetrisAiControllerService.PIECE_NAMES[currentPieceId] ?? '?'} | Preview: [${previewPieceIds.map((id) => TetrisAiControllerService.PIECE_NAMES[id] ?? '?').join(', ')}] (${previewPieceIds.length} pieces)`,
-      'color:#ff9e64;font-weight:bold',
-      'color:#a9b1d6',
-    );
-
-    const placements = this.enumeratePlacements(state);
+    const placements = this.placer.enumeratePlacements(state);
 
     if (this.isRecordingDemonstrations()) {
       this.pendingDemonstrationPlacements = placements;
@@ -178,74 +131,37 @@ export class TetrisAiControllerService {
       return;
     }
 
-    this.plan = this.computePlan(placements);
-    this.aiCounterMs = 0;
+    this.plan = this.planSelector.computePlan(placements, this.episodePieceCount);
+    this.executor.resetCounter();
   }
 
+  /** Resets all episode-scoped state at the start of a new game. */
   public onEpisodeStart(): void {
     this.plan = null;
-    this.aiCounterMs = 0;
     this.episodePieceCount = 0;
     this.episodePeakScore = 0;
     this.episodeTotalLinesCleared = 0;
     this.episodeTotalReward = 0;
     this.prevMetrics = null;
     this.pendingDemonstrationPlacements = [];
+    this.executor.resetCounter();
   }
 
   /**
    * Called each frame from the game loop.
-   * Returns true when the AI has hard-dropped (piece is at bottom, ready to lock).
+   * Returns true when the AI has hard-dropped (piece is ready to lock).
    */
   public tick(state: TetrisGameState, deltaMs: number): boolean {
     if (!this.active || !this.plan) {
       return false;
     }
 
-    this.aiCounterMs += deltaMs;
-    if (this.aiCounterMs < TETRIS_AI_CONFIG.aiActionIntervalMs) {
-      return false;
-    }
-    this.aiCounterMs = 0;
-
-    const piece = state.activePiece;
-    const plan = this.plan;
-
-    // Step 1 – rotate to target orientation
-    if (!this.matricesEqual(piece.matrix, plan.targetMatrix)) {
-      const rotated = TetrisMatrix.rotate(piece.matrix);
-      if (!this.collision.hasCollision(rotated, state.grid, piece.x, piece.y)) {
-        piece.matrix = rotated;
-      } else {
-        this.nudgeTowardTarget(piece, state.grid, plan.targetX);
-      }
-      return false;
-    }
-
-    // Step 2 – move horizontally toward target x
-    if (piece.x < plan.targetX) {
-      if (!this.collision.hasCollision(piece.matrix, state.grid, piece.x + 1, piece.y)) {
-        piece.x++;
-      }
-      return false;
-    }
-    if (piece.x > plan.targetX) {
-      if (!this.collision.hasCollision(piece.matrix, state.grid, piece.x - 1, piece.y)) {
-        piece.x--;
-      }
-      return false;
-    }
-
-    // Step 3 – hard drop: move piece to its lowest valid row
-    while (!this.collision.hasCollision(piece.matrix, state.grid, piece.x, piece.y + 1)) {
-      piece.y++;
-    }
-    return true; // signal the facade to lock immediately
+    return this.executor.tick(state, deltaMs, this.plan);
   }
 
   /**
    * Called by the facade after a piece is locked.
-   * Computes delta-based reward, stores experience, triggers training.
+   * Computes delta-based reward, stores experience, and triggers training.
    */
   public onPieceLocked(state: TetrisGameState, linesCleared: number, gameOver: boolean): void {
     this.episodePeakScore = Math.max(this.episodePeakScore, state.score);
@@ -261,40 +177,29 @@ export class TetrisAiControllerService {
     this.episodePieceCount++;
     this.episodeTotalLinesCleared += linesCleared;
 
-    const reward = this.computeReward(
+    const reward = this.rewardCalc.computeReward(
       this.plan.features,
       linesCleared,
       gameOver,
       this.episodePieceCount,
+      this.prevMetrics,
+      this.plan,
+      this.episodePeakScore,
     );
     this.episodeTotalReward += reward;
 
-    const nextPlacements = gameOver ? [] : this.enumeratePlacements(state);
+    const nextPlacements = gameOver ? [] : this.placer.enumeratePlacements(state);
     const nextStateValue = gameOver
       ? 0
-      : this.agent.estimateBestFutureValue(nextPlacements.map((placement) => placement.features));
+      : this.agent.estimateBestFutureValue(nextPlacements.map((p) => p.features));
 
     this.agent.remember(this.plan.features, reward, nextStateValue, gameOver);
     this.agent.trainStep();
 
-    // Update prevMetrics to post-placement state for next delta computation
-    this.prevMetrics = this.extractMetrics(this.plan.features);
+    this.prevMetrics = this.boardMetrics.extractMetrics(this.plan.features);
 
     if (gameOver) {
       this.chart.markGameEnd();
-      const avgReward = this.episodePieceCount > 0 ? this.episodeTotalReward / this.episodePieceCount : 0;
-      console.log(
-        `%c📈 EPISODE DIAGNOSTICS`,
-        'font-size:11px;font-weight:bold;color:#e0af68;background:#1a1a2e;padding:3px 6px;border-radius:4px',
-      );
-      console.log(
-        `%c  Lines cleared: ${this.episodeTotalLinesCleared} | Pieces: ${this.episodePieceCount} | Lines/piece: ${(this.episodeTotalLinesCleared / this.episodePieceCount).toFixed(3)}`,
-        'color:#c0caf5',
-      );
-      console.log(
-        `%c  Avg reward: ${avgReward.toFixed(4)} | Total reward: ${this.episodeTotalReward.toFixed(4)}`,
-        avgReward >= 0 ? 'color:#9ece6a' : 'color:#f7768e',
-      );
       this.agent.onEpisodeEnd(this.episodePeakScore);
     }
 
@@ -302,21 +207,59 @@ export class TetrisAiControllerService {
     this.plan = null;
   }
 
-  public initializeCharts(
-    rewardCanvas: HTMLCanvasElement,
-    penaltyCanvas: HTMLCanvasElement,
-  ): void {
+  /**
+   * Called when a human player locks a piece during demonstration recording.
+   * Matches the locked position to a candidate placement and records it as a demonstration.
+   */
+  public onHumanPieceLocked(matrix: number[][], x: number): void {
+    if (!this.isRecordingDemonstrations() || this.pendingDemonstrationPlacements.length === 0) {
+      return;
+    }
+
+    const placements = this.pendingDemonstrationPlacements;
+    const selectedPlacement = placements.find(
+      (p) => p.x === x && this.executor.matricesEqual(p.matrix, matrix),
+    );
+
+    this.pendingDemonstrationPlacements = [];
+
+    if (!selectedPlacement) {
+      return;
+    }
+
+    const rejectedFeaturesBatch = placements
+      .filter((p) => p !== selectedPlacement)
+      .map((p) => p.features);
+
+    this.agent.recordDemonstrations(selectedPlacement.features, rejectedFeaturesBatch);
+    this.agent.trainOnDemonstrations();
+    this.stats.set({ ...this.agent.getStats() });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Chart methods
+  // ---------------------------------------------------------------------------
+
+  /** Initialises the reward and penalty chart canvases. */
+  public initializeCharts(rewardCanvas: HTMLCanvasElement, penaltyCanvas: HTMLCanvasElement): void {
     this.chart.initialize(rewardCanvas, penaltyCanvas);
   }
 
+  /** Re-renders the reward charts. */
   public renderCharts(): void {
     this.chart.render();
   }
 
+  /** Destroys the chart instances and frees resources. */
   public destroyCharts(): void {
     this.chart.destroy();
   }
 
+  // ---------------------------------------------------------------------------
+  // Reset / persistence
+  // ---------------------------------------------------------------------------
+
+  /** Resets training state and all episode counters. */
   public reset(): void {
     this.agent.reset();
     this.chart.reset();
@@ -330,10 +273,12 @@ export class TetrisAiControllerService {
     this.stats.set({ ...this.agent.getStats() });
   }
 
+  /** Exports the agent's training data as a JSON string. */
   public async exportTrainingData(): Promise<string> {
     return this.agent.exportTrainingData();
   }
 
+  /** Imports training data from a JSON string and resets episode state. */
   public async importTrainingData(json: string): Promise<void> {
     await this.agent.importTrainingData(json);
     this.plan = null;
@@ -343,498 +288,35 @@ export class TetrisAiControllerService {
     this.stats.set({ ...this.agent.getStats() });
   }
 
-  public onHumanPieceLocked(matrix: number[][], x: number): void {
-    if (!this.isRecordingDemonstrations() || this.pendingDemonstrationPlacements.length === 0) {
-      return;
-    }
-
-    const placements = this.pendingDemonstrationPlacements;
-    const selectedPlacement = placements.find(
-      (placement) => placement.x === x && this.matricesEqual(placement.matrix, matrix),
-    );
-
-    this.pendingDemonstrationPlacements = [];
-
-    if (!selectedPlacement) {
-      return;
-    }
-
-    const rejectedFeaturesBatch = placements
-      .filter((placement) => placement !== selectedPlacement)
-      .map((placement) => placement.features);
-
-    this.agent.recordDemonstrations(selectedPlacement.features, rejectedFeaturesBatch);
-    this.agent.trainOnDemonstrations();
-    this.stats.set({ ...this.agent.getStats() });
-  }
-
   // ---------------------------------------------------------------------------
   // Private helpers
   // ---------------------------------------------------------------------------
 
-  private computePlan(placements: Placement[]): Plan | null {
-    if (placements.length === 0) return null;
-
-    const featuresBatch = placements.map((p) => p.features);
-    const values = this.agent.evaluatePlacements(featuresBatch);
-    const rankedPlacements = placements.map((placement, index) => ({
-      index,
-      placement,
-      modelValue: values[index],
-      heuristicValue: this.scorePlacementHeuristically(placement),
-    }));
-    const teacherActive = this.shouldUseTeacherWarmup();
-    const bestModelIndex = values.indexOf(Math.max(...values));
-    let decisionSource: Plan['decisionSource'] = 'model';
-    let idx = bestModelIndex;
-
-    if (teacherActive) {
-      idx = this.selectTeacherPlacement(rankedPlacements);
-      decisionSource = 'teacher';
-      this.recordTeacherGuidance(rankedPlacements);
-    } else {
-      idx = this.agent.selectPlacement(values);
-      decisionSource = idx === bestModelIndex ? 'model' : 'exploration';
+  /** Sets prevMetrics from the current board state on the first piece of an episode. */
+  private captureInitialMetricsIfNeeded(state: TetrisGameState): void {
+    if (!this.active || this.prevMetrics !== null) {
+      return;
     }
 
-    const chosen = placements[idx];
-
-    console.groupCollapsed(
-      `%c🎯 PLACEMENT DECISION %c(piece #${this.episodePieceCount + 1})`,
-      'color:#7aa2f7;font-weight:bold',
-      'color:#565f89',
-    );
-    console.log(`Candidates evaluated: ${placements.length}`);
-    console.log(`Chosen: rotation=${chosen.rotation}, x=${chosen.x}, row=${chosen.placementRow}`);
-    console.log(
-      `Q-value: ${values[idx].toFixed(4)} (${decisionSource === 'teacher'
-        ? '👨‍🏫 TEACHER WARMUP'
-        : decisionSource === 'exploration'
-          ? '🎲 EXPLORATION'
-          : '🧠 EXPLOITATION'})`,
-    );
-    console.log(`Q-value range: [${Math.min(...values).toFixed(4)}, ${Math.max(...values).toFixed(4)}]`);
-    if (teacherActive) {
-      const heuristicValues = rankedPlacements.map((placement) => placement.heuristicValue);
-      console.log(
-        `Teacher heuristic range: [${Math.min(...heuristicValues).toFixed(4)}, ${Math.max(...heuristicValues).toFixed(4)}]`,
-      );
-    }
-    console.log(`Epsilon: ${this.agent.getStats().epsilon.toFixed(4)}`);
-
-    const f = chosen.features;
-    console.log('Board features after placement:', {
-      columnHeights: f.slice(0, 10).map((v) => +(v * 20).toFixed(1)),
-      maxHeight: +(f[19] * 20).toFixed(1),
-      aggregateHeight: +(f[20] * 200).toFixed(1),
-      holes: +(f[21] * 40).toFixed(1),
-      linesCleared: +(f[22] * 4).toFixed(1),
-      bumpiness: +(f[23] * 100).toFixed(1),
-      coveredCells: +(f[24] * 120).toFixed(1),
-      pillars: +(f[25] * 10).toFixed(1),
-      wells: +(f[26] * 100).toFixed(1),
-      rowCompleteness: +(f[27] * 20).toFixed(2),
-      absoluteHolesSqrt: +(f[28] * 6.32).toFixed(2),
-      lowBoardDensity: +f[29].toFixed(2),
-      heightVariance: +(f[30] * 100).toFixed(2),
-      nearCompleteRows: +(f[31] * 10).toFixed(0),
-    });
-    // Decode and log the preview queue one-hot features (indices 32-52)
-    const previewFeatures = f.slice(32, 53);
-    const decodedPreview: string[] = [];
-    for (let i = 0; i < 3; i++) {
-      const oneHot = previewFeatures.slice(i * 7, (i + 1) * 7);
-      const pieceIdx = oneHot.indexOf(1);
-      decodedPreview.push(pieceIdx >= 0
-        ? (TetrisAiControllerService.PIECE_NAMES[pieceIdx + 1] ?? '?')
-        : 'none');
-    }
-    console.log(`Preview features decoded: [${decodedPreview.join(', ')}] (from feature indices 32-52)`);
-    console.groupEnd();
-
-    return {
-      targetMatrix: chosen.matrix,
-      targetX: chosen.x,
-      features: chosen.features,
-      placementRow: chosen.placementRow,
-      linesCleared: chosen.linesCleared,
-      decisionSource,
-    };
+    const features = this.agent.extractFeatures(state.grid, 0, state.previewQueue);
+    this.prevMetrics = this.boardMetrics.extractMetrics(features);
   }
 
-  private enumeratePlacements(state: TetrisGameState): Placement[] {
-    const results: Placement[] = [];
-    let matrix = TetrisMatrix.deepCopy(state.activePiece.matrix);
+  /** Logs the active and preview piece queue via diagnostics. */
+  private logPieceQueue(state: TetrisGameState): void {
+    const currentPieceId = this.getPieceIdFromMatrix(state.activePiece.matrix);
+    const previewPieceIds = state.previewQueue.map((m) => this.getPieceIdFromMatrix(m));
+    this.diagnostics.logPieceQueue(currentPieceId, previewPieceIds);
+  }
 
-    for (let rotation = 0; rotation < 4; rotation++) {
-      const width = matrix[0].length;
-      const maxX = TETRIS_GAME_CONFIG.gridWidth - width;
-
-      for (let x = 0; x <= maxX; x++) {
-        // Piece must be able to enter from the top at this column
-        if (this.collision.hasCollision(matrix, state.grid, x, 0)) continue;
-
-        // Simulate hard drop
-        let dropY = 0;
-        while (!this.collision.hasCollision(matrix, state.grid, x, dropY + 1)) {
-          dropY++;
-        }
-
-        // Simulate placing and clearing lines on a copy of the grid
-        const simGrid = state.grid.map((row) => [...row]);
-        const tempPiece = new TetrisActivePiece(matrix, x, dropY);
-        this.gridService.merge(simGrid, tempPiece);
-        const clearResult = this.gridService.clearLines(simGrid);
-
-        // extractFeatures computes all metrics internally; read back the ones
-        // the heuristic scorer needs without re-computing.
-        const featureVec = this.agent.extractFeatures(simGrid, clearResult.clearedCount, state.previewQueue);
-        const rowCompleteness = featureVec[27] * 20; // denormalise from [0,1] to raw sum (index 27)
-
-        results.push({
-          rotation,
-          x,
-          matrix: matrix.map((r) => [...r]),
-          features: featureVec,
-          linesCleared: clearResult.clearedCount,
-          placementRow: dropY,
-          rowCompleteness,
-        });
+  /** Returns the non-zero cell value from a piece matrix (its piece type ID). */
+  private getPieceIdFromMatrix(matrix: number[][]): number {
+    for (const row of matrix) {
+      for (const cell of row) {
+        if (cell !== 0) return cell;
       }
-
-      matrix = TetrisMatrix.rotate(matrix);
     }
-
-    return results;
-  }
-
-  /**
-   * Delta-based reward computation.
-   *
-   * reward = lineClearBonus + survivalReward
-   *        - sum of (delta_i * weight_i) for each board metric
-   *        - dangerZonePenalty (absolute, only when near death)
-   */
-  private computeReward(
-    features: number[],
-    linesCleared: number,
-    gameOver: boolean,
-    episodePieceCount: number,
-  ): number {
-    const currentMetrics = this.extractMetrics(features);
-    // First piece of episode: use current metrics as prev so delta = 0.
-    // Previously used null-coalesce to currentMetrics (same effect), but this
-    // makes the intent explicit. The first piece should get only survival reward
-    // with zero delta penalty -- comparing against an empty board inflated all
-    // deltas (bumpiness 0->6, maxHeight 0->3, etc.) giving a false -10 to -14
-    // penalty for the very first move.
-    const prev = this.prevMetrics ?? currentMetrics;
-
-    // ── Positive signals ──
-    const lineClearBonus = TETRIS_AI_CONFIG.lineClearRewards[linesCleared] ?? 0;
-    const survivalReward = TETRIS_AI_CONFIG.survivalReward;
-    const gridHeight = TETRIS_GAME_CONFIG.gridHeight;
-    const rowFraction = this.plan ? this.plan.placementRow / gridHeight : 0;
-    const lowPlacementBonus = rowFraction * 0.75;
-
-    // ── Low-row line clear bonus (extra reward for clears near bottom of board) ──
-    // Uses the placement row from the plan to determine where the clear happened.
-    // Lower rows (higher row index) get more bonus.
-    let lowRowLineClearBonus = 0;
-    if (linesCleared > 0 && this.plan) {
-      lowRowLineClearBonus = rowFraction * linesCleared * TETRIS_AI_CONFIG.lowRowLineClearWeight;
-    }
-
-    // ── Delta penalties (change caused by this move) ──
-    // Positive delta = metric got worse; negative delta = metric improved (rewarded)
-    // Asymmetric compression: sqrt-compress WORSENING deltas to prevent blow-ups,
-    // but leave IMPROVING deltas (negative) at full strength so line clears and
-    // hole fixes get their full reward.
-    const compressDelta = (d: number): number => d > 0 ? Math.pow(d, 0.7) : d;
-
-    const deltaHoles = currentMetrics.holes - prev.holes;
-    const deltaCovered = currentMetrics.coveredCells - prev.coveredCells;
-    const deltaAggHeight = currentMetrics.aggregateHeight - prev.aggregateHeight;
-    const deltaBumpiness = currentMetrics.bumpiness - prev.bumpiness;
-    const deltaMaxHeight = currentMetrics.maxHeight - prev.maxHeight;
-    const deltaPillars = currentMetrics.pillars - prev.pillars;
-    const deltaWells = currentMetrics.wells - prev.wells;
-    const deltaHeightVariance = currentMetrics.heightVariance - prev.heightVariance;
-
-    const deltaPenalty =
-      compressDelta(deltaHoles) * TETRIS_AI_CONFIG.deltaHolesWeight +
-      compressDelta(deltaCovered) * TETRIS_AI_CONFIG.deltaCoveredCellsWeight +
-      compressDelta(deltaAggHeight) * TETRIS_AI_CONFIG.deltaAggregateHeightWeight +
-      compressDelta(deltaBumpiness) * TETRIS_AI_CONFIG.deltaBumpinessWeight +
-      compressDelta(deltaMaxHeight) * TETRIS_AI_CONFIG.deltaMaxHeightWeight +
-      compressDelta(deltaPillars) * TETRIS_AI_CONFIG.deltaPillarsWeight +
-      compressDelta(deltaWells) * TETRIS_AI_CONFIG.deltaWellsWeight +
-      compressDelta(deltaHeightVariance) * TETRIS_AI_CONFIG.deltaHeightVarianceWeight;
-
-    // ── Absolute board-shape penalties (preserve move flexibility) ──
-    const columnHeights = features.slice(0, 10).map((value) => value * 20);
-    const stackOverflowPenalty = columnHeights.reduce(
-      (sum, height) =>
-        sum + Math.max(0, height - TETRIS_AI_CONFIG.preferredStackHeightRows),
-      0,
-    ) * TETRIS_AI_CONFIG.stackOverflowPenaltyWeight;
-    const absoluteCoveredCellsPenalty =
-      currentMetrics.coveredCells * TETRIS_AI_CONFIG.absoluteCoveredCellsWeight;
-    const absoluteHeightVariancePenalty =
-      currentMetrics.heightVariance * TETRIS_AI_CONFIG.absoluteHeightVarianceWeight;
-
-    // ── Absolute danger zone penalty (prevents ignoring lethal spikes) ──
-    const dangerThreshold = TETRIS_AI_CONFIG.heightDangerZoneRows;
-    let dangerZonePenalty = 0;
-    if (currentMetrics.maxHeight > dangerThreshold) {
-      const excess = (currentMetrics.maxHeight - dangerThreshold) / (gridHeight - dangerThreshold);
-      dangerZonePenalty = excess * excess * TETRIS_AI_CONFIG.heightDangerZoneWeight;
-    }
-
-    // ── Absolute holes penalty (continuous pressure to fix all existing holes) ──
-    // sqrt(holes) grows quickly for small counts but tapers off to avoid dominating.
-    const absoluteHolesPenalty = Math.sqrt(currentMetrics.holes) * TETRIS_AI_CONFIG.absoluteHolesWeight;
-
-    const rewardTotal = lineClearBonus + survivalReward + lowPlacementBonus + lowRowLineClearBonus;
-    const penaltyTotal =
-      deltaPenalty +
-      stackOverflowPenalty +
-      absoluteCoveredCellsPenalty +
-      absoluteHeightVariancePenalty +
-      dangerZonePenalty +
-      absoluteHolesPenalty;
-    let netReward = rewardTotal - penaltyTotal;
-
-    this.chart.pushEntry(netReward, penaltyTotal);
-
-    // ── Logging ──
-    console.groupCollapsed(
-      `%c💰 REWARD %c#${episodePieceCount} %cR=${netReward.toFixed(3)}${linesCleared > 0 ? ` ✨${linesCleared}L` : ''}`,
-      'color:#9ece6a;font-weight:bold',
-      'color:#565f89',
-      netReward >= 0 ? 'color:#9ece6a' : 'color:#f7768e',
-    );
-    console.log('Reward components:', {
-      lineClearBonus: +lineClearBonus.toFixed(4),
-      survivalReward: +survivalReward.toFixed(4),
-      lowPlacementBonus: +lowPlacementBonus.toFixed(4),
-      lowRowLineClearBonus: +lowRowLineClearBonus.toFixed(4),
-      rewardSubtotal: +rewardTotal.toFixed(4),
-    });
-    console.log('Delta penalties (raw->compressed x weight = contribution):', {
-      deltaHoles: `${deltaHoles >= 0 ? '+' : ''}${deltaHoles.toFixed(1)}->${compressDelta(deltaHoles).toFixed(2)} x ${TETRIS_AI_CONFIG.deltaHolesWeight} = ${+(compressDelta(deltaHoles) * TETRIS_AI_CONFIG.deltaHolesWeight).toFixed(4)}`,
-      deltaCovered: `${deltaCovered >= 0 ? '+' : ''}${deltaCovered.toFixed(1)}->${compressDelta(deltaCovered).toFixed(2)} x ${TETRIS_AI_CONFIG.deltaCoveredCellsWeight} = ${+(compressDelta(deltaCovered) * TETRIS_AI_CONFIG.deltaCoveredCellsWeight).toFixed(4)}`,
-      deltaAggHeight: `${deltaAggHeight >= 0 ? '+' : ''}${deltaAggHeight.toFixed(1)}->${compressDelta(deltaAggHeight).toFixed(2)} x ${TETRIS_AI_CONFIG.deltaAggregateHeightWeight} = ${+(compressDelta(deltaAggHeight) * TETRIS_AI_CONFIG.deltaAggregateHeightWeight).toFixed(4)}`,
-      deltaBumpiness: `${deltaBumpiness >= 0 ? '+' : ''}${deltaBumpiness.toFixed(1)}->${compressDelta(deltaBumpiness).toFixed(2)} x ${TETRIS_AI_CONFIG.deltaBumpinessWeight} = ${+(compressDelta(deltaBumpiness) * TETRIS_AI_CONFIG.deltaBumpinessWeight).toFixed(4)}`,
-      deltaMaxHeight: `${deltaMaxHeight >= 0 ? '+' : ''}${deltaMaxHeight.toFixed(1)}->${compressDelta(deltaMaxHeight).toFixed(2)} x ${TETRIS_AI_CONFIG.deltaMaxHeightWeight} = ${+(compressDelta(deltaMaxHeight) * TETRIS_AI_CONFIG.deltaMaxHeightWeight).toFixed(4)}`,
-      deltaPillars: `${deltaPillars >= 0 ? '+' : ''}${deltaPillars.toFixed(1)}->${compressDelta(deltaPillars).toFixed(2)} x ${TETRIS_AI_CONFIG.deltaPillarsWeight} = ${+(compressDelta(deltaPillars) * TETRIS_AI_CONFIG.deltaPillarsWeight).toFixed(4)}`,
-      deltaWells: `${deltaWells >= 0 ? '+' : ''}${deltaWells.toFixed(1)}->${compressDelta(deltaWells).toFixed(2)} x ${TETRIS_AI_CONFIG.deltaWellsWeight} = ${+(compressDelta(deltaWells) * TETRIS_AI_CONFIG.deltaWellsWeight).toFixed(4)}`,
-      deltaHeightVar: `${deltaHeightVariance >= 0 ? '+' : ''}${deltaHeightVariance.toFixed(1)}->${compressDelta(deltaHeightVariance).toFixed(2)} x ${TETRIS_AI_CONFIG.deltaHeightVarianceWeight} = ${+(compressDelta(deltaHeightVariance) * TETRIS_AI_CONFIG.deltaHeightVarianceWeight).toFixed(4)}`,
-      deltaPenaltySubtotal: +deltaPenalty.toFixed(4),
-      stackOverflowPenalty: +stackOverflowPenalty.toFixed(4),
-      absoluteCoveredCellsPenalty: +absoluteCoveredCellsPenalty.toFixed(4),
-      absoluteHeightVariancePenalty: +absoluteHeightVariancePenalty.toFixed(4),
-      dangerZonePenalty: +dangerZonePenalty.toFixed(4),
-      absoluteHolesPenalty: +absoluteHolesPenalty.toFixed(4),
-      penaltyTotal: +penaltyTotal.toFixed(4),
-    });
-    console.log('Board metrics (current | prev):', {
-      holes: `${currentMetrics.holes.toFixed(1)} | ${prev.holes.toFixed(1)}`,
-      covered: `${currentMetrics.coveredCells.toFixed(1)} | ${prev.coveredCells.toFixed(1)}`,
-      aggHeight: `${currentMetrics.aggregateHeight.toFixed(1)} | ${prev.aggregateHeight.toFixed(1)}`,
-      bumpiness: `${currentMetrics.bumpiness.toFixed(1)} | ${prev.bumpiness.toFixed(1)}`,
-      maxHeight: `${currentMetrics.maxHeight.toFixed(1)} | ${prev.maxHeight.toFixed(1)}`,
-      pillars: `${currentMetrics.pillars.toFixed(1)} | ${prev.pillars.toFixed(1)}`,
-      wells: `${currentMetrics.wells.toFixed(1)} | ${prev.wells.toFixed(1)}`,
-      heightVar: `${currentMetrics.heightVariance.toFixed(2)} | ${prev.heightVariance.toFixed(2)}`,
-      rowCompleteness: `${currentMetrics.rowCompleteness.toFixed(2)} | ${prev.rowCompleteness.toFixed(2)}`,
-      lowBoardDensity: `${currentMetrics.lowBoardDensity.toFixed(2)} | ${prev.lowBoardDensity.toFixed(2)}`,
-      nearCompleteRows: `${currentMetrics.nearCompleteRows.toFixed(0)} | ${prev.nearCompleteRows.toFixed(0)}`,
-    });
-    console.log(`Net reward: ${rewardTotal.toFixed(4)} - ${penaltyTotal.toFixed(4)} = ${netReward.toFixed(4)}`);
-    console.groupEnd();
-
-    if (gameOver) {
-      const gameOverLengthBonus = Math.min(
-        episodePieceCount * TETRIS_AI_CONFIG.rewardGameOverLengthBonusPerPiece,
-        TETRIS_AI_CONFIG.rewardGameOverLengthBonusCap,
-      );
-      const scoreBonus = this.episodePeakScore * TETRIS_AI_CONFIG.rewardGameOverScoreBonusPerPoint;
-      const terminalPenalty =
-        TETRIS_AI_CONFIG.rewardGameOver + gameOverLengthBonus + scoreBonus;
-      const rawTotal = Math.min(netReward, 0) + terminalPenalty;
-      const total = Math.max(
-        TETRIS_AI_CONFIG.rewardClipMin,
-        Math.min(
-          TETRIS_AI_CONFIG.rewardGameOverMaxTerminalReward,
-          Math.min(TETRIS_AI_CONFIG.rewardClipMax, rawTotal),
-        ),
-      );
-      console.log(
-        `%c☠️ GAME OVER — Episode #${this.agent.getStats().totalEpisodes + 1}`,
-        'font-size:14px;font-weight:bold;color:#f7768e;background:#1a1a2e;padding:4px 8px;border-radius:4px',
-      );
-      console.log(
-        `%c  Pieces placed: ${episodePieceCount} | Peak score: ${this.episodePeakScore} | Game-over penalty: ${TETRIS_AI_CONFIG.rewardGameOver} | Length bonus: ${+gameOverLengthBonus.toFixed(4)} | Score bonus: ${+scoreBonus.toFixed(4)} | Terminal penalty: ${+terminalPenalty.toFixed(4)} | Raw: ${+rawTotal.toFixed(4)} | Clipped: ${+total.toFixed(4)}`,
-        'color:#bb9af7',
-      );
-      return total;
-    }
-
-    return Math.max(TETRIS_AI_CONFIG.rewardClipMin, Math.min(TETRIS_AI_CONFIG.rewardClipMax, netReward));
-  }
-
-  /**
-   * Extracts raw board metrics from the normalized feature vector.
-   * These are denormalized back to their natural scale for interpretable deltas.
-   *
-   * Feature indices (53 total):
-   *   0-9:   column heights (×20)
-   *   10-18: height diffs (×40 - 20)
-   *   19:    max height (×20)
-   *   20:    aggregate height (×200)
-   *   21:    holes (×40)
-   *   22:    lines cleared (×4)
-   *   23:    bumpiness (×100)
-   *   24:    covered cells (×120)
-   *   25:    pillars (×10)
-   *   26:    wells (×100)
-   *   27:    row completeness (×20, sum of (filled/width)^2 per row)
-   *   28:    absolute holes sqrt-normalized (×6.32, then squared back)
-   *   29:    low-board density (fill fraction of bottom 4 rows, already [0,1])
-   *   30:    height variance (×100, variance of column heights)
-   *   31:    near-complete rows (×10, count of rows >= 80% filled)
-   *   32-52: preview one-hot (3 pieces × 7)
-   */
-  private extractMetrics(features: number[]): BoardMetrics {
-    return {
-      holes: features[21] * 40,           // normalized by /40
-      coveredCells: features[24] * 120,    // normalized by /120
-      aggregateHeight: features[20] * 200, // normalized by /200
-      bumpiness: features[23] * 100,       // normalized by /100
-      maxHeight: features[19] * 20,        // normalized by /20
-      pillars: features[25] * 10,          // normalized by /10
-      wells: features[26] * 100,           // normalized by /100
-      rowCompleteness: features[27] * 20,  // normalized by /20
-      lowBoardDensity: features[29],       // already [0,1] (fill fraction of bottom 4 rows)
-      heightVariance: features[30] * 100,  // normalized by /100
-      nearCompleteRows: features[31] * 10, // normalized by /10
-    };
-  }
-
-  private shouldUseTeacherWarmup(): boolean {
-    return this.agent.getStats().totalEpisodes < TETRIS_AI_CONFIG.teacherWarmupEpisodes;
-  }
-
-  private selectTeacherPlacement(rankedPlacements: RankedPlacement[]): number {
-    const sorted = [...rankedPlacements].sort((a, b) => b.heuristicValue - a.heuristicValue);
-    const shortlist = sorted.slice(0, Math.min(3, sorted.length));
-    const selected = Math.random() < TETRIS_AI_CONFIG.teacherExploreRate
-      ? shortlist[Math.floor(Math.random() * shortlist.length)]
-      : sorted[0];
-
-    return selected.index;
-  }
-
-  private recordTeacherGuidance(rankedPlacements: RankedPlacement[]): void {
-    const sorted = [...rankedPlacements].sort((a, b) => b.heuristicValue - a.heuristicValue);
-    const preferred = sorted[0];
-    if (!preferred) {
-      return;
-    }
-
-    const rejectedFeaturesBatch = sorted
-      .slice(-TETRIS_AI_CONFIG.teacherNegativeSamplesPerMove)
-      .map((entry) => entry.placement.features);
-
-    this.agent.recordTeacherGuidance(preferred.placement.features, rejectedFeaturesBatch);
-    this.agent.trainOnDemonstrations();
-  }
-
-  private scorePlacementHeuristically(placement: Placement): number {
-    const features = placement.features;
-    const columnHeights = features.slice(0, 10).map((value) => value * 20);
-    const linesCleared = features[22] * 4;
-    const holes = features[21] * 40;
-    const bumpiness = features[23] * 100;
-    const maxHeight = features[19] * 20;
-    const aggregateHeight = features[20] * 200;
-    const coveredCells = features[24] * 120;
-    const wells = features[26] * 100;
-    const lowBoardDensity = features[29]; // [0,1] fill fraction of bottom 4 rows
-    const heightVariance = features[30] * 100;
-    const nearCompleteRows = features[31] * 10;
-    const previewHasI = features[32] === 1 || features[39] === 1 || features[46] === 1;
-
-    // Line-clear bonus -- clearing rows is the top priority.
-    // Lower placements (higher row index) get a stronger multiplier bonus.
-    const gridHeight = TETRIS_GAME_CONFIG.gridHeight;
-    const rowFraction = placement.placementRow / gridHeight; // 0=top, 1=bottom
-    const lowRowMultiplier = linesCleared > 0 ? 1 + rowFraction * 1.1 : 1;
-    const lineClearBonus = linesCleared > 0
-      ? (110 + linesCleared * linesCleared * 34) * lowRowMultiplier
-      : 0;
-
-    // Favor placements that stay low and keep the floor dense.
-    const lowPlacementBonus = rowFraction * 22.0;
-    const completenessBonus = placement.rowCompleteness * 10.0;
-    const nearCompleteBonus = nearCompleteRows * 18.0;
-    const lowBoardBonus = lowBoardDensity * 32.0;
-    const surfaceStabilityBonus = Math.max(0, 20 - bumpiness) * 0.9;
-
-    const stackOverflowPenalty = columnHeights.reduce(
-      (sum, height) => sum + Math.pow(Math.max(0, height - 7), 2),
-      0,
-    ) * 0.28;
-
-    // Height penalty starts early and spikes once the board gets close to the top.
-    const heightPenalty =
-      Math.max(0, maxHeight - 6) * 16 +
-      (maxHeight > 9 ? Math.pow(maxHeight - 9, 2) * 18 : 0);
-    const aggHeightPenalty = aggregateHeight * 0.18;
-    const variancePenalty = heightVariance * 4.5;
-    const bumpinessPenalty = bumpiness * 4.8;
-    const holesPenalty = holes > 0
-      ? holes * 90 + (linesCleared > 0 ? 110 : 220)
-      : 0;
-    const coveredPenalty = coveredCells * (linesCleared > 0 ? 8.0 : 12.0);
-    const wellPenalty = wells * (previewHasI ? 0.2 : 1.1);
-
-    return (
-      lineClearBonus +
-      lowPlacementBonus +
-      completenessBonus +
-      nearCompleteBonus +
-      lowBoardBonus +
-      surfaceStabilityBonus -
-      holesPenalty -
-      coveredPenalty -
-      wellPenalty -
-      bumpinessPenalty -
-      aggHeightPenalty -
-      heightPenalty -
-      variancePenalty -
-      stackOverflowPenalty
-    );
-  }
-
-  private matricesEqual(a: number[][], b: number[][]): boolean {
-    if (a.length !== b.length || a[0].length !== b[0].length) {
-      return false;
-    }
-
-    return a.every((row, y) => row.every((val, x) => val === b[y][x]));
-  }
-
-  private nudgeTowardTarget(piece: TetrisActivePiece, grid: number[][], targetX: number): void {
-    if (piece.x === targetX) {
-      return;
-    }
-
-    const dx = piece.x < targetX ? 1 : -1;
-    if (!this.collision.hasCollision(piece.matrix, grid, piece.x + dx, piece.y)) {
-      piece.x += dx;
-    }
+    return 0;
   }
 
   private loadEnabledPreference(): boolean {
