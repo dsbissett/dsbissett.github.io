@@ -11,7 +11,10 @@ interface MilestoneRule {
 @Injectable()
 export class TetrisAiMilestoneService {
   private readonly rules: MilestoneRule[] = [
-    { label: '100+ best score', isUnlocked: (stats) => stats.bestScore >= 100 },
+    {
+      label: '100+ best score',
+      isUnlocked: (stats) => Math.max(stats.bestTeacherScore, stats.bestAiScore) >= 100,
+    },
     { label: '10+ average score', isUnlocked: (stats) => stats.averageScore >= 10 },
     {
       label: '10-line episode',

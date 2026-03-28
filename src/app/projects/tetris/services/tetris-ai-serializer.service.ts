@@ -152,14 +152,22 @@ export class TetrisAiSerializerService {
       typeof candidate.totalEpisodes === 'number' &&
       typeof candidate.totalSteps === 'number' &&
       typeof candidate.bestScore === 'number' &&
+      this.isOptionalNumber(candidate.bestTeacherScore) &&
+      this.isOptionalNumber(candidate.bestAiScore) &&
       typeof candidate.epsilon === 'number' &&
       typeof candidate.averageScore === 'number' &&
+      this.isOptionalNumber(candidate.averageTeacherScore) &&
+      this.isOptionalNumber(candidate.averageAiScore) &&
       this.isOptionalNumber(candidate.lifetimeAverageScore) &&
       this.isOptionalNumber(candidate.averageLinesClearedPerEpisode) &&
       this.isOptionalNumber(candidate.averagePiecesPerEpisode) &&
       this.isOptionalNumber(candidate.totalScore) &&
+      this.isOptionalNumber(candidate.totalTeacherScore) &&
+      this.isOptionalNumber(candidate.totalAiScore) &&
       this.isOptionalNumber(candidate.totalLinesCleared) &&
       this.isOptionalNumber(candidate.totalPiecesPlaced) &&
+      this.isOptionalNumber(candidate.teacherEpisodes) &&
+      this.isOptionalNumber(candidate.aiEpisodes) &&
       Array.isArray(candidate.recentScores) &&
       candidate.recentScores.every((item) => typeof item === 'number') &&
       this.isOptionalNumberArray(candidate.recentLinesCleared) &&
@@ -173,7 +181,10 @@ export class TetrisAiSerializerService {
   }
 
   private isOptionalNumberArray(value: unknown): boolean {
-    return value === undefined || (Array.isArray(value) && value.every((item) => typeof item === 'number'));
+    return (
+      value === undefined ||
+      (Array.isArray(value) && value.every((item) => typeof item === 'number'))
+    );
   }
 
   /** Type guard: checks if value conforms to SerializedModelArtifacts. */

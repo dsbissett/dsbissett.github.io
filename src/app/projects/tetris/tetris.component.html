@@ -121,12 +121,20 @@
               <dd>{{ aiStats().totalSteps }}</dd>
             </div>
             <div class="stat-card">
-              <dt>Best score</dt>
-              <dd>{{ aiStats().bestScore }}</dd>
+              <dt>Best score (teacher)</dt>
+              <dd>{{ aiStats().bestTeacherScore }}</dd>
             </div>
             <div class="stat-card">
-              <dt>Avg. score</dt>
-              <dd>{{ averageScoreText() }}</dd>
+              <dt>Best score (AI)</dt>
+              <dd>{{ aiStats().bestAiScore }}</dd>
+            </div>
+            <div class="stat-card">
+              <dt>Avg. score (teacher)</dt>
+              <dd>{{ averageTeacherScoreText() }}</dd>
+            </div>
+            <div class="stat-card">
+              <dt>Avg. score (AI)</dt>
+              <dd>{{ averageAiScoreText() }}</dd>
             </div>
             <div class="stat-card stat-card--wide">
               <dt>Exploration rate</dt>

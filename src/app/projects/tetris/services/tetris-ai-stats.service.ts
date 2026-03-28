@@ -16,6 +16,8 @@ export class TetrisAiStatsService {
     if (loaded) {
       this.stats = { ...this.createDefaultStats(), ...loaded };
     }
+    this.normalizeBestScores();
+    this.normalizePhaseAverages();
     this.updateEpisodeAverages();
     this.stepCount = this.stats.totalSteps;
   }
@@ -47,15 +49,30 @@ export class TetrisAiStatsService {
    * Returns whether the score is a new best.
    */
   public onEpisodeEnd(score: number, linesCleared: number, piecesPlaced: number): boolean {
+    const teacherEpisode = this.stats.totalEpisodes < TETRIS_AI_CONFIG.teacherWarmupEpisodes;
     this.stats.totalEpisodes++;
     this.stats.totalScore += score;
     this.stats.totalLinesCleared += linesCleared;
     this.stats.totalPiecesPlaced += piecesPlaced;
 
-    const isNewBest = score > this.stats.bestScore;
-    if (isNewBest) {
-      this.stats.bestScore = score;
+    if (teacherEpisode) {
+      this.stats.teacherEpisodes++;
+      this.stats.totalTeacherScore += score;
+    } else {
+      this.stats.aiEpisodes++;
+      this.stats.totalAiScore += score;
     }
+
+    const currentPhaseBest = teacherEpisode ? this.stats.bestTeacherScore : this.stats.bestAiScore;
+    const isNewBest = score > currentPhaseBest;
+    if (isNewBest) {
+      if (teacherEpisode) {
+        this.stats.bestTeacherScore = score;
+      } else {
+        this.stats.bestAiScore = score;
+      }
+    }
+    this.syncCombinedBestScore();
 
     this.pushRecentEpisodeValue(this.stats.recentScores, score);
     this.pushRecentEpisodeValue(this.stats.recentLinesCleared, linesCleared);
@@ -88,14 +105,22 @@ export class TetrisAiStatsService {
       totalEpisodes: 0,
       totalSteps: 0,
       bestScore: 0,
+      bestTeacherScore: 0,
+      bestAiScore: 0,
       epsilon: TETRIS_AI_CONFIG.epsilonStart,
       averageScore: 0,
+      averageTeacherScore: 0,
+      averageAiScore: 0,
       lifetimeAverageScore: 0,
       averageLinesClearedPerEpisode: 0,
       averagePiecesPerEpisode: 0,
       totalScore: 0,
+      totalTeacherScore: 0,
+      totalAiScore: 0,
       totalLinesCleared: 0,
       totalPiecesPlaced: 0,
+      teacherEpisodes: 0,
+      aiEpisodes: 0,
       recentScores: [],
       recentLinesCleared: [],
       recentPiecesPlaced: [],
@@ -109,6 +134,8 @@ export class TetrisAiStatsService {
    */
   public restoreStats(stats: TetrisAiStats): void {
     this.stats = { ...this.createDefaultStats(), ...stats };
+    this.normalizeBestScores();
+    this.normalizePhaseAverages();
     this.stepCount = this.stats.totalSteps;
     this.updateEpisodeAverages();
     this.persist();
@@ -128,6 +155,14 @@ export class TetrisAiStatsService {
 
   private updateEpisodeAverages(): void {
     this.stats.averageScore = this.computeAverage(this.stats.recentScores);
+    this.stats.averageTeacherScore = this.computePhaseAverage(
+      this.stats.totalTeacherScore,
+      this.stats.teacherEpisodes,
+    );
+    this.stats.averageAiScore = this.computePhaseAverage(
+      this.stats.totalAiScore,
+      this.stats.aiEpisodes,
+    );
     this.stats.lifetimeAverageScore = this.computeLifetimeAverage(this.stats.totalScore);
     this.stats.averageLinesClearedPerEpisode = this.computeLifetimeAverage(
       this.stats.totalLinesCleared,
@@ -149,5 +184,66 @@ export class TetrisAiStatsService {
     }
 
     return total / this.stats.totalEpisodes;
+  }
+
+  private computePhaseAverage(total: number, episodes: number): number {
+    if (episodes === 0) {
+      return 0;
+    }
+
+    return total / episodes;
+  }
+
+  private normalizeBestScores(): void {
+    const teacherEpisodesCompleted = this.stats.totalEpisodes < TETRIS_AI_CONFIG.teacherWarmupEpisodes;
+    const hasTeacherBest = Number.isFinite(this.stats.bestTeacherScore);
+    const hasAiBest = Number.isFinite(this.stats.bestAiScore);
+
+    if (!hasTeacherBest && !hasAiBest) {
+      this.stats.bestTeacherScore = teacherEpisodesCompleted ? this.stats.bestScore : 0;
+      this.stats.bestAiScore = teacherEpisodesCompleted ? 0 : this.stats.bestScore;
+      this.syncCombinedBestScore();
+      return;
+    }
+
+    this.stats.bestTeacherScore = hasTeacherBest ? this.stats.bestTeacherScore : 0;
+    this.stats.bestAiScore = hasAiBest ? this.stats.bestAiScore : 0;
+    this.syncCombinedBestScore();
+  }
+
+  private syncCombinedBestScore(): void {
+    this.stats.bestScore = Math.max(this.stats.bestTeacherScore, this.stats.bestAiScore);
+  }
+
+  private normalizePhaseAverages(): void {
+    const hasTeacherTotals =
+      Number.isFinite(this.stats.teacherEpisodes) && Number.isFinite(this.stats.totalTeacherScore);
+    const hasAiTotals =
+      Number.isFinite(this.stats.aiEpisodes) && Number.isFinite(this.stats.totalAiScore);
+
+    if (!hasTeacherTotals && !hasAiTotals) {
+      this.seedLegacyPhaseTotals();
+      return;
+    }
+
+    this.stats.teacherEpisodes = hasTeacherTotals ? this.stats.teacherEpisodes : 0;
+    this.stats.totalTeacherScore = hasTeacherTotals ? this.stats.totalTeacherScore : 0;
+    this.stats.aiEpisodes = hasAiTotals ? this.stats.aiEpisodes : 0;
+    this.stats.totalAiScore = hasAiTotals ? this.stats.totalAiScore : 0;
+  }
+
+  private seedLegacyPhaseTotals(): void {
+    if (this.stats.totalEpisodes <= TETRIS_AI_CONFIG.teacherWarmupEpisodes) {
+      this.stats.teacherEpisodes = this.stats.totalEpisodes;
+      this.stats.totalTeacherScore = this.stats.totalScore;
+      this.stats.aiEpisodes = 0;
+      this.stats.totalAiScore = 0;
+      return;
+    }
+
+    this.stats.teacherEpisodes = TETRIS_AI_CONFIG.teacherWarmupEpisodes;
+    this.stats.totalTeacherScore = 0;
+    this.stats.aiEpisodes = this.stats.totalEpisodes - TETRIS_AI_CONFIG.teacherWarmupEpisodes;
+    this.stats.totalAiScore = this.stats.totalScore;
   }
 }

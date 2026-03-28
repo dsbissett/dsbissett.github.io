@@ -55,7 +55,7 @@ export class TetrisAiDiagnosticsService {
       'color:#a9b1d6',
     );
     console.log(
-      `%c  Episodes: ${stats.totalEpisodes} | Steps: ${stats.totalSteps} | Epsilon: ${stats.epsilon.toFixed(4)} | Best score: ${stats.bestScore}`,
+      `%c  Episodes: ${stats.totalEpisodes} | Steps: ${stats.totalSteps} | Epsilon: ${stats.epsilon.toFixed(4)} | Best teacher: ${stats.bestTeacherScore} | Best AI: ${stats.bestAiScore}`,
       'color:#a9b1d6',
     );
     console.log(
@@ -128,7 +128,7 @@ export class TetrisAiDiagnosticsService {
       'font-size:12px;font-weight:bold;color:#7aa2f7;background:#1a1a2e;padding:4px 8px;border-radius:4px',
     );
     console.log(
-      `%c  Score: ${score}${isNewBest ? ' 🏆 NEW BEST!' : ''} | Avg(${recentScores.length}): ${stats.averageScore.toFixed(1)} | Best: ${stats.bestScore} | Trend: ${scoreTrend >= 0 ? '📈+' : '📉'}${scoreTrend.toFixed(1)}`,
+      `%c  Score: ${score}${isNewBest ? ' 🏆 NEW PHASE BEST!' : ''} | Avg(${recentScores.length}): ${stats.averageScore.toFixed(1)} | Best teacher: ${stats.bestTeacherScore} | Best AI: ${stats.bestAiScore} | Trend: ${scoreTrend >= 0 ? '📈+' : '📉'}${scoreTrend.toFixed(1)}`,
       'color:#c0caf5',
     );
     console.log(

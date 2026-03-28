@@ -39,7 +39,8 @@ export class TetrisAiProgressPanelComponent {
     this.card('Exploration', this.formatDecimal(this.stats().epsilon, 4)),
     this.card('Recent avg score', this.formatDecimal(this.stats().averageScore, 1)),
     this.card('Lifetime avg score', this.formatDecimal(this.stats().lifetimeAverageScore, 1)),
-    this.card('Best score', this.formatInteger(this.stats().bestScore)),
+    this.card('Best score (teacher)', this.formatInteger(this.stats().bestTeacherScore)),
+    this.card('Best score (AI)', this.formatInteger(this.stats().bestAiScore)),
     this.card(
       'Score trend',
       this.formatSigned(this.stats().averageScore - this.stats().lifetimeAverageScore, 1),
