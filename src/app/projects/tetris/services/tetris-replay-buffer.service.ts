@@ -8,26 +8,45 @@ import { TetrisAiPersistenceService } from './tetris-ai-persistence.service';
 export class TetrisReplayBufferService {
   private readonly persistence = inject(TetrisAiPersistenceService);
   private buffer: TetrisExperience[] = [];
+  private persistVersion = 0;
 
   /** Loads replay buffer from localStorage on initialization. */
-  public load(): void {
-    this.buffer = this.persistence.loadReplayBuffer() ?? [];
+  public async load(): Promise<void> {
+    this.buffer = (await this.persistence.loadReplayBuffer()) ?? [];
   }
 
-  /** Persists replay buffer (with quota-halving via persistence service). Updates buffer if truncated. */
+  /** Persists replay buffer asynchronously. Updates the in-memory buffer only when fallback truncation occurs. */
   public persist(): void {
-    this.buffer = this.persistence.saveReplayBuffer(this.buffer);
+    const snapshot = [...this.buffer];
+    const persistVersion = ++this.persistVersion;
+    void this.persistence.saveReplayBuffer(snapshot).then((stored) => {
+      if (persistVersion !== this.persistVersion || stored.length === snapshot.length) {
+        return;
+      }
+
+      this.buffer = stored;
+    });
   }
 
   /** Clears buffer from memory and localStorage. */
-  public clear(): void {
+  public async clear(): Promise<void> {
+    this.persistVersion++;
     this.buffer = [];
-    this.persistence.clearReplayBuffer();
+    await this.persistence.clearReplayBuffer();
   }
 
   /** Returns current buffer size. */
   public get size(): number {
     return this.buffer.length;
+  }
+
+  /** Returns the ratio of terminal transitions currently stored in replay. */
+  public getTerminalRatio(): number {
+    if (this.buffer.length === 0) {
+      return 0;
+    }
+
+    return this.buffer.filter((experience) => experience.done).length / this.buffer.length;
   }
 
   /** Returns a copy of the current buffer contents. */
@@ -36,9 +55,13 @@ export class TetrisReplayBufferService {
   }
 
   /** Replaces the buffer contents and persists. */
-  public setBuffer(buffer: TetrisExperience[]): void {
+  public async setBuffer(buffer: TetrisExperience[]): Promise<void> {
+    const persistVersion = ++this.persistVersion;
     this.buffer = buffer.slice(-TETRIS_AI_CONFIG.replayBufferSize);
-    this.persist();
+    const stored = await this.persistence.saveReplayBuffer(this.buffer);
+    if (persistVersion === this.persistVersion) {
+      this.buffer = stored;
+    }
   }
 
   /**
@@ -65,7 +88,9 @@ export class TetrisReplayBufferService {
     const terminalPool = buf.filter((e) => e.done);
     const informativePool = this.buildInformativePool();
 
-    const recentCount = Math.round(TETRIS_AI_CONFIG.batchSize * TETRIS_AI_CONFIG.replayRecentFraction);
+    const recentCount = Math.round(
+      TETRIS_AI_CONFIG.batchSize * TETRIS_AI_CONFIG.replayRecentFraction,
+    );
     const strongPositiveCount = Math.round(
       TETRIS_AI_CONFIG.batchSize * TETRIS_AI_CONFIG.replayStrongPositiveFraction,
     );
@@ -118,9 +143,7 @@ export class TetrisReplayBufferService {
   /** Computes a scalar priority for an experience used for informative pool sorting. */
   private getExperiencePriority(experience: TetrisExperience): number {
     return (
-      Math.abs(experience.reward) +
-      (experience.reward > 0 ? 1.5 : 0) +
-      (experience.done ? 2 : 0)
+      Math.abs(experience.reward) + (experience.reward > 0 ? 1.5 : 0) + (experience.done ? 2 : 0)
     );
   }
 }

@@ -1,7 +1,9 @@
 import { Injectable } from '@angular/core';
 
+import { TetrisPlacementContext } from '../interfaces/tetris-placement-context.interface';
+
 /**
- * Extracts the 53-element normalised feature vector from a board state and provides
+ * Extracts the 57-element normalised feature vector from a board state and provides
  * all board metric helpers (column heights, holes, bumpiness, etc.).
  *
  * Feature layout:
@@ -20,7 +22,11 @@ import { Injectable } from '@angular/core';
  *   index   29    : low-board density (bottom 4 rows fill fraction)
  *   index   30    : height variance, normalised /100
  *   index   31    : near-complete rows (>=80% filled), normalised /10
- *   indices 32–52 : preview queue — 3 × 7-element one-hot piece encodings
+ *   index   32    : row transitions (filled↔empty across rows, walls filled), normalised /200
+ *   index   33    : column transitions (filled↔empty down columns, floor filled), normalised /200
+ *   index   34    : landing height (height from bottom where piece landed), normalised /gridHeight
+ *   index   35    : eroded piece cells (linesCleared × piece cells in cleared rows), normalised /16
+ *   indices 36–56 : preview queue — 3 × 7-element one-hot piece encodings
  */
 @Injectable()
 export class TetrisBoardAnalyzerService {
@@ -35,7 +41,12 @@ export class TetrisBoardAnalyzerService {
    * @param linesCleared Number of lines cleared by the most-recent placement.
    * @param previewQueue Up to 3 upcoming piece matrices.
    */
-  public extractFeatures(grid: number[][], linesCleared: number, previewQueue: number[][][]): number[] {
+  public extractFeatures(
+    grid: number[][],
+    linesCleared: number,
+    previewQueue: number[][][],
+    context?: TetrisPlacementContext,
+  ): number[] {
     const heights = this.getColumnHeights(grid);
     const diffs = this.getHeightDiffs(heights);
     const maxHeight = Math.max(...heights);
@@ -48,24 +59,32 @@ export class TetrisBoardAnalyzerService {
     const { rowCompleteness, nearCompleteRows } = this.computeRowMetrics(grid);
     const lowBoardDensity = this.computeLowBoardDensity(grid);
     const heightVariance = this.computeHeightVariance(heights, aggregateHeight);
+    const rowTransitions = this.computeRowTransitions(grid);
+    const columnTransitions = this.computeColumnTransitions(grid);
+    const landingHeight = context ? grid.length - context.dropY : 0;
+    const erodedPieceCells = context ? context.erodedCells : 0;
 
     return [
-      ...heights.map((h) => this.clamp(h / 20)), // indices 0–9
-      ...diffs.map((d) => (d + 20) / 40), // indices 10–18 (shift to [0,1])
-      this.clamp(maxHeight / 20), // index 19
-      this.clamp(aggregateHeight / 200), // index 20
-      this.clamp(holes / 40), // index 21
-      this.clamp(linesCleared / 4), // index 22
-      this.clamp(bumpiness / 100), // index 23
-      this.clamp(coveredCells / 120), // index 24
-      this.clamp(pillars / 10), // index 25
-      this.clamp(wells / 100), // index 26
-      this.clamp(rowCompleteness / 20), // index 27: row completeness
-      this.clamp(Math.sqrt(holes) / 6.32), // index 28: sqrt-normalised absolute holes
-      this.clamp(lowBoardDensity), // index 29: low-board density
-      this.clamp(heightVariance / 100), // index 30: height variance (tower detector)
-      this.clamp(nearCompleteRows / 10), // index 31: near-complete rows (>=80% filled)
-      ...this.encodePreviewQueue(previewQueue), // indices 32–52
+      ...heights.map((h) => this.clamp(h / 20)),        // indices 0–9
+      ...diffs.map((d) => (d + 20) / 40),               // indices 10–18 (shift to [0,1])
+      this.clamp(maxHeight / 20),                        // index 19
+      this.clamp(aggregateHeight / 200),                 // index 20
+      this.clamp(holes / 40),                            // index 21
+      this.clamp(linesCleared / 4),                      // index 22
+      this.clamp(bumpiness / 100),                       // index 23
+      this.clamp(coveredCells / 120),                    // index 24
+      this.clamp(pillars / 10),                          // index 25
+      this.clamp(wells / 100),                           // index 26
+      this.clamp(rowCompleteness / 20),                  // index 27: row completeness
+      this.clamp(Math.sqrt(holes) / 6.32),               // index 28: sqrt-normalised absolute holes
+      this.clamp(lowBoardDensity),                       // index 29: low-board density
+      this.clamp(heightVariance / 100),                  // index 30: height variance (tower detector)
+      this.clamp(nearCompleteRows / 10),                 // index 31: near-complete rows (>=80% filled)
+      this.clamp(rowTransitions / 200),                  // index 32: row transitions
+      this.clamp(columnTransitions / 200),               // index 33: column transitions
+      this.clamp(landingHeight / grid.length),           // index 34: landing height
+      this.clamp(erodedPieceCells / 16),                 // index 35: eroded piece cells
+      ...this.encodePreviewQueue(previewQueue),          // indices 36–56
     ];
   }
 
@@ -252,6 +271,44 @@ export class TetrisBoardAnalyzerService {
       variance += diff * diff;
     }
     return variance / heights.length;
+  }
+
+  /**
+   * Counts filled↔empty transitions across each row, treating the left and right
+   * walls as filled. Max ≈ 11 per row × 20 rows = 220; normalised /200.
+   */
+  private computeRowTransitions(grid: number[][]): number {
+    let transitions = 0;
+    for (const row of grid) {
+      let prev = 1; // left wall is filled
+      for (const cell of row) {
+        const filled = cell !== 0 ? 1 : 0;
+        if (filled !== prev) transitions++;
+        prev = filled;
+      }
+      if (prev !== 1) transitions++; // right wall is filled
+    }
+    return transitions;
+  }
+
+  /**
+   * Counts filled↔empty transitions down each column, treating the floor as filled
+   * and the space above the board as empty. Max ≈ 20 per column × 10 columns = 200.
+   */
+  private computeColumnTransitions(grid: number[][]): number {
+    const rows = grid.length;
+    const cols = grid[0].length;
+    let transitions = 0;
+    for (let x = 0; x < cols; x++) {
+      let prev = 0; // above the board is empty
+      for (let y = 0; y < rows; y++) {
+        const filled = grid[y][x] !== 0 ? 1 : 0;
+        if (filled !== prev) transitions++;
+        prev = filled;
+      }
+      if (prev !== 1) transitions++; // floor is filled
+    }
+    return transitions;
   }
 
   /** Clamps a value to the range [0, 1]. */

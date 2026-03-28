@@ -14,4 +14,14 @@ export interface TetrisBoardMetrics {
   heightVariance: number;
   /** Count of rows that are >= 80% filled */
   nearCompleteRows: number;
+  /** Lines cleared by the placement (0–4) */
+  completedLines: number;
+  /** Filled↔empty transitions across rows, walls counted as filled */
+  rowTransitions: number;
+  /** Filled↔empty transitions down columns, floor counted as filled */
+  columnTransitions: number;
+  /** Height from the bottom of the board where the piece landed */
+  landingHeight: number;
+  /** Lines cleared × piece cells that fell in those cleared rows */
+  erodedPieceCells: number;
 }

@@ -1,0 +1,100 @@
+<div class="progress-panel">
+  <p class="progress-panel__kicker">Model Progress</p>
+  <h2 class="progress-panel__title">Training Signals</h2>
+
+  @if (storageWarningText()) {
+    <p class="progress-panel__warning" role="status">{{ storageWarningText() }}</p>
+  }
+
+  <section class="progress-panel__section" aria-label="Training volume">
+    <h3>Training volume</h3>
+    <div class="progress-grid">
+      @for (card of trainingCards(); track card.label) {
+        <article class="progress-card">
+          <p>{{ card.label }}</p>
+          <strong>{{ card.value }}</strong>
+        </article>
+      }
+    </div>
+  </section>
+
+  <section class="progress-panel__section" aria-label="Learning outcomes">
+    <h3>Learning outcomes</h3>
+    <div class="progress-grid">
+      @for (card of outcomeCards(); track card.label) {
+        <article class="progress-card">
+          <p>{{ card.label }}</p>
+          <strong>{{ card.value }}</strong>
+        </article>
+      }
+    </div>
+  </section>
+
+  <section class="progress-panel__section" aria-label="Policy quality">
+    <h3>Policy quality</h3>
+    <div class="progress-grid">
+      @for (card of policyCards(); track card.label) {
+        <article class="progress-card">
+          <p>{{ card.label }}</p>
+          <strong>{{ card.value }}</strong>
+        </article>
+      }
+    </div>
+  </section>
+
+  <section class="progress-panel__section" aria-label="Value stability">
+    <h3>Value stability</h3>
+    <div class="progress-grid">
+      @for (card of stabilityCards(); track card.label) {
+        <article class="progress-card">
+          <p>{{ card.label }}</p>
+          <strong>{{ card.value }}</strong>
+        </article>
+      }
+    </div>
+  </section>
+
+  <section class="progress-panel__section" aria-label="Board quality">
+    <h3>Board quality</h3>
+    <div class="progress-grid">
+      @for (card of boardCards(); track card.label) {
+        <article class="progress-card">
+          <p>{{ card.label }}</p>
+          <strong>{{ card.value }}</strong>
+        </article>
+      }
+    </div>
+  </section>
+
+  <section class="progress-panel__section" aria-label="Loss chart">
+    <div class="progress-panel__chart-header">
+      <h3>Loss trend</h3>
+      <span>{{ latestLossText() }}</span>
+    </div>
+    <div class="loss-chart" role="img" aria-label="Recent training loss chart">
+      @if (lossChartPoints()) {
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none">
+          <polyline [attr.points]="lossChartPoints()"></polyline>
+        </svg>
+      } @else {
+        <p>No loss values yet.</p>
+      }
+    </div>
+  </section>
+
+  <section class="progress-panel__section" aria-label="Milestones">
+    <div class="progress-panel__chart-header">
+      <h3>Milestones</h3>
+      <span>{{ milestoneBadges().length }}</span>
+    </div>
+    <div class="badge-list">
+      @if (milestoneBadges().length > 0) {
+        @for (badge of milestoneBadges(); track badge) {
+          <span class="badge">{{ badge }}</span>
+        }
+      } @else {
+        <p class="progress-panel__empty">No milestones unlocked yet.</p>
+      }
+    </div>
+  </section>
+</div>

@@ -1,6 +1,6 @@
 <canvas #backgroundCanvas class="background-layer"></canvas>
 <div class="experience-shell">
-  <div class="panel-slot">
+  <div class="panel-slot panel-slot--left">
     <aside class="side-panel" [class.side-panel--collapsed]="leftPanelCollapsed()">
       <button
         type="button"
@@ -17,7 +17,7 @@
         <h2 id="ai-panel-title" class="ai-title">Play with AI?</h2>
         <p class="ai-copy">
           Training stats and the learned model stay in this browser using
-          <code>localStorage</code>.
+          <code>browser storage</code>.
         </p>
 
         <button
@@ -93,8 +93,11 @@
     </div>
   </div>
 
-  <div class="panel-slot">
-    <aside class="side-panel side-panel--right" [class.side-panel--collapsed]="rightPanelCollapsed()">
+  <div class="panel-slot panel-slot--stats">
+    <aside
+      class="side-panel side-panel--right"
+      [class.side-panel--collapsed]="rightPanelCollapsed()"
+    >
       <button
         type="button"
         class="panel-toggle panel-toggle--right"
@@ -138,6 +141,34 @@
             <canvas #rewardChartCanvas class="ai-chart"></canvas>
             <canvas #penaltyChartCanvas class="ai-chart"></canvas>
           </div>
+        } @else {
+          <p class="stats-loading">Waiting for AI model to load...</p>
+        }
+      </div>
+    </aside>
+  </div>
+
+  <div class="panel-slot panel-slot--progress">
+    <aside
+      class="side-panel side-panel--right"
+      [class.side-panel--collapsed]="progressPanelCollapsed()"
+    >
+      <button
+        type="button"
+        class="panel-toggle panel-toggle--right"
+        [attr.aria-expanded]="!progressPanelCollapsed()"
+        aria-controls="progress-panel-content"
+        (click)="progressPanelCollapsed.set(!progressPanelCollapsed())"
+      >
+        <span class="panel-toggle__icon">{{ progressPanelCollapsed() ? '\u25C0' : '\u25B6' }}</span>
+        <span class="panel-toggle__label">{{ progressPanelCollapsed() ? 'Progress' : '' }}</span>
+      </button>
+      <div id="progress-panel-content" class="panel-content" aria-label="Training progress details">
+        @if (aiReady()) {
+          <app-tetris-ai-progress-panel
+            [stats]="aiStats()"
+            [progress]="aiProgress()"
+          ></app-tetris-ai-progress-panel>
         } @else {
           <p class="stats-loading">Waiting for AI model to load...</p>
         }

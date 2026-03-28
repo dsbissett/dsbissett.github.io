@@ -40,7 +40,7 @@
   position: relative;
   z-index: 1;
   width: 100%;
-  max-width: 1200px;
+  max-width: 1560px;
 }
 
 // ---------------------------------------------------------------------------
@@ -48,19 +48,18 @@
 // ---------------------------------------------------------------------------
 
 .panel-slot {
-  flex: 1 1 0;
+  flex: 0 1 300px;
   min-width: 0;
   display: flex;
+}
 
-  // Left slot: panel hugs right edge (close to game board)
-  &:first-child {
-    justify-content: flex-end;
-  }
+.panel-slot--left {
+  justify-content: flex-end;
+}
 
-  // Right slot: panel hugs left edge (close to game board)
-  &:last-child {
-    justify-content: flex-start;
-  }
+.panel-slot--stats,
+.panel-slot--progress {
+  justify-content: flex-start;
 }
 
 .side-panel {
@@ -455,8 +454,9 @@
   }
 
   .panel-slot,
-  .panel-slot:first-child,
-  .panel-slot:last-child {
+  .panel-slot--left,
+  .panel-slot--stats,
+  .panel-slot--progress {
     width: 100%;
     flex: none;
     justify-content: center;

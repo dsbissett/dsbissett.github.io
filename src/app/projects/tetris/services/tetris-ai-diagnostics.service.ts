@@ -51,7 +51,7 @@ export class TetrisAiDiagnosticsService {
       'color:#a9b1d6',
     );
     console.log(
-      `%c  Network: ${TETRIS_AI_CONFIG.featureCount} (32 board + 21 preview) → ${TETRIS_AI_CONFIG.hiddenLayer1} → ${TETRIS_AI_CONFIG.hiddenLayer2} → 1`,
+      `%c  Network: ${TETRIS_AI_CONFIG.featureCount} (36 board + 21 preview) → ${TETRIS_AI_CONFIG.hiddenLayer1} → ${TETRIS_AI_CONFIG.hiddenLayer2} → 1`,
       'color:#a9b1d6',
     );
     console.log(
@@ -381,7 +381,7 @@ export class TetrisAiDiagnosticsService {
   /** Decodes and logs the preview queue one-hot features (indices 32–52). */
   private logPreviewFeatures(chosen: TetrisPlacement): void {
     const f = chosen.features;
-    const previewFeatures = f.slice(32, 53);
+    const previewFeatures = f.slice(36, 57);
     const decodedPreview: string[] = [];
     for (let i = 0; i < 3; i++) {
       const oneHot = previewFeatures.slice(i * 7, (i + 1) * 7);
@@ -389,7 +389,7 @@ export class TetrisAiDiagnosticsService {
       decodedPreview.push(pieceIdx >= 0 ? (TETRIS_PIECE_NAMES[pieceIdx + 1] ?? '?') : 'none');
     }
     console.log(
-      `Preview features decoded: [${decodedPreview.join(', ')}] (from feature indices 32-52)`,
+      `Preview features decoded: [${decodedPreview.join(', ')}] (from feature indices 36-56)`,
     );
   }
 

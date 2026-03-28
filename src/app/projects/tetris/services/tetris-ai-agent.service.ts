@@ -12,6 +12,7 @@ import { TetrisDemonstrationBufferService } from './tetris-demonstration-buffer.
 import { TetrisModelService } from './tetris-model.service';
 import { TetrisReplayBufferService } from './tetris-replay-buffer.service';
 import { TetrisTrainerService } from './tetris-trainer.service';
+import { TetrisAiTrainingTelemetryService } from './tetris-ai-training-telemetry.service';
 
 @Injectable()
 export class TetrisAiAgentService {
@@ -24,14 +25,15 @@ export class TetrisAiAgentService {
   private readonly boardAnalyzer = inject(TetrisBoardAnalyzerService);
   private readonly serializer = inject(TetrisAiSerializerService);
   private readonly diagnostics = inject(TetrisAiDiagnosticsService);
+  private readonly trainingTelemetry = inject(TetrisAiTrainingTelemetryService);
 
   /** Initialises TF.js, loads persisted state, and builds or restores the model. */
   public async initialize(): Promise<void> {
     await tf.ready();
     this.persistence.cleanupLegacyStorage();
     this.stats.initialize();
-    this.replayBuffer.load();
-    this.demoBuffer.load();
+    await this.replayBuffer.load();
+    await this.demoBuffer.load();
     const loaded = await this.model.tryLoadModel();
     if (!loaded) {
       this.model.buildModels();
@@ -56,6 +58,7 @@ export class TetrisAiAgentService {
       this.replayBuffer.size,
       this.demoBuffer.size,
     );
+    this.trainingTelemetry.syncBufferState();
   }
 
   /**
@@ -86,12 +89,7 @@ export class TetrisAiAgentService {
   }
 
   /** Stores a transition in the replay buffer, increments step counter, and persists. */
-  public remember(
-    features: number[],
-    reward: number,
-    nextStateValue: number,
-    done: boolean,
-  ): void {
+  public remember(features: number[], reward: number, nextStateValue: number, done: boolean): void {
     this.replayBuffer.add({ features, reward, nextStateValue, done });
     this.stats.incrementSteps();
     this.diagnostics.logReplayBufferEntry(
@@ -102,7 +100,7 @@ export class TetrisAiAgentService {
       nextStateValue,
       done,
     );
-    this.replayBuffer.persist();
+    this.trainingTelemetry.syncBufferState();
     this.stats.persist();
   }
 
@@ -117,6 +115,7 @@ export class TetrisAiAgentService {
       TETRIS_AI_CONFIG.humanChosenTarget,
       TETRIS_AI_CONFIG.humanRejectedTarget,
     );
+    this.trainingTelemetry.syncBufferState();
   }
 
   /** Stores a teacher-guided placement pair in the demonstration buffer. */
@@ -130,6 +129,7 @@ export class TetrisAiAgentService {
       TETRIS_AI_CONFIG.teacherChosenTarget,
       TETRIS_AI_CONFIG.teacherRejectedTarget,
     );
+    this.trainingTelemetry.syncBufferState();
   }
 
   /** Triggers an RL training step if the buffer and step-count conditions are met. */
@@ -148,8 +148,8 @@ export class TetrisAiAgentService {
   }
 
   /** Updates stats at episode end, decays epsilon after warmup, logs summary, and saves model. */
-  public onEpisodeEnd(score: number): void {
-    const isNewBest = this.stats.onEpisodeEnd(score);
+  public onEpisodeEnd(score: number, linesCleared: number, piecesPlaced: number): void {
+    const isNewBest = this.stats.onEpisodeEnd(score, linesCleared, piecesPlaced);
     if (this.stats.getStats().totalEpisodes >= TETRIS_AI_CONFIG.teacherWarmupEpisodes) {
       this.stats.decayEpsilon();
     }
@@ -172,10 +172,11 @@ export class TetrisAiAgentService {
   public reset(): void {
     this.persistence.cleanupLegacyStorage();
     this.stats.reset();
-    this.replayBuffer.clear();
-    this.demoBuffer.clear();
+    void this.replayBuffer.clear();
+    void this.demoBuffer.clear();
     this.trainer.reset();
     this.model.buildModels();
+    this.trainingTelemetry.reset();
     void tf.io.removeModel(`localstorage://${TETRIS_AI_CONFIG.modelStorageKey}`).catch(() => {
       this.model.removeStoredModelArtifacts();
     });
@@ -197,10 +198,12 @@ export class TetrisAiAgentService {
       ...payload.stats,
       demonstrationSamples: payload.demonstrations.length,
     });
-    this.replayBuffer.setBuffer(payload.replayBuffer);
-    this.demoBuffer.setBuffer(payload.demonstrations);
+    await this.replayBuffer.setBuffer(payload.replayBuffer);
+    await this.demoBuffer.setBuffer(payload.demonstrations);
+    this.demoBuffer.primeImportedRehearsal(this.stats.getStepCount());
     this.trainer.reset();
     await this.model.loadImportedModel(payload.model);
     this.model.persistModel();
+    this.trainingTelemetry.reset();
   }
 }

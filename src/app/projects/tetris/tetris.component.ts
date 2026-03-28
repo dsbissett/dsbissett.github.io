@@ -41,10 +41,17 @@ import { TetrisAiExecutorService } from './services/tetris-ai-executor.service';
 import { TetrisPlacementEnumeratorService } from './services/tetris-placement-enumerator.service';
 import { TetrisPlanSelectorService } from './services/tetris-plan-selector.service';
 import { TetrisRewardCalculatorService } from './services/tetris-reward-calculator.service';
+import { TetrisAiProgressPanelComponent } from './components/tetris-ai-progress-panel.component';
+import { TetrisAiProgressStoreService } from './services/tetris-ai-progress-store.service';
+import { TetrisAiTrainingTelemetryService } from './services/tetris-ai-training-telemetry.service';
+import { TetrisAiPolicyTelemetryService } from './services/tetris-ai-policy-telemetry.service';
+import { TetrisAiMoveTelemetryService } from './services/tetris-ai-move-telemetry.service';
+import { TetrisAiMilestoneService } from './services/tetris-ai-milestone.service';
 
 @Component({
   selector: 'app-tetris',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [TetrisAiProgressPanelComponent],
   providers: [
     TetrisAnimationFrameService,
     TetrisAiAgentService,
@@ -77,6 +84,11 @@ import { TetrisRewardCalculatorService } from './services/tetris-reward-calculat
     TetrisPlacementEnumeratorService,
     TetrisPlanSelectorService,
     TetrisRewardCalculatorService,
+    TetrisAiProgressStoreService,
+    TetrisAiTrainingTelemetryService,
+    TetrisAiPolicyTelemetryService,
+    TetrisAiMoveTelemetryService,
+    TetrisAiMilestoneService,
   ],
   templateUrl: './tetris.component.html',
   styleUrl: './tetris.component.scss',
@@ -118,11 +130,13 @@ export class TetrisComponent implements AfterViewInit, OnDestroy {
 
   protected readonly leftPanelCollapsed = signal(false);
   protected readonly rightPanelCollapsed = signal(false);
+  protected readonly progressPanelCollapsed = signal(false);
 
   protected readonly aiReady = this.facade.aiReady;
   protected readonly aiEnabled = this.facade.aiEnabled;
   protected readonly demonstrationRecordingEnabled = this.facade.demonstrationRecordingEnabled;
   protected readonly aiStats = this.facade.aiStats;
+  protected readonly aiProgress = this.facade.aiProgress;
   protected readonly aiToggleLabel = computed(() => {
     if (!this.aiReady()) {
       return 'Loading AI model...';
@@ -132,7 +146,7 @@ export class TetrisComponent implements AfterViewInit, OnDestroy {
   });
   protected readonly aiStatusText = computed(() => {
     if (!this.aiReady()) {
-      return 'TensorFlow.js is loading saved training data from localStorage.';
+      return 'TensorFlow.js is loading saved training data from browser storage.';
     }
 
     return this.aiEnabled()
@@ -234,7 +248,7 @@ export class TetrisComponent implements AfterViewInit, OnDestroy {
     try {
       const json = await file.text();
       await this.facade.importTrainingData(json);
-      this.trainingDataStatus.set('Training data imported into localStorage.');
+      this.trainingDataStatus.set('Training data imported into browser storage.');
     } catch (error) {
       this.trainingDataStatus.set(this.toErrorMessage(error, 'Import failed.'));
     } finally {

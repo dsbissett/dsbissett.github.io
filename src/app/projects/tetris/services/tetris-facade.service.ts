@@ -56,6 +56,7 @@ export class TetrisFacadeService {
   public readonly aiReady = this.aiController.isReady;
   public readonly demonstrationRecordingEnabled = this.aiController.isRecordingDemonstrations;
   public readonly aiStats = this.aiController.stats;
+  public readonly aiProgress = this.aiController.progress;
 
   public initialize(
     gameCanvas: HTMLCanvasElement,
@@ -292,7 +293,7 @@ export class TetrisFacadeService {
       this.blockEffects.createFromClearedCells(result.clearedCells, this.canvasSize.blockSize);
     }
 
-    if (this.scoringService.shouldSpeedUp(state.totalClearedRows)) {
+    if (!this.aiController.isActive() && this.scoringService.shouldSpeedUp(state.totalClearedRows)) {
       this.scoringService.applySpeedUp(state);
       this.audioService.increaseMusicSpeed();
     }

@@ -154,10 +154,26 @@ export class TetrisAiSerializerService {
       typeof candidate.bestScore === 'number' &&
       typeof candidate.epsilon === 'number' &&
       typeof candidate.averageScore === 'number' &&
+      this.isOptionalNumber(candidate.lifetimeAverageScore) &&
+      this.isOptionalNumber(candidate.averageLinesClearedPerEpisode) &&
+      this.isOptionalNumber(candidate.averagePiecesPerEpisode) &&
+      this.isOptionalNumber(candidate.totalScore) &&
+      this.isOptionalNumber(candidate.totalLinesCleared) &&
+      this.isOptionalNumber(candidate.totalPiecesPlaced) &&
       Array.isArray(candidate.recentScores) &&
       candidate.recentScores.every((item) => typeof item === 'number') &&
+      this.isOptionalNumberArray(candidate.recentLinesCleared) &&
+      this.isOptionalNumberArray(candidate.recentPiecesPlaced) &&
       typeof candidate.demonstrationSamples === 'number'
     );
+  }
+
+  private isOptionalNumber(value: unknown): boolean {
+    return value === undefined || typeof value === 'number';
+  }
+
+  private isOptionalNumberArray(value: unknown): boolean {
+    return value === undefined || (Array.isArray(value) && value.every((item) => typeof item === 'number'));
   }
 
   /** Type guard: checks if value conforms to SerializedModelArtifacts. */

@@ -9,21 +9,38 @@ export class TetrisDemonstrationBufferService {
   private readonly persistence = inject(TetrisAiPersistenceService);
   private buffer: TetrisDemonstrationExample[] = [];
   private _samplesSinceLastTraining = 0;
+  private persistVersion = 0;
+  private importedRehearsalPassesRemaining = 0;
+  private nextImportedRehearsalStep = 0;
 
   /** Loads demonstration buffer from localStorage. Updates demonstrationSamples count. */
-  public load(): void {
-    this.buffer = this.persistence.loadDemonstrations() ?? [];
+  public async load(): Promise<void> {
+    this.buffer = (await this.persistence.loadDemonstrations()) ?? [];
+    this.importedRehearsalPassesRemaining = 0;
+    this.nextImportedRehearsalStep = 0;
   }
 
-  /** Persists demonstration buffer (with quota-halving). Updates buffer if truncated. */
+  /** Persists demonstration buffer asynchronously. Updates the in-memory buffer only when fallback truncation occurs. */
   public persist(): void {
-    this.buffer = this.persistence.saveDemonstrations(this.buffer);
+    const snapshot = [...this.buffer];
+    const persistVersion = ++this.persistVersion;
+    void this.persistence.saveDemonstrations(snapshot).then((stored) => {
+      if (persistVersion !== this.persistVersion || stored.length === snapshot.length) {
+        return;
+      }
+
+      this.buffer = stored;
+    });
   }
 
   /** Clears buffer from memory and localStorage. */
-  public clear(): void {
+  public async clear(): Promise<void> {
+    this.persistVersion++;
     this.buffer = [];
-    this.persistence.clearDemonstrations();
+    this._samplesSinceLastTraining = 0;
+    this.importedRehearsalPassesRemaining = 0;
+    this.nextImportedRehearsalStep = 0;
+    await this.persistence.clearDemonstrations();
   }
 
   /** Returns current buffer size. */
@@ -37,9 +54,16 @@ export class TetrisDemonstrationBufferService {
   }
 
   /** Replaces the buffer contents and persists. */
-  public setBuffer(buffer: TetrisDemonstrationExample[]): void {
+  public async setBuffer(buffer: TetrisDemonstrationExample[]): Promise<void> {
+    const persistVersion = ++this.persistVersion;
     this.buffer = buffer.slice(-TETRIS_AI_CONFIG.demonstrationBufferSize);
-    this.persist();
+    this._samplesSinceLastTraining = 0;
+    this.importedRehearsalPassesRemaining = 0;
+    this.nextImportedRehearsalStep = 0;
+    const stored = await this.persistence.saveDemonstrations(this.buffer);
+    if (persistVersion === this.persistVersion) {
+      this.buffer = stored;
+    }
   }
 
   /** Returns count of samples added since last training reset. */
@@ -50,6 +74,38 @@ export class TetrisDemonstrationBufferService {
   /** Resets the training counter to 0. */
   public resetTrainingCounter(): void {
     this._samplesSinceLastTraining = 0;
+  }
+
+  /** Schedules a small number of post-import rehearsal passes over the imported demonstrations. */
+  public primeImportedRehearsal(currentStepCount: number): void {
+    if (this.buffer.length < TETRIS_AI_CONFIG.demonstrationBatchSize) {
+      this.importedRehearsalPassesRemaining = 0;
+      this.nextImportedRehearsalStep = 0;
+      return;
+    }
+
+    this.importedRehearsalPassesRemaining = TETRIS_AI_CONFIG.importedDemonstrationRehearsalPasses;
+    this.nextImportedRehearsalStep =
+      currentStepCount + TETRIS_AI_CONFIG.demonstrationRehearsalIntervalSteps;
+  }
+
+  /** Returns true when an imported-demonstration rehearsal pass is due. */
+  public isImportedRehearsalDue(currentStepCount: number): boolean {
+    return (
+      this.importedRehearsalPassesRemaining > 0 &&
+      currentStepCount >= this.nextImportedRehearsalStep
+    );
+  }
+
+  /** Advances the import-rehearsal schedule after a rehearsal pass has completed. */
+  public markImportedRehearsalComplete(currentStepCount: number): void {
+    if (this.importedRehearsalPassesRemaining === 0) {
+      return;
+    }
+
+    this.importedRehearsalPassesRemaining--;
+    this.nextImportedRehearsalStep =
+      currentStepCount + TETRIS_AI_CONFIG.demonstrationRehearsalIntervalSteps;
   }
 
   /**

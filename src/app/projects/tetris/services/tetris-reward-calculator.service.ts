@@ -4,6 +4,7 @@ import { TETRIS_AI_CONFIG } from '../constants/tetris-ai-config.constant';
 import { TETRIS_GAME_CONFIG } from '../constants/tetris-game-config.constant';
 import { TetrisBoardMetrics } from '../interfaces/tetris-board-metrics.interface';
 import { TetrisPlan } from '../interfaces/tetris-plan.interface';
+import { TetrisRewardResult } from '../interfaces/tetris-reward-result.interface';
 import { TetrisAiDiagnosticsService } from './tetris-ai-diagnostics.service';
 import { TetrisBoardMetricsService } from './tetris-board-metrics.service';
 
@@ -48,7 +49,7 @@ export class TetrisRewardCalculatorService {
     prevMetrics: TetrisBoardMetrics | null,
     plan: TetrisPlan | null,
     episodePeakScore: number,
-  ): number {
+  ): TetrisRewardResult {
     const current = this.boardMetrics.extractMetrics(features);
     // First piece of episode: use current metrics as prev so delta = 0.
     const prev = prevMetrics ?? current;
@@ -57,9 +58,10 @@ export class TetrisRewardCalculatorService {
     const rowFraction = plan ? plan.placementRow / gridHeight : 0;
     const lowPlacementBonus = rowFraction * 0.75;
 
-    const lowRowLineClearBonus = plan && linesCleared > 0
-      ? rowFraction * linesCleared * TETRIS_AI_CONFIG.lowRowLineClearWeight
-      : 0;
+    const lowRowLineClearBonus =
+      plan && linesCleared > 0
+        ? rowFraction * linesCleared * TETRIS_AI_CONFIG.lowRowLineClearWeight
+        : 0;
     const positiveReward = this.computePositiveReward(linesCleared, lowRowLineClearBonus);
     const rewardTotal = positiveReward + lowPlacementBonus;
 
@@ -97,7 +99,11 @@ export class TetrisRewardCalculatorService {
       return this.computeGameOverReward(netReward, episodePieceCount, episodePeakScore);
     }
 
-    return clipped;
+    return {
+      value: clipped,
+      rawValue: netReward,
+      wasClipped: clipped !== netReward,
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -114,29 +120,40 @@ export class TetrisRewardCalculatorService {
   private computeDeltaPenalty(current: TetrisBoardMetrics, prev: TetrisBoardMetrics): number {
     return (
       this.compressDelta(current.holes - prev.holes) * TETRIS_AI_CONFIG.deltaHolesWeight +
-      this.compressDelta(current.coveredCells - prev.coveredCells) * TETRIS_AI_CONFIG.deltaCoveredCellsWeight +
-      this.compressDelta(current.aggregateHeight - prev.aggregateHeight) * TETRIS_AI_CONFIG.deltaAggregateHeightWeight +
-      this.compressDelta(current.bumpiness - prev.bumpiness) * TETRIS_AI_CONFIG.deltaBumpinessWeight +
-      this.compressDelta(current.maxHeight - prev.maxHeight) * TETRIS_AI_CONFIG.deltaMaxHeightWeight +
+      this.compressDelta(current.coveredCells - prev.coveredCells) *
+        TETRIS_AI_CONFIG.deltaCoveredCellsWeight +
+      this.compressDelta(current.aggregateHeight - prev.aggregateHeight) *
+        TETRIS_AI_CONFIG.deltaAggregateHeightWeight +
+      this.compressDelta(current.bumpiness - prev.bumpiness) *
+        TETRIS_AI_CONFIG.deltaBumpinessWeight +
+      this.compressDelta(current.maxHeight - prev.maxHeight) *
+        TETRIS_AI_CONFIG.deltaMaxHeightWeight +
       this.compressDelta(current.pillars - prev.pillars) * TETRIS_AI_CONFIG.deltaPillarsWeight +
       this.compressDelta(current.wells - prev.wells) * TETRIS_AI_CONFIG.deltaWellsWeight +
-      this.compressDelta(current.heightVariance - prev.heightVariance) * TETRIS_AI_CONFIG.deltaHeightVarianceWeight
+      this.compressDelta(current.heightVariance - prev.heightVariance) *
+        TETRIS_AI_CONFIG.deltaHeightVarianceWeight
     );
   }
 
   /** Computes absolute board-shape penalties (stack overflow, covered cells, height variance). */
   private computeAbsolutePenalties(current: TetrisBoardMetrics, features: number[]): number {
     const columnHeights = features.slice(0, 10).map((v) => v * 20);
-    const stackOverflowPenalty = columnHeights.reduce(
-      (sum, height) => sum + Math.max(0, height - TETRIS_AI_CONFIG.preferredStackHeightRows),
-      0,
-    ) * TETRIS_AI_CONFIG.stackOverflowPenaltyWeight;
+    const stackOverflowPenalty =
+      columnHeights.reduce(
+        (sum, height) => sum + Math.max(0, height - TETRIS_AI_CONFIG.preferredStackHeightRows),
+        0,
+      ) * TETRIS_AI_CONFIG.stackOverflowPenaltyWeight;
     const absoluteCoveredCellsPenalty =
       current.coveredCells * TETRIS_AI_CONFIG.absoluteCoveredCellsWeight;
     const absoluteHeightVariancePenalty =
       current.heightVariance * TETRIS_AI_CONFIG.absoluteHeightVarianceWeight;
     const absoluteHolesPenalty = Math.sqrt(current.holes) * TETRIS_AI_CONFIG.absoluteHolesWeight;
-    return stackOverflowPenalty + absoluteCoveredCellsPenalty + absoluteHeightVariancePenalty + absoluteHolesPenalty;
+    return (
+      stackOverflowPenalty +
+      absoluteCoveredCellsPenalty +
+      absoluteHeightVariancePenalty +
+      absoluteHolesPenalty
+    );
   }
 
   /** Computes danger zone penalty when maxHeight exceeds the threshold. */
@@ -153,7 +170,7 @@ export class TetrisRewardCalculatorService {
     netReward: number,
     episodePieceCount: number,
     peakScore: number,
-  ): number {
+  ): TetrisRewardResult {
     const gameOverLengthBonus = Math.min(
       episodePieceCount * TETRIS_AI_CONFIG.rewardGameOverLengthBonusPerPiece,
       TETRIS_AI_CONFIG.rewardGameOverLengthBonusCap,
@@ -180,7 +197,11 @@ export class TetrisRewardCalculatorService {
       total,
     );
 
-    return total;
+    return {
+      value: total,
+      rawValue: rawTotal,
+      wasClipped: total !== rawTotal,
+    };
   }
 
   /** Applies asymmetric delta compression: sqrt-compresses worsening deltas, leaves improvements full-strength. */
@@ -208,10 +229,11 @@ export class TetrisRewardCalculatorService {
     const deltaPenalty = this.computeDeltaPenalty(current, prev);
 
     const columnHeights = features.slice(0, 10).map((v) => v * 20);
-    const stackOverflowPenalty = columnHeights.reduce(
-      (sum, height) => sum + Math.max(0, height - TETRIS_AI_CONFIG.preferredStackHeightRows),
-      0,
-    ) * TETRIS_AI_CONFIG.stackOverflowPenaltyWeight;
+    const stackOverflowPenalty =
+      columnHeights.reduce(
+        (sum, height) => sum + Math.max(0, height - TETRIS_AI_CONFIG.preferredStackHeightRows),
+        0,
+      ) * TETRIS_AI_CONFIG.stackOverflowPenaltyWeight;
     const absoluteCoveredCellsPenalty =
       current.coveredCells * TETRIS_AI_CONFIG.absoluteCoveredCellsWeight;
     const absoluteHeightVariancePenalty =

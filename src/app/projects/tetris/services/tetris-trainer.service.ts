@@ -8,6 +8,7 @@ import { TetrisModelService } from './tetris-model.service';
 import { TetrisReplayBufferService } from './tetris-replay-buffer.service';
 import { TetrisDemonstrationBufferService } from './tetris-demonstration-buffer.service';
 import { TetrisAiStatsService } from './tetris-ai-stats.service';
+import { TetrisAiTrainingTelemetryService } from './tetris-ai-training-telemetry.service';
 
 @Injectable()
 export class TetrisTrainerService {
@@ -16,6 +17,7 @@ export class TetrisTrainerService {
   private readonly demoBuffer = inject(TetrisDemonstrationBufferService);
   private readonly stats = inject(TetrisAiStatsService);
   private readonly diagnostics = inject(TetrisAiDiagnosticsService);
+  private readonly trainingTelemetry = inject(TetrisAiTrainingTelemetryService);
 
   private isTraining = false;
 
@@ -41,10 +43,14 @@ export class TetrisTrainerService {
   public trainOnDemonstrations(): void {
     if (this.isTraining) return;
     if (this.demoBuffer.size < TETRIS_AI_CONFIG.demonstrationBatchSize) return;
-    if (this.demoBuffer.samplesSinceLastTraining < TETRIS_AI_CONFIG.demonstrationTrainEveryNSamples) return;
+    const stepCount = this.stats.getStepCount();
+    const hasNewSamples =
+      this.demoBuffer.samplesSinceLastTraining >= TETRIS_AI_CONFIG.demonstrationTrainEveryNSamples;
+    const importedRehearsalDue = this.demoBuffer.isImportedRehearsalDue(stepCount);
+    if (!hasNewSamples && !importedRehearsalDue) return;
 
     this.isTraining = true;
-    this.runDemonstrationTraining().finally(() => {
+    this.runDemonstrationTraining(importedRehearsalDue, stepCount).finally(() => {
       this.isTraining = false;
     });
   }
@@ -59,6 +65,10 @@ export class TetrisTrainerService {
     const batch = this.replayBuffer.sampleBatch();
     const { targets, nextValues } = this.computeTargets(batch);
     const currentPredictions = this.computeCurrentPredictions(batch);
+    const tdErrors = targets.map((target, index) => target - currentPredictions[index]);
+    const meanAbsTdError =
+      tdErrors.reduce((sum, error) => sum + Math.abs(error), 0) / tdErrors.length;
+    const maxAbsTdError = Math.max(...tdErrors.map((error) => Math.abs(error)));
 
     const xs = tf.tensor2d(batch.map((e) => e.features));
     const ys = tf.tensor2d(targets, [targets.length, 1]);
@@ -77,6 +87,13 @@ export class TetrisTrainerService {
       this.stats.getEpsilon(),
       tf.memory().numTensors,
     );
+    this.trainingTelemetry.recordReinforcementStep(
+      loss,
+      meanAbsTdError,
+      maxAbsTdError,
+      currentPredictions,
+      targets,
+    );
 
     xs.dispose();
     ys.dispose();
@@ -88,7 +105,10 @@ export class TetrisTrainerService {
   }
 
   /** Runs demonstration training: samples demo batch, fits model, resets counter, syncs, persists. */
-  private async runDemonstrationTraining(): Promise<void> {
+  private async runDemonstrationTraining(
+    importedRehearsalDue: boolean,
+    stepCount: number,
+  ): Promise<void> {
     const batch = this.demoBuffer.sampleBatch();
     const xs = tf.tensor2d(batch.map((e) => e.features));
     const ys = tf.tensor2d(
@@ -104,11 +124,16 @@ export class TetrisTrainerService {
 
     const loss = result.history['loss']?.[result.history['loss'].length - 1] as number | undefined;
     this.diagnostics.logDemonstrationTraining(loss, batch, this.demoBuffer.size);
+    this.trainingTelemetry.recordDemonstrationLoss(loss);
 
     xs.dispose();
     ys.dispose();
 
-    this.demoBuffer.resetTrainingCounter();
+    if (importedRehearsalDue) {
+      this.demoBuffer.markImportedRehearsalComplete(stepCount);
+    } else {
+      this.demoBuffer.resetTrainingCounter();
+    }
     this.model.syncTargetNetwork();
     this.model.persistModel();
   }

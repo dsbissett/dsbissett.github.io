@@ -39,10 +39,11 @@ export class TetrisModelService {
         return false;
       }
 
-      this.model = loaded as tf.Sequential;
-      this.compileModel(this.model);
+      this.model = this.createModel();
+      this.setModelWeightsFromLoadedModel(loaded);
       this.targetModel = this.createModel();
       this.syncTargetNetwork();
+      loaded.dispose();
       return true;
     } catch {
       return false;
@@ -58,16 +59,19 @@ export class TetrisModelService {
       this.targetModel.dispose();
     }
 
-    this.model = (await tf.loadLayersModel(
+    const loaded = await tf.loadLayersModel(
       tf.io.fromMemory({
         modelTopology: artifacts.modelTopology,
         weightSpecs: artifacts.weightSpecs,
         weightData: this.base64ToArrayBuffer(artifacts.weightDataBase64),
       }),
-    )) as tf.Sequential;
-    this.compileModel(this.model);
+    );
+
+    this.model = this.createModel();
+    this.setModelWeightsFromLoadedModel(loaded);
     this.targetModel = this.createModel();
     this.syncTargetNetwork();
+    loaded.dispose();
   }
 
   /** Copies weights from model to targetModel. */
@@ -176,7 +180,6 @@ export class TetrisModelService {
         kernelInitializer: 'heNormal',
       }),
     );
-    model.add(tf.layers.dropout({ rate: 0.1 }));
     model.add(
       tf.layers.dense({
         units: TETRIS_AI_CONFIG.hiddenLayer2,
@@ -197,6 +200,13 @@ export class TetrisModelService {
     });
   }
 
+  /** Copies weights from a loaded model topology onto the current architecture. */
+  private setModelWeightsFromLoadedModel(loadedModel: tf.LayersModel): void {
+    const clonedWeights = loadedModel.getWeights().map((weight) => weight.clone());
+    this.model.setWeights(clonedWeights);
+    clonedWeights.forEach((weight) => weight.dispose());
+  }
+
   /** Returns the input feature count from a loaded model, or null if it cannot be determined. */
   private getLoadedModelInputSize(model: tf.LayersModel): number | null {
     const primaryShape = model.inputs[0]?.shape;
@@ -207,9 +217,11 @@ export class TetrisModelService {
       }
     }
 
-    const firstLayer = model.layers[0] as {
-      batchInputShape?: Array<number | null>;
-    } | undefined;
+    const firstLayer = model.layers[0] as
+      | {
+          batchInputShape?: Array<number | null>;
+        }
+      | undefined;
     const layerShape = firstLayer?.batchInputShape;
     if (Array.isArray(layerShape)) {
       const last = layerShape[layerShape.length - 1];

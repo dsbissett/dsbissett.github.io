@@ -14,6 +14,10 @@ import { TetrisBoardMetricsService } from './tetris-board-metrics.service';
 import { TetrisPlacementEnumeratorService } from './tetris-placement-enumerator.service';
 import { TetrisPlanSelectorService } from './tetris-plan-selector.service';
 import { TetrisRewardCalculatorService } from './tetris-reward-calculator.service';
+import { TetrisAiProgressStoreService } from './tetris-ai-progress-store.service';
+import { TetrisAiMoveTelemetryService } from './tetris-ai-move-telemetry.service';
+import { TetrisAiPolicyTelemetryService } from './tetris-ai-policy-telemetry.service';
+import { TetrisAiTrainingTelemetryService } from './tetris-ai-training-telemetry.service';
 
 @Injectable()
 export class TetrisAiControllerService {
@@ -25,6 +29,10 @@ export class TetrisAiControllerService {
   private readonly placer = inject(TetrisPlacementEnumeratorService);
   private readonly planSelector = inject(TetrisPlanSelectorService);
   private readonly rewardCalc = inject(TetrisRewardCalculatorService);
+  private readonly progressStore = inject(TetrisAiProgressStoreService);
+  private readonly moveTelemetry = inject(TetrisAiMoveTelemetryService);
+  private readonly policyTelemetry = inject(TetrisAiPolicyTelemetryService);
+  private readonly trainingTelemetry = inject(TetrisAiTrainingTelemetryService);
 
   // ---------------------------------------------------------------------------
   // Lifecycle / coordination state
@@ -49,13 +57,22 @@ export class TetrisAiControllerService {
   readonly isEnabled: WritableSignal<boolean> = signal(false);
   readonly isReady: WritableSignal<boolean> = signal(false);
   readonly isRecordingDemonstrations: WritableSignal<boolean> = signal(false);
+  readonly progress = this.progressStore.snapshot;
   readonly stats: WritableSignal<TetrisAiStats> = signal<TetrisAiStats>({
     totalEpisodes: 0,
     totalSteps: 0,
     bestScore: 0,
     epsilon: 1,
     averageScore: 0,
+    lifetimeAverageScore: 0,
+    averageLinesClearedPerEpisode: 0,
+    averagePiecesPerEpisode: 0,
+    totalScore: 0,
+    totalLinesCleared: 0,
+    totalPiecesPlaced: 0,
     recentScores: [],
+    recentLinesCleared: [],
+    recentPiecesPlaced: [],
     demonstrationSamples: 0,
   });
 
@@ -75,6 +92,7 @@ export class TetrisAiControllerService {
     this.isReady.set(true);
     this.isEnabled.set(this.active);
     this.stats.set({ ...this.agent.getStats() });
+    this.trainingTelemetry.syncBufferState();
   }
 
   // ---------------------------------------------------------------------------
@@ -168,7 +186,11 @@ export class TetrisAiControllerService {
 
     if (!this.active || !this.plan) {
       if (gameOver) {
-        this.agent.onEpisodeEnd(this.episodePeakScore);
+        this.agent.onEpisodeEnd(
+          this.episodePeakScore,
+          this.episodeTotalLinesCleared,
+          this.episodePieceCount,
+        );
         this.stats.set({ ...this.agent.getStats() });
       }
       return;
@@ -177,7 +199,7 @@ export class TetrisAiControllerService {
     this.episodePieceCount++;
     this.episodeTotalLinesCleared += linesCleared;
 
-    const reward = this.rewardCalc.computeReward(
+    const rewardResult = this.rewardCalc.computeReward(
       this.plan.features,
       linesCleared,
       gameOver,
@@ -186,7 +208,11 @@ export class TetrisAiControllerService {
       this.plan,
       this.episodePeakScore,
     );
+    const reward = rewardResult.value;
     this.episodeTotalReward += reward;
+    this.chart.pushEntry(reward, 0);
+    this.moveTelemetry.recordPlacement(this.plan.features);
+    this.trainingTelemetry.recordRewardClip(rewardResult.wasClipped);
 
     const nextPlacements = gameOver ? [] : this.placer.enumeratePlacements(state);
     const nextStateValue = gameOver
@@ -195,12 +221,17 @@ export class TetrisAiControllerService {
 
     this.agent.remember(this.plan.features, reward, nextStateValue, gameOver);
     this.agent.trainStep();
+    this.agent.trainOnDemonstrations();
 
     this.prevMetrics = this.boardMetrics.extractMetrics(this.plan.features);
 
     if (gameOver) {
       this.chart.markGameEnd();
-      this.agent.onEpisodeEnd(this.episodePeakScore);
+      this.agent.onEpisodeEnd(
+        this.episodePeakScore,
+        this.episodeTotalLinesCleared,
+        this.episodePieceCount,
+      );
     }
 
     this.stats.set({ ...this.agent.getStats() });
@@ -271,6 +302,9 @@ export class TetrisAiControllerService {
     this.prevMetrics = null;
     this.pendingDemonstrationPlacements = [];
     this.stats.set({ ...this.agent.getStats() });
+    this.trainingTelemetry.reset();
+    this.moveTelemetry.reset();
+    this.policyTelemetry.reset();
   }
 
   /** Exports the agent's training data as a JSON string. */
@@ -286,6 +320,9 @@ export class TetrisAiControllerService {
     this.episodePieceCount = 0;
     this.prevMetrics = null;
     this.stats.set({ ...this.agent.getStats() });
+    this.trainingTelemetry.syncBufferState();
+    this.moveTelemetry.reset();
+    this.policyTelemetry.reset();
   }
 
   // ---------------------------------------------------------------------------

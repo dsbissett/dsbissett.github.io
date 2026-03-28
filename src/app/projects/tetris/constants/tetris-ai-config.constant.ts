@@ -1,12 +1,13 @@
 export const TETRIS_AI_CONFIG = {
   // Network architecture
-  // featureCount = 32 board features + 21 preview (3 pieces x 7 one-hot) = 53 total.
+  // featureCount = 36 board features + 21 preview (3 pieces x 7 one-hot) = 57 total.
   // Board features: col heights (10), height diffs (9), max height (1), agg height (1),
   //   holes (1), lines cleared (1), bumpiness (1), covered cells (1), pillars (1),
   //   wells (1), row completeness (1), absolute holes sqrt (1),
-  //   low-board density (1), height variance (1),
-  //   near-complete rows count (1) = 32.
-  featureCount: 53,
+  //   low-board density (1), height variance (1), near-complete rows (1),
+  //   row transitions (1), column transitions (1), landing height (1),
+  //   eroded piece cells (1) = 36.
+  featureCount: 57,
   hiddenLayer1: 128,
   hiddenLayer2: 64,
 
@@ -15,36 +16,36 @@ export const TETRIS_AI_CONFIG = {
   batchSize: 64,
   // Gamma 0.92: more myopic to focus on immediate placement quality.
   // Tetris boards change rapidly; long-horizon bootstrapping adds noise.
-  gamma: 0.92,
+  gamma: 0.89,
   learningRate: 0.00015,
   trainEveryNSteps: 2,
   // Target sync every 250 steps (~8 episodes). Slower sync prevents Q-value
   // oscillation that caused the ep55-59 regression in R3.
   targetNetworkUpdateFrequency: 250,
   replayRecentWindowSize: 1000,
-  replayRecentFraction: 0.30,
+  replayRecentFraction: 0.3,
   replayInformativeFraction: 0.15,
-  replayStrongPositiveFraction: 0.20,
-  replayTerminalFraction: 0.10,
+  replayStrongPositiveFraction: 0.2,
+  replayTerminalFraction: 0.1,
   replayStrongPositiveRewardThreshold: 8.0,
   replayStrongNegativeRewardThreshold: -8.0,
 
   // Exploration (epsilon-greedy)
   // Start at 0.20 post-teacher for broader coverage of the placement space.
-  epsilonStart: 0.20,
+  epsilonStart: 0.2,
   epsilonMin: 0.03,
   // Per-episode decay: ~125 post-teacher episodes to reach minimum.
   // This keeps exploration high just after warmup without pinning it at 0.20.
-  epsilonDecay: 0.9850,
+  epsilonDecay: 0.985,
 
   // localStorage keys (TF.js uses localstorage://<key>)
-  // Key updated to v6: stronger anti-hole / anti-tower shaping for both
-  // teacher warmup and RL reward. Bump storage keys so stale v5 data does not
-  // keep training the new objective toward tower-building.
-  modelStorageKey: 'tetris-ai-model-v6',
-  statsStorageKey: 'tetris-ai-stats-v6',
-  replayBufferStorageKey: 'tetris-ai-replay-buffer-v6',
-  demonstrationStorageKey: 'tetris-ai-demonstrations-v6',
+  // Key updated to v7: feature vector extended from 53 to 57 inputs (row transitions,
+  // column transitions, landing height, eroded piece cells). v6 model weights are
+  // incompatible with the new input shape and must be discarded.
+  modelStorageKey: 'tetris-ai-model-v7',
+  statsStorageKey: 'tetris-ai-stats-v7',
+  replayBufferStorageKey: 'tetris-ai-replay-buffer-v7',
+  demonstrationStorageKey: 'tetris-ai-demonstrations-v7',
   enabledStorageKey: 'tetris-ai-enabled',
 
   // AI visual step interval (ms between each move animation)
@@ -56,6 +57,8 @@ export const TETRIS_AI_CONFIG = {
   demonstrationBatchSize: 64,
   demonstrationTrainEveryNSamples: 24,
   demonstrationEpochs: 2,
+  demonstrationRehearsalIntervalSteps: 125,
+  importedDemonstrationRehearsalPasses: 8,
   humanChosenTarget: 1.5,
   humanRejectedTarget: -0.35,
   // Teacher warmup: 20 episodes. Enough to bootstrap without constraining
@@ -108,13 +111,13 @@ export const TETRIS_AI_CONFIG = {
   //   holes delta 1 * 6.5 = 6.5
   //   covered delta 1 * 1.8 = 1.8
   //   + normal deltas ~1.5-2.0 = clearly net negative
-  deltaHolesWeight: 6.5,             // hole creation must lose to almost every non-clearing alternative
-  deltaCoveredCellsWeight: 1.8,      // buried cells often precede hard-to-fix holes
-  deltaAggregateHeightWeight: 0.05,  // still gentle, but no longer effectively free
-  deltaBumpinessWeight: 0.6,         // stronger pressure toward flatter surfaces
-  deltaMaxHeightWeight: 0.6,         // towers constrain future placements quickly
-  deltaPillarsWeight: 0.8,           // vertical gaps trap pieces
-  deltaWellsWeight: 0.35,            // tolerate wells a little, but not gratuitously
+  deltaHolesWeight: 6.5, // hole creation must lose to almost every non-clearing alternative
+  deltaCoveredCellsWeight: 1.8, // buried cells often precede hard-to-fix holes
+  deltaAggregateHeightWeight: 0.05, // still gentle, but no longer effectively free
+  deltaBumpinessWeight: 0.6, // stronger pressure toward flatter surfaces
+  deltaMaxHeightWeight: 0.6, // towers constrain future placements quickly
+  deltaPillarsWeight: 0.8, // vertical gaps trap pieces
+  deltaWellsWeight: 0.35, // tolerate wells a little, but not gratuitously
   // NEW: height variance delta penalty -- directly targets tower creation (Goal 5).
   // A tower spike increases variance by 2-5; flat play changes variance by 0-1.
   deltaHeightVarianceWeight: 0.45,

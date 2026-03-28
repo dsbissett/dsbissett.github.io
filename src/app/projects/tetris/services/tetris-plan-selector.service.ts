@@ -7,11 +7,13 @@ import { TetrisPlan } from '../interfaces/tetris-plan.interface';
 import { TetrisRankedPlacement } from '../interfaces/tetris-ranked-placement.interface';
 import { TetrisAiAgentService } from './tetris-ai-agent.service';
 import { TetrisAiDiagnosticsService } from './tetris-ai-diagnostics.service';
+import { TetrisAiPolicyTelemetryService } from './tetris-ai-policy-telemetry.service';
 
 @Injectable()
 export class TetrisPlanSelectorService {
   private readonly agent = inject(TetrisAiAgentService);
   private readonly diagnostics = inject(TetrisAiDiagnosticsService);
+  private readonly policyTelemetry = inject(TetrisAiPolicyTelemetryService);
 
   /**
    * Selects the best placement and returns a Plan, or null if no placements available.
@@ -57,6 +59,7 @@ export class TetrisPlanSelectorService {
       this.agent.getStats().epsilon,
       heuristicValues,
     );
+    this.policyTelemetry.recordDecision(placements, chosen, values, idx);
 
     return {
       targetMatrix: chosen.matrix,
@@ -74,7 +77,7 @@ export class TetrisPlanSelectorService {
    */
   public scorePlacementHeuristically(placement: TetrisPlacement): number {
     const features = placement.features;
-    const previewHasI = features[32] === 1 || features[39] === 1 || features[46] === 1;
+    const previewHasI = features[36] === 1 || features[43] === 1 || features[50] === 1;
     return (
       this.computePlacementBonuses(placement, features) -
       this.computePlacementPenalties(features, previewHasI)
@@ -151,10 +154,7 @@ export class TetrisPlanSelectorService {
   /**
    * Computes penalties for a placement (holes, height, bumpiness, etc.).
    */
-  private computePlacementPenalties(
-    features: number[],
-    previewHasI: boolean,
-  ): number {
+  private computePlacementPenalties(features: number[], previewHasI: boolean): number {
     const columnHeights = features.slice(0, 10).map((value) => value * 20);
     const linesCleared = features[22] * 4;
     const holes = features[21] * 40;

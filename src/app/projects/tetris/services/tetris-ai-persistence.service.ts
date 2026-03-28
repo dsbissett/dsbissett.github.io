@@ -1,12 +1,29 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 
 import { TETRIS_AI_CONFIG } from '../constants/tetris-ai-config.constant';
 import { TetrisDemonstrationExample } from '../interfaces/tetris-demonstration-example.interface';
 import { TetrisExperience } from '../interfaces/tetris-experience.interface';
+import { TetrisAiProgressStoreService } from './tetris-ai-progress-store.service';
 import { TetrisAiStats } from '../interfaces/tetris-ai-stats.interface';
+
+const TRAINING_DB_NAME = 'tetris-ai-training-storage';
+const TRAINING_DB_VERSION = 1;
+const TRAINING_STORE_NAME = 'training-state';
+const REPLAY_INDEXED_DB_KEY = 'replay-buffer-v7';
+const DEMONSTRATION_INDEXED_DB_KEY = 'demonstrations-v7';
+
+interface IndexedDbEntry<T> {
+  key: string;
+  savedAt: string;
+  value: T;
+}
 
 @Injectable()
 export class TetrisAiPersistenceService {
+  private readonly progressStore = inject(TetrisAiProgressStoreService);
+
+  private dbPromise: Promise<IDBDatabase | null> | null = null;
+
   /**
    * Loads stats from localStorage.
    * Returns null if nothing is stored or the data is corrupt.
@@ -29,10 +46,279 @@ export class TetrisAiPersistenceService {
   }
 
   /**
-   * Loads replay buffer from localStorage.
+   * Loads replay buffer from IndexedDB and migrates the current localStorage value on first load.
    * Returns null if nothing is stored or the data is corrupt.
    */
-  public loadReplayBuffer(): TetrisExperience[] | null {
+  public async loadReplayBuffer(): Promise<TetrisExperience[] | null> {
+    const indexedDbBuffer = await this.loadFromIndexedDb<TetrisExperience[]>(
+      REPLAY_INDEXED_DB_KEY,
+      (value): value is TetrisExperience[] =>
+        Array.isArray(value) && value.every((item) => this.isExperience(item)),
+    );
+    if (indexedDbBuffer !== null) {
+      localStorage.removeItem(TETRIS_AI_CONFIG.replayBufferStorageKey);
+      return indexedDbBuffer;
+    }
+
+    const fallbackBuffer = this.loadReplayBufferFromLocalStorage();
+    if (!fallbackBuffer) {
+      return null;
+    }
+
+    const stored = await this.saveReplayBuffer(fallbackBuffer);
+    return stored;
+  }
+
+  /**
+   * Persists replay buffer to IndexedDB, falling back to localStorage only when IndexedDB is unavailable.
+   * Returns the stored buffer, which may be truncated only in the localStorage fallback path.
+   */
+  public async saveReplayBuffer(buffer: TetrisExperience[]): Promise<TetrisExperience[]> {
+    if (buffer.length === 0) {
+      await this.clearReplayBuffer();
+      return [];
+    }
+
+    const savedToIndexedDb = await this.saveToIndexedDb(REPLAY_INDEXED_DB_KEY, buffer);
+    if (savedToIndexedDb) {
+      localStorage.removeItem(TETRIS_AI_CONFIG.replayBufferStorageKey);
+      this.clearStorageWarning();
+      return buffer;
+    }
+
+    const stored = this.saveReplayBufferToLocalStorage(buffer);
+    if (stored.length < buffer.length) {
+      this.setStorageWarning(
+        `Replay storage truncated to ${stored.length.toLocaleString()} entries because IndexedDB was unavailable and localStorage quota was exceeded.`,
+      );
+    } else {
+      this.setStorageWarning(
+        'IndexedDB is unavailable, so replay and demonstration buffers are using localStorage fallback storage.',
+      );
+    }
+    return stored;
+  }
+
+  /** Removes the replay buffer from IndexedDB and the fallback localStorage key. */
+  public async clearReplayBuffer(): Promise<void> {
+    await this.deleteFromIndexedDb(REPLAY_INDEXED_DB_KEY);
+    localStorage.removeItem(TETRIS_AI_CONFIG.replayBufferStorageKey);
+  }
+
+  /**
+   * Loads demonstrations from IndexedDB and migrates the current localStorage value on first load.
+   * Returns null if nothing is stored or the data is corrupt.
+   */
+  public async loadDemonstrations(): Promise<TetrisDemonstrationExample[] | null> {
+    const indexedDbBuffer = await this.loadFromIndexedDb<TetrisDemonstrationExample[]>(
+      DEMONSTRATION_INDEXED_DB_KEY,
+      (value): value is TetrisDemonstrationExample[] =>
+        Array.isArray(value) && value.every((item) => this.isDemonstrationExample(item)),
+    );
+    if (indexedDbBuffer !== null) {
+      localStorage.removeItem(TETRIS_AI_CONFIG.demonstrationStorageKey);
+      return indexedDbBuffer;
+    }
+
+    const fallbackBuffer = this.loadDemonstrationsFromLocalStorage();
+    if (!fallbackBuffer) {
+      return null;
+    }
+
+    const stored = await this.saveDemonstrations(fallbackBuffer);
+    return stored;
+  }
+
+  /**
+   * Persists demonstration buffer to IndexedDB, falling back to localStorage only when IndexedDB is unavailable.
+   * Returns the stored buffer, which may be truncated only in the localStorage fallback path.
+   */
+  public async saveDemonstrations(
+    demonstrations: TetrisDemonstrationExample[],
+  ): Promise<TetrisDemonstrationExample[]> {
+    if (demonstrations.length === 0) {
+      await this.clearDemonstrations();
+      return [];
+    }
+
+    const savedToIndexedDb = await this.saveToIndexedDb(
+      DEMONSTRATION_INDEXED_DB_KEY,
+      demonstrations,
+    );
+    if (savedToIndexedDb) {
+      localStorage.removeItem(TETRIS_AI_CONFIG.demonstrationStorageKey);
+      this.clearStorageWarning();
+      return demonstrations;
+    }
+
+    const stored = this.saveDemonstrationsToLocalStorage(demonstrations);
+    if (stored.length < demonstrations.length) {
+      this.setStorageWarning(
+        `Demonstration storage truncated to ${stored.length.toLocaleString()} examples because IndexedDB was unavailable and localStorage quota was exceeded.`,
+      );
+    } else {
+      this.setStorageWarning(
+        'IndexedDB is unavailable, so replay and demonstration buffers are using localStorage fallback storage.',
+      );
+    }
+    return stored;
+  }
+
+  /** Removes demonstrations from IndexedDB and the fallback localStorage key. */
+  public async clearDemonstrations(): Promise<void> {
+    await this.deleteFromIndexedDb(DEMONSTRATION_INDEXED_DB_KEY);
+    localStorage.removeItem(TETRIS_AI_CONFIG.demonstrationStorageKey);
+  }
+
+  /** Removes all legacy v4/v5/v6 localStorage keys. */
+  public cleanupLegacyStorage(): void {
+    const legacyModelKeys = [
+      'tetris-ai-model',
+      'tetris-ai-model-v4',
+      'tetris-ai-model-v5',
+      'tetris-ai-model-v6',
+    ];
+    const legacyStorageKeys = [
+      'tetris-ai-stats',
+      'tetris-ai-replay-buffer',
+      'tetris-ai-demonstrations',
+      'tetris-ai-stats-v5',
+      'tetris-ai-replay-buffer-v5',
+      'tetris-ai-demonstrations-v5',
+      'tetris-ai-stats-v6',
+      'tetris-ai-replay-buffer-v6',
+      'tetris-ai-demonstrations-v6',
+    ];
+
+    for (const key of legacyStorageKeys) {
+      localStorage.removeItem(key);
+    }
+
+    for (const modelKey of legacyModelKeys) {
+      localStorage.removeItem(`tensorflowjs_models/${modelKey}/info`);
+      localStorage.removeItem(`tensorflowjs_models/${modelKey}/model_topology`);
+      localStorage.removeItem(`tensorflowjs_models/${modelKey}/weight_specs`);
+      localStorage.removeItem(`tensorflowjs_models/${modelKey}/weight_data`);
+      localStorage.removeItem(`tensorflowjs_models/${modelKey}/model_metadata`);
+    }
+  }
+
+  private async loadFromIndexedDb<T>(
+    key: string,
+    guard: (value: unknown) => value is T,
+  ): Promise<T | null> {
+    const database = await this.getDatabase();
+    if (!database) {
+      return null;
+    }
+
+    const entry = await this.readEntry<T>(database, key);
+    if (!entry || !guard(entry.value)) {
+      return null;
+    }
+
+    return entry.value;
+  }
+
+  private async saveToIndexedDb<T>(key: string, value: T): Promise<boolean> {
+    const database = await this.getDatabase();
+    if (!database) {
+      return false;
+    }
+
+    return new Promise<boolean>((resolve) => {
+      try {
+        const transaction = database.transaction(TRAINING_STORE_NAME, 'readwrite');
+        const store = transaction.objectStore(TRAINING_STORE_NAME);
+        const request = store.put({
+          key,
+          savedAt: new Date().toISOString(),
+          value,
+        } satisfies IndexedDbEntry<T>);
+
+        request.onsuccess = () => resolve(true);
+        request.onerror = () => resolve(false);
+        transaction.onabort = () => resolve(false);
+      } catch {
+        resolve(false);
+      }
+    });
+  }
+
+  private async deleteFromIndexedDb(key: string): Promise<void> {
+    const database = await this.getDatabase();
+    if (!database) {
+      return;
+    }
+
+    await new Promise<void>((resolve) => {
+      try {
+        const transaction = database.transaction(TRAINING_STORE_NAME, 'readwrite');
+        const store = transaction.objectStore(TRAINING_STORE_NAME);
+        const request = store.delete(key);
+
+        request.onsuccess = () => resolve();
+        request.onerror = () => resolve();
+        transaction.onabort = () => resolve();
+      } catch {
+        resolve();
+      }
+    });
+  }
+
+  private async getDatabase(): Promise<IDBDatabase | null> {
+    if (this.dbPromise) {
+      return this.dbPromise;
+    }
+
+    if (typeof indexedDB === 'undefined') {
+      return null;
+    }
+
+    this.dbPromise = new Promise<IDBDatabase | null>((resolve) => {
+      try {
+        const request = indexedDB.open(TRAINING_DB_NAME, TRAINING_DB_VERSION);
+
+        request.onupgradeneeded = () => {
+          const database = request.result;
+          if (!database.objectStoreNames.contains(TRAINING_STORE_NAME)) {
+            database.createObjectStore(TRAINING_STORE_NAME, { keyPath: 'key' });
+          }
+        };
+
+        request.onsuccess = () => {
+          const database = request.result;
+          database.onversionchange = () => database.close();
+          resolve(database);
+        };
+        request.onerror = () => resolve(null);
+        request.onblocked = () => resolve(null);
+      } catch {
+        resolve(null);
+      }
+    });
+
+    return this.dbPromise;
+  }
+
+  private readEntry<T>(database: IDBDatabase, key: string): Promise<IndexedDbEntry<T> | null> {
+    return new Promise<IndexedDbEntry<T> | null>((resolve) => {
+      try {
+        const transaction = database.transaction(TRAINING_STORE_NAME, 'readonly');
+        const store = transaction.objectStore(TRAINING_STORE_NAME);
+        const request = store.get(key);
+
+        request.onsuccess = () =>
+          resolve((request.result as IndexedDbEntry<T> | undefined) ?? null);
+        request.onerror = () => resolve(null);
+        transaction.onabort = () => resolve(null);
+      } catch {
+        resolve(null);
+      }
+    });
+  }
+
+  private loadReplayBufferFromLocalStorage(): TetrisExperience[] | null {
     try {
       const raw = localStorage.getItem(TETRIS_AI_CONFIG.replayBufferStorageKey);
       if (!raw) {
@@ -52,17 +338,7 @@ export class TetrisAiPersistenceService {
     }
   }
 
-  /**
-   * Persists replay buffer to localStorage.
-   * Uses a quota-halving retry loop: if storage is full, drops the oldest half and retries.
-   * Returns the (possibly truncated) buffer that was actually stored.
-   */
-  public saveReplayBuffer(buffer: TetrisExperience[]): TetrisExperience[] {
-    if (buffer.length === 0) {
-      this.clearReplayBuffer();
-      return buffer;
-    }
-
+  private saveReplayBufferToLocalStorage(buffer: TetrisExperience[]): TetrisExperience[] {
     let bufferToStore = buffer;
 
     while (bufferToStore.length > 0) {
@@ -77,21 +353,11 @@ export class TetrisAiPersistenceService {
       }
     }
 
-    this.clearReplayBuffer();
-    console.warn('AI replay buffer persistence failed: localStorage quota exceeded.');
+    localStorage.removeItem(TETRIS_AI_CONFIG.replayBufferStorageKey);
     return [];
   }
 
-  /** Removes the replay buffer from localStorage. */
-  public clearReplayBuffer(): void {
-    localStorage.removeItem(TETRIS_AI_CONFIG.replayBufferStorageKey);
-  }
-
-  /**
-   * Loads demonstrations from localStorage.
-   * Returns null if nothing is stored or the data is corrupt.
-   */
-  public loadDemonstrations(): TetrisDemonstrationExample[] | null {
+  private loadDemonstrationsFromLocalStorage(): TetrisDemonstrationExample[] | null {
     try {
       const raw = localStorage.getItem(TETRIS_AI_CONFIG.demonstrationStorageKey);
       if (!raw) {
@@ -111,18 +377,10 @@ export class TetrisAiPersistenceService {
     }
   }
 
-  /**
-   * Persists demonstration buffer to localStorage.
-   * Uses a quota-halving retry loop: if storage is full, drops the oldest half and retries.
-   * Returns the (possibly truncated) buffer that was actually stored.
-   */
-  public saveDemonstrations(demos: TetrisDemonstrationExample[]): TetrisDemonstrationExample[] {
-    if (demos.length === 0) {
-      this.clearDemonstrations();
-      return demos;
-    }
-
-    let bufferToStore = demos;
+  private saveDemonstrationsToLocalStorage(
+    demonstrations: TetrisDemonstrationExample[],
+  ): TetrisDemonstrationExample[] {
+    let bufferToStore = demonstrations;
 
     while (bufferToStore.length > 0) {
       try {
@@ -136,39 +394,17 @@ export class TetrisAiPersistenceService {
       }
     }
 
-    this.clearDemonstrations();
-    console.warn('AI demonstration persistence failed: localStorage quota exceeded.');
+    localStorage.removeItem(TETRIS_AI_CONFIG.demonstrationStorageKey);
     return [];
   }
 
-  /** Removes demonstrations from localStorage. */
-  public clearDemonstrations(): void {
-    localStorage.removeItem(TETRIS_AI_CONFIG.demonstrationStorageKey);
+  private clearStorageWarning(): void {
+    this.progressStore.patch({ storageWarning: null });
   }
 
-  /** Removes all legacy v4/v5 localStorage keys. */
-  public cleanupLegacyStorage(): void {
-    const legacyModelKeys = ['tetris-ai-model', 'tetris-ai-model-v4', 'tetris-ai-model-v5'];
-    const legacyStorageKeys = [
-      'tetris-ai-stats',
-      'tetris-ai-replay-buffer',
-      'tetris-ai-demonstrations',
-      'tetris-ai-stats-v5',
-      'tetris-ai-replay-buffer-v5',
-      'tetris-ai-demonstrations-v5',
-    ];
-
-    for (const key of legacyStorageKeys) {
-      localStorage.removeItem(key);
-    }
-
-    for (const modelKey of legacyModelKeys) {
-      localStorage.removeItem(`tensorflowjs_models/${modelKey}/info`);
-      localStorage.removeItem(`tensorflowjs_models/${modelKey}/model_topology`);
-      localStorage.removeItem(`tensorflowjs_models/${modelKey}/weight_specs`);
-      localStorage.removeItem(`tensorflowjs_models/${modelKey}/weight_data`);
-      localStorage.removeItem(`tensorflowjs_models/${modelKey}/model_metadata`);
-    }
+  private setStorageWarning(message: string): void {
+    this.progressStore.patch({ storageWarning: message });
+    console.warn(message);
   }
 
   private isExperience(value: unknown): value is TetrisExperience {

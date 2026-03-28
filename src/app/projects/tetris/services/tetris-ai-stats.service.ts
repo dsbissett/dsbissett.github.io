@@ -16,6 +16,7 @@ export class TetrisAiStatsService {
     if (loaded) {
       this.stats = { ...this.createDefaultStats(), ...loaded };
     }
+    this.updateEpisodeAverages();
     this.stepCount = this.stats.totalSteps;
   }
 
@@ -45,21 +46,21 @@ export class TetrisAiStatsService {
    * Does NOT decay epsilon here — call decayEpsilon() separately.
    * Returns whether the score is a new best.
    */
-  public onEpisodeEnd(score: number): boolean {
+  public onEpisodeEnd(score: number, linesCleared: number, piecesPlaced: number): boolean {
     this.stats.totalEpisodes++;
+    this.stats.totalScore += score;
+    this.stats.totalLinesCleared += linesCleared;
+    this.stats.totalPiecesPlaced += piecesPlaced;
 
     const isNewBest = score > this.stats.bestScore;
     if (isNewBest) {
       this.stats.bestScore = score;
     }
 
-    this.stats.recentScores.push(score);
-    if (this.stats.recentScores.length > 20) {
-      this.stats.recentScores.shift();
-    }
-
-    this.stats.averageScore =
-      this.stats.recentScores.reduce((s, x) => s + x, 0) / this.stats.recentScores.length;
+    this.pushRecentEpisodeValue(this.stats.recentScores, score);
+    this.pushRecentEpisodeValue(this.stats.recentLinesCleared, linesCleared);
+    this.pushRecentEpisodeValue(this.stats.recentPiecesPlaced, piecesPlaced);
+    this.updateEpisodeAverages();
 
     this.persist();
 
@@ -89,7 +90,15 @@ export class TetrisAiStatsService {
       bestScore: 0,
       epsilon: TETRIS_AI_CONFIG.epsilonStart,
       averageScore: 0,
+      lifetimeAverageScore: 0,
+      averageLinesClearedPerEpisode: 0,
+      averagePiecesPerEpisode: 0,
+      totalScore: 0,
+      totalLinesCleared: 0,
+      totalPiecesPlaced: 0,
       recentScores: [],
+      recentLinesCleared: [],
+      recentPiecesPlaced: [],
       demonstrationSamples: 0,
     };
   }
@@ -101,11 +110,44 @@ export class TetrisAiStatsService {
   public restoreStats(stats: TetrisAiStats): void {
     this.stats = { ...this.createDefaultStats(), ...stats };
     this.stepCount = this.stats.totalSteps;
+    this.updateEpisodeAverages();
     this.persist();
   }
 
   /** Persists current stats to localStorage. */
   public persist(): void {
     this.persistence.saveStats(this.stats);
+  }
+
+  private pushRecentEpisodeValue(target: number[], value: number): void {
+    target.push(value);
+    if (target.length > 20) {
+      target.shift();
+    }
+  }
+
+  private updateEpisodeAverages(): void {
+    this.stats.averageScore = this.computeAverage(this.stats.recentScores);
+    this.stats.lifetimeAverageScore = this.computeLifetimeAverage(this.stats.totalScore);
+    this.stats.averageLinesClearedPerEpisode = this.computeLifetimeAverage(
+      this.stats.totalLinesCleared,
+    );
+    this.stats.averagePiecesPerEpisode = this.computeLifetimeAverage(this.stats.totalPiecesPlaced);
+  }
+
+  private computeAverage(values: number[]): number {
+    if (values.length === 0) {
+      return 0;
+    }
+
+    return values.reduce((sum, value) => sum + value, 0) / values.length;
+  }
+
+  private computeLifetimeAverage(total: number): number {
+    if (this.stats.totalEpisodes === 0) {
+      return 0;
+    }
+
+    return total / this.stats.totalEpisodes;
   }
 }
