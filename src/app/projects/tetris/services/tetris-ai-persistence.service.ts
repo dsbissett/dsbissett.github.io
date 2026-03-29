@@ -10,6 +10,9 @@ const TRAINING_DB_NAME = 'tetris-ai-training-storage';
 const TRAINING_DB_VERSION = 1;
 const TRAINING_STORE_NAME = 'training-state';
 const REPLAY_INDEXED_DB_KEY = 'replay-buffer-v7';
+const REPLAY_META_INDEXED_DB_KEY = 'replay-buffer-v7-meta';
+const REPLAY_ITEM_INDEXED_DB_KEY_PREFIX = 'replay-buffer-v7-item-';
+const REPLAY_SEQUENCE_WIDTH = 10;
 const DEMONSTRATION_INDEXED_DB_KEY = 'demonstrations-v7';
 
 interface IndexedDbEntry<T> {
@@ -18,11 +21,22 @@ interface IndexedDbEntry<T> {
   value: T;
 }
 
+interface ReplayIndexedDbMeta {
+  nextSequence: number;
+  count: number;
+}
+
 @Injectable()
 export class TetrisAiPersistenceService {
   private readonly progressStore = inject(TetrisAiProgressStoreService);
 
   private dbPromise: Promise<IDBDatabase | null> | null = null;
+  private replayMeta: ReplayIndexedDbMeta = { nextSequence: 0, count: 0 };
+  private replayIncrementalPersistenceAvailable = false;
+
+  public canUseIncrementalReplayPersistence(): boolean {
+    return this.replayIncrementalPersistenceAvailable;
+  }
 
   /**
    * Loads stats from localStorage.
@@ -50,14 +64,26 @@ export class TetrisAiPersistenceService {
    * Returns null if nothing is stored or the data is corrupt.
    */
   public async loadReplayBuffer(): Promise<TetrisExperience[] | null> {
-    const indexedDbBuffer = await this.loadFromIndexedDb<TetrisExperience[]>(
-      REPLAY_INDEXED_DB_KEY,
-      (value): value is TetrisExperience[] =>
-        Array.isArray(value) && value.every((item) => this.isExperience(item)),
-    );
-    if (indexedDbBuffer !== null) {
-      localStorage.removeItem(TETRIS_AI_CONFIG.replayBufferStorageKey);
-      return indexedDbBuffer;
+    const database = await this.getDatabase();
+    this.replayIncrementalPersistenceAvailable = database !== null;
+    this.resetReplayMeta();
+
+    if (database) {
+      const incrementalBuffer = await this.loadReplayBufferFromIndexedDb(database);
+      if (incrementalBuffer !== null) {
+        localStorage.removeItem(TETRIS_AI_CONFIG.replayBufferStorageKey);
+        return incrementalBuffer;
+      }
+
+      const legacyIndexedDbBuffer = await this.loadFromIndexedDb<TetrisExperience[]>(
+        REPLAY_INDEXED_DB_KEY,
+        (value): value is TetrisExperience[] =>
+          Array.isArray(value) && value.every((item) => this.isExperience(item)),
+      );
+      if (legacyIndexedDbBuffer !== null) {
+        const stored = await this.saveReplayBuffer(legacyIndexedDbBuffer);
+        return stored;
+      }
     }
 
     const fallbackBuffer = this.loadReplayBufferFromLocalStorage();
@@ -74,20 +100,31 @@ export class TetrisAiPersistenceService {
    * Returns the stored buffer, which may be truncated only in the localStorage fallback path.
    */
   public async saveReplayBuffer(buffer: TetrisExperience[]): Promise<TetrisExperience[]> {
-    if (buffer.length === 0) {
+    const boundedBuffer = buffer.slice(-TETRIS_AI_CONFIG.replayBufferSize);
+    if (boundedBuffer.length === 0) {
       await this.clearReplayBuffer();
       return [];
     }
 
-    const savedToIndexedDb = await this.saveToIndexedDb(REPLAY_INDEXED_DB_KEY, buffer);
+    const database = await this.getDatabase();
+    this.replayIncrementalPersistenceAvailable = database !== null;
+
+    const savedToIndexedDb =
+      database !== null &&
+      (await this.clearReplayEntries(database).then(() =>
+        this.writeReplayBufferToIndexedDb(database, boundedBuffer),
+      ));
     if (savedToIndexedDb) {
       localStorage.removeItem(TETRIS_AI_CONFIG.replayBufferStorageKey);
       this.clearStorageWarning();
-      return buffer;
+      return boundedBuffer;
     }
 
-    const stored = this.saveReplayBufferToLocalStorage(buffer);
-    if (stored.length < buffer.length) {
+    this.replayIncrementalPersistenceAvailable = false;
+    this.resetReplayMeta();
+
+    const stored = this.saveReplayBufferToLocalStorage(boundedBuffer);
+    if (stored.length < boundedBuffer.length) {
       this.setStorageWarning(
         `Replay storage truncated to ${stored.length.toLocaleString()} entries because IndexedDB was unavailable and localStorage quota was exceeded.`,
       );
@@ -101,8 +138,72 @@ export class TetrisAiPersistenceService {
 
   /** Removes the replay buffer from IndexedDB and the fallback localStorage key. */
   public async clearReplayBuffer(): Promise<void> {
-    await this.deleteFromIndexedDb(REPLAY_INDEXED_DB_KEY);
+    const database = await this.getDatabase();
+    this.replayIncrementalPersistenceAvailable = database !== null;
+    if (database) {
+      await this.clearReplayEntries(database);
+    }
+    this.resetReplayMeta();
     localStorage.removeItem(TETRIS_AI_CONFIG.replayBufferStorageKey);
+  }
+
+  /** Persists a single replay experience to IndexedDB, evicting the oldest item when at capacity. */
+  public async appendReplayExperience(experience: TetrisExperience): Promise<boolean> {
+    const database = await this.getDatabase();
+    this.replayIncrementalPersistenceAvailable = database !== null;
+    if (!database) {
+      return false;
+    }
+
+    const currentMeta = this.replayMeta;
+    const shouldEvictOldest = currentMeta.count >= TETRIS_AI_CONFIG.replayBufferSize;
+    const oldestSequence = currentMeta.nextSequence - currentMeta.count;
+    const nextMeta: ReplayIndexedDbMeta = {
+      nextSequence: currentMeta.nextSequence + 1,
+      count: shouldEvictOldest ? currentMeta.count : currentMeta.count + 1,
+    };
+
+    return new Promise<boolean>((resolve) => {
+      try {
+        const transaction = database.transaction(TRAINING_STORE_NAME, 'readwrite');
+        const store = transaction.objectStore(TRAINING_STORE_NAME);
+        const savedAt = new Date().toISOString();
+
+        if (shouldEvictOldest) {
+          store.delete(this.buildReplayItemKey(oldestSequence));
+        }
+
+        store.put({
+          key: this.buildReplayItemKey(currentMeta.nextSequence),
+          savedAt,
+          value: experience,
+        } satisfies IndexedDbEntry<TetrisExperience>);
+        store.put({
+          key: REPLAY_META_INDEXED_DB_KEY,
+          savedAt,
+          value: nextMeta,
+        } satisfies IndexedDbEntry<ReplayIndexedDbMeta>);
+        store.delete(REPLAY_INDEXED_DB_KEY);
+
+        transaction.oncomplete = () => {
+          this.replayMeta = nextMeta;
+          localStorage.removeItem(TETRIS_AI_CONFIG.replayBufferStorageKey);
+          this.clearStorageWarning();
+          resolve(true);
+        };
+        transaction.onerror = () => {
+          this.replayIncrementalPersistenceAvailable = false;
+          resolve(false);
+        };
+        transaction.onabort = () => {
+          this.replayIncrementalPersistenceAvailable = false;
+          resolve(false);
+        };
+      } catch {
+        this.replayIncrementalPersistenceAvailable = false;
+        resolve(false);
+      }
+    });
   }
 
   /**
@@ -243,6 +344,168 @@ export class TetrisAiPersistenceService {
         resolve(false);
       }
     });
+  }
+
+  private async loadReplayBufferFromIndexedDb(
+    database: IDBDatabase,
+  ): Promise<TetrisExperience[] | null> {
+    const meta = await this.readReplayMeta(database);
+    if (!meta) {
+      return null;
+    }
+
+    this.replayMeta = meta;
+    if (meta.count === 0) {
+      return [];
+    }
+
+    const buffer = await this.readReplayEntries(database, meta);
+    if (buffer === null) {
+      this.resetReplayMeta();
+    }
+
+    return buffer;
+  }
+
+  private async readReplayMeta(database: IDBDatabase): Promise<ReplayIndexedDbMeta | null> {
+    const entry = await this.readEntry<ReplayIndexedDbMeta>(database, REPLAY_META_INDEXED_DB_KEY);
+    if (!entry || !this.isReplayMeta(entry.value)) {
+      return null;
+    }
+
+    const count = Math.min(entry.value.count, TETRIS_AI_CONFIG.replayBufferSize);
+    const nextSequence = Math.max(entry.value.nextSequence, count);
+    return {
+      nextSequence,
+      count: Math.min(count, nextSequence),
+    };
+  }
+
+  private readReplayEntries(
+    database: IDBDatabase,
+    meta: ReplayIndexedDbMeta,
+  ): Promise<TetrisExperience[] | null> {
+    return new Promise<TetrisExperience[] | null>((resolve) => {
+      try {
+        const transaction = database.transaction(TRAINING_STORE_NAME, 'readonly');
+        const store = transaction.objectStore(TRAINING_STORE_NAME);
+        const startSequence = meta.nextSequence - meta.count;
+        const request = store.getAll(
+          IDBKeyRange.bound(
+            this.buildReplayItemKey(startSequence),
+            this.buildReplayItemKey(meta.nextSequence - 1),
+          ),
+        );
+
+        request.onsuccess = () => {
+          const entries = Array.isArray(request.result)
+            ? (request.result as IndexedDbEntry<unknown>[])
+            : [];
+          if (entries.length !== meta.count) {
+            resolve(null);
+            return;
+          }
+
+          const values = entries.map((entry) => entry.value);
+          if (!values.every((item) => this.isExperience(item))) {
+            resolve(null);
+            return;
+          }
+
+          resolve(values as TetrisExperience[]);
+        };
+        request.onerror = () => resolve(null);
+        transaction.onabort = () => resolve(null);
+      } catch {
+        resolve(null);
+      }
+    });
+  }
+
+  private writeReplayBufferToIndexedDb(
+    database: IDBDatabase,
+    buffer: TetrisExperience[],
+  ): Promise<boolean> {
+    const savedAt = new Date().toISOString();
+
+    return new Promise<boolean>((resolve) => {
+      try {
+        const transaction = database.transaction(TRAINING_STORE_NAME, 'readwrite');
+        const store = transaction.objectStore(TRAINING_STORE_NAME);
+
+        buffer.forEach((experience, index) => {
+          store.put({
+            key: this.buildReplayItemKey(index),
+            savedAt,
+            value: experience,
+          } satisfies IndexedDbEntry<TetrisExperience>);
+        });
+        store.put({
+          key: REPLAY_META_INDEXED_DB_KEY,
+          savedAt,
+          value: {
+            nextSequence: buffer.length,
+            count: buffer.length,
+          } satisfies ReplayIndexedDbMeta,
+        } satisfies IndexedDbEntry<ReplayIndexedDbMeta>);
+        store.delete(REPLAY_INDEXED_DB_KEY);
+
+        transaction.oncomplete = () => {
+          this.replayMeta = {
+            nextSequence: buffer.length,
+            count: buffer.length,
+          };
+          resolve(true);
+        };
+        transaction.onerror = () => resolve(false);
+        transaction.onabort = () => resolve(false);
+      } catch {
+        resolve(false);
+      }
+    });
+  }
+
+  private clearReplayEntries(database: IDBDatabase): Promise<void> {
+    return new Promise<void>((resolve) => {
+      try {
+        const transaction = database.transaction(TRAINING_STORE_NAME, 'readwrite');
+        const store = transaction.objectStore(TRAINING_STORE_NAME);
+        store.delete(REPLAY_INDEXED_DB_KEY);
+        store.delete(REPLAY_META_INDEXED_DB_KEY);
+
+        const request = store.openKeyCursor(
+          IDBKeyRange.bound(
+            REPLAY_ITEM_INDEXED_DB_KEY_PREFIX,
+            `${REPLAY_ITEM_INDEXED_DB_KEY_PREFIX}\uffff`,
+          ),
+        );
+
+        request.onsuccess = () => {
+          const cursor = request.result;
+          if (!cursor) {
+            return;
+          }
+
+          cursor.delete();
+          cursor.continue();
+        };
+        request.onerror = () => resolve();
+        transaction.oncomplete = () => resolve();
+        transaction.onabort = () => resolve();
+      } catch {
+        resolve();
+      }
+    });
+  }
+
+  private buildReplayItemKey(sequence: number): string {
+    return `${REPLAY_ITEM_INDEXED_DB_KEY_PREFIX}${sequence
+      .toString()
+      .padStart(REPLAY_SEQUENCE_WIDTH, '0')}`;
+  }
+
+  private resetReplayMeta(): void {
+    this.replayMeta = { nextSequence: 0, count: 0 };
   }
 
   private async deleteFromIndexedDb(key: string): Promise<void> {
@@ -405,6 +668,22 @@ export class TetrisAiPersistenceService {
   private setStorageWarning(message: string): void {
     this.progressStore.patch({ storageWarning: message });
     console.warn(message);
+  }
+
+  private isReplayMeta(value: unknown): value is ReplayIndexedDbMeta {
+    if (!value || typeof value !== 'object') {
+      return false;
+    }
+
+    const candidate = value as Partial<ReplayIndexedDbMeta>;
+    return (
+      typeof candidate.nextSequence === 'number' &&
+      Number.isInteger(candidate.nextSequence) &&
+      candidate.nextSequence >= 0 &&
+      typeof candidate.count === 'number' &&
+      Number.isInteger(candidate.count) &&
+      candidate.count >= 0
+    );
   }
 
   private isExperience(value: unknown): value is TetrisExperience {

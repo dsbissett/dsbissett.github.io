@@ -12,13 +12,13 @@ export const TETRIS_AI_CONFIG = {
   hiddenLayer2: 64,
 
   // Training hyperparameters
-  replayBufferSize: 10000,
+  replayBufferSize: 50000,
   batchSize: 64,
   // Gamma 0.92: more myopic to focus on immediate placement quality.
   // Tetris boards change rapidly; long-horizon bootstrapping adds noise.
   gamma: 0.89,
   learningRate: 0.00015,
-  trainEveryNSteps: 2,
+  trainEveryNSteps: 4,
   // Target sync every 250 steps (~8 episodes). Slower sync prevents Q-value
   // oscillation that caused the ep55-59 regression in R3.
   targetNetworkUpdateFrequency: 250,

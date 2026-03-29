@@ -62,9 +62,10 @@ export class TetrisTrainerService {
 
   /** Runs one RL training step: samples batch, computes targets, fits model, logs, syncs target if needed. */
   private async runTraining(): Promise<void> {
+    await tf.nextFrame();
     const batch = this.replayBuffer.sampleBatch();
     const { targets, nextValues } = this.computeTargets(batch);
-    const currentPredictions = this.computeCurrentPredictions(batch);
+    const currentPredictions = await this.computeCurrentPredictions(batch);
     const tdErrors = targets.map((target, index) => target - currentPredictions[index]);
     const meanAbsTdError =
       tdErrors.reduce((sum, error) => sum + Math.abs(error), 0) / tdErrors.length;
@@ -109,6 +110,7 @@ export class TetrisTrainerService {
     importedRehearsalDue: boolean,
     stepCount: number,
   ): Promise<void> {
+    await tf.nextFrame();
     const batch = this.demoBuffer.sampleBatch();
     const xs = tf.tensor2d(batch.map((e) => e.features));
     const ys = tf.tensor2d(
@@ -148,12 +150,12 @@ export class TetrisTrainerService {
   }
 
   /** Computes current model predictions for a batch (for TD error tracking). */
-  private computeCurrentPredictions(batch: TetrisExperience[]): number[] {
-    return tf.tidy(() => {
-      const input = tf.tensor2d(batch.map((e) => e.features));
-      const pred = Array.from((this.model.getModel().predict(input) as tf.Tensor).dataSync());
-      input.dispose();
-      return pred;
-    });
+  private async computeCurrentPredictions(batch: TetrisExperience[]): Promise<number[]> {
+    const input = tf.tensor2d(batch.map((e) => e.features));
+    const predTensor = this.model.getModel().predict(input) as tf.Tensor;
+    const pred = Array.from(await predTensor.data());
+    input.dispose();
+    predTensor.dispose();
+    return pred;
   }
 }

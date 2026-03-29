@@ -29,6 +29,7 @@ export class TetrisAiAgentService {
 
   /** Initialises TF.js, loads persisted state, and builds or restores the model. */
   public async initialize(): Promise<void> {
+    await tf.setBackend('cpu');
     await tf.ready();
     this.persistence.cleanupLegacyStorage();
     this.stats.initialize();

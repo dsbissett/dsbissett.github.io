@@ -9,10 +9,14 @@ export class TetrisReplayBufferService {
   private readonly persistence = inject(TetrisAiPersistenceService);
   private buffer: TetrisExperience[] = [];
   private persistVersion = 0;
+  private useIncrementalPersistence = false;
+  private addCount = 0;
 
-  /** Loads replay buffer from localStorage on initialization. */
+  /** Loads replay buffer from browser storage and captures the active persistence mode. */
   public async load(): Promise<void> {
     this.buffer = (await this.persistence.loadReplayBuffer()) ?? [];
+    this.useIncrementalPersistence = this.persistence.canUseIncrementalReplayPersistence();
+    this.addCount = 0;
   }
 
   /** Persists replay buffer asynchronously. Updates the in-memory buffer only when fallback truncation occurs. */
@@ -20,6 +24,7 @@ export class TetrisReplayBufferService {
     const snapshot = [...this.buffer];
     const persistVersion = ++this.persistVersion;
     void this.persistence.saveReplayBuffer(snapshot).then((stored) => {
+      this.useIncrementalPersistence = this.persistence.canUseIncrementalReplayPersistence();
       if (persistVersion !== this.persistVersion || stored.length === snapshot.length) {
         return;
       }
@@ -32,7 +37,9 @@ export class TetrisReplayBufferService {
   public async clear(): Promise<void> {
     this.persistVersion++;
     this.buffer = [];
+    this.addCount = 0;
     await this.persistence.clearReplayBuffer();
+    this.useIncrementalPersistence = this.persistence.canUseIncrementalReplayPersistence();
   }
 
   /** Returns current buffer size. */
@@ -58,7 +65,9 @@ export class TetrisReplayBufferService {
   public async setBuffer(buffer: TetrisExperience[]): Promise<void> {
     const persistVersion = ++this.persistVersion;
     this.buffer = buffer.slice(-TETRIS_AI_CONFIG.replayBufferSize);
+    this.addCount = 0;
     const stored = await this.persistence.saveReplayBuffer(this.buffer);
+    this.useIncrementalPersistence = this.persistence.canUseIncrementalReplayPersistence();
     if (persistVersion === this.persistVersion) {
       this.buffer = stored;
     }
@@ -73,7 +82,21 @@ export class TetrisReplayBufferService {
       this.buffer.shift();
     }
     this.buffer.push(experience);
-    this.persist();
+    if (this.useIncrementalPersistence) {
+      void this.persistence.appendReplayExperience(experience).then((stored) => {
+        if (stored) {
+          return;
+        }
+
+        this.useIncrementalPersistence = false;
+        this.persist();
+      });
+      return;
+    }
+
+    if (++this.addCount % 50 === 0) {
+      this.persist();
+    }
   }
 
   /** Returns a stratified batch: recent, strong-positive, terminal, informative, and random. */
@@ -111,19 +134,16 @@ export class TetrisReplayBufferService {
   }
 
   /**
-   * Builds the informative pool: non-terminal experiences with mid-range rewards,
-   * sorted by priority descending, sliced to top 25% of buffer.
+   * Builds the informative pool: non-terminal experiences with mid-range rewards.
+   * Filters without sorting to avoid O(n log n) cost on large buffers.
    */
   private buildInformativePool(): TetrisExperience[] {
-    return [...this.buffer]
-      .filter(
-        (e) =>
-          !e.done &&
-          e.reward > TETRIS_AI_CONFIG.replayStrongNegativeRewardThreshold &&
-          e.reward < TETRIS_AI_CONFIG.replayStrongPositiveRewardThreshold,
-      )
-      .sort((a, b) => this.getExperiencePriority(b) - this.getExperiencePriority(a))
-      .slice(0, Math.max(TETRIS_AI_CONFIG.batchSize, Math.ceil(this.buffer.length * 0.25)));
+    return this.buffer.filter(
+      (e) =>
+        !e.done &&
+        e.reward > TETRIS_AI_CONFIG.replayStrongNegativeRewardThreshold &&
+        e.reward < TETRIS_AI_CONFIG.replayStrongPositiveRewardThreshold,
+    );
   }
 
   /**
@@ -138,12 +158,5 @@ export class TetrisReplayBufferService {
     ) {
       batch.push(pool[Math.floor(Math.random() * pool.length)]);
     }
-  }
-
-  /** Computes a scalar priority for an experience used for informative pool sorting. */
-  private getExperiencePriority(experience: TetrisExperience): number {
-    return (
-      Math.abs(experience.reward) + (experience.reward > 0 ? 1.5 : 0) + (experience.done ? 2 : 0)
-    );
   }
 }
