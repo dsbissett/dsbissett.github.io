@@ -78,6 +78,14 @@ export const routes: Routes = [
       ),
   },
   {
+    path: 'pretext',
+    title: 'Pretext Dragon',
+    loadComponent: () =>
+      import('./projects/pretext/pretext.component').then(
+        (m) => m.PretextComponent
+      ),
+  },
+  {
     path: 'pink-tetris',
     title: 'Pink Tetris',
     loadComponent: () =>
@@ -96,7 +104,8 @@ export const routes: Routes = [
         project.path !== 'pid' &&
         project.path !== 'particle-life' &&
         project.path !== 'piano' &&
-        project.path !== 'tetris'
+        project.path !== 'tetris' &&
+        project.path !== 'pretext'
     )
     .map((project) => ({
     path: project.path,

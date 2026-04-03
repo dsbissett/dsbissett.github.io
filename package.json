@@ -17,6 +17,7 @@
     "@angular/forms": "^21.2.0",
     "@angular/platform-browser": "^21.2.0",
     "@angular/router": "^21.2.0",
+    "@chenglou/pretext": "^0.0.4",
     "@dsbissett/ngx-clippy": "^1.0.9",
     "@tensorflow/tfjs": "^4.22.0",
     "buffer": "^6.0.3",

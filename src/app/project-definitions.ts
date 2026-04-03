@@ -92,4 +92,12 @@ export const projectDefinitions: readonly ProjectDefinition[] = [
     accent: 'vio',
     icon: '[]',
   },
+  {
+    path: 'pretext',
+    title: 'Pretext Dragon',
+    summary: 'ASCII dragon powered by DOM-free text layout — guide it with your cursor, hold to breathe fire.',
+    tags: ['Text', 'Physics'],
+    accent: 'lime',
+    icon: '◈',
+  },
 ] as const;

@@ -1,0 +1,67 @@
+<div class="pretext-wrap">
+  <canvas #canvas class="pretext-canvas"></canvas>
+
+  <!-- Preset panel -->
+  @if (showPanel) {
+    <aside class="panel">
+      <div class="panel-header">
+        <span class="panel-title">PRETEXT DRAGON</span>
+        <button type="button" class="panel-close" (click)="togglePanel()" aria-label="Close panel">✕</button>
+      </div>
+
+      <div class="panel-section">
+        <div class="section-label">PRESET</div>
+        <div class="preset-grid">
+          @for (name of presetNames; track name) {
+            <button
+              type="button"
+              class="preset-btn"
+              [class.active]="activePreset === name"
+              (click)="applyPreset(name)"
+            >{{ name }}</button>
+          }
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <div class="section-label">DRAGON SCALE</div>
+        <div class="slider-row">
+          <input
+            type="range"
+            class="scale-slider"
+            min="0.5"
+            max="4"
+            step="0.1"
+            [value]="dragonScale"
+            (input)="setDragonScale($event)"
+            aria-label="Dragon scale"
+          >
+          <span class="slider-value">{{ dragonScaleLabel }}×</span>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <div class="hint-row">
+          <span class="hint-key">MOVE</span>
+          <span class="hint-val">Guide dragon</span>
+        </div>
+        <div class="hint-row">
+          <span class="hint-key">HOLD</span>
+          <span class="hint-val">Breathe fire</span>
+        </div>
+        <div class="hint-row">
+          <span class="hint-key">P</span>
+          <span class="hint-val">Toggle panel</span>
+        </div>
+      </div>
+
+      <div class="panel-footer">
+        Text layout by <a href="https://github.com/chenglou/pretext" target="_blank" rel="noopener">@chenglou/pretext</a>
+      </div>
+    </aside>
+  }
+
+  @if (!showPanel) {
+    <button type="button" class="panel-toggle" (click)="togglePanel()" aria-label="Open panel">⚙</button>
+  }
+</div>

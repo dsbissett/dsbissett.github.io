@@ -1,0 +1,220 @@
+:host {
+  display: block;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+  background: #060610;
+  font-family: 'Courier New', monospace;
+}
+
+.pretext-wrap {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+}
+
+.pretext-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: none;
+}
+
+// ─── Panel ──────────────────────────────────────────────────────────────────
+
+.panel {
+  position: absolute;
+  bottom: 24px;
+  right: 24px;
+  width: 200px;
+  background: rgba(10, 10, 20, 0.85);
+  border: 1px solid rgba(62, 207, 142, 0.25);
+  border-radius: 6px;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  padding: 14px;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  color: #8a8793;
+  pointer-events: auto;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.panel-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: #3ecf8e;
+}
+
+.panel-close {
+  background: none;
+  border: none;
+  color: #8a8793;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+  line-height: 1;
+
+  &:hover {
+    color: #fff;
+  }
+}
+
+.panel-section {
+  margin-bottom: 14px;
+}
+
+.section-label {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: rgba(62, 207, 142, 0.5);
+  margin-bottom: 8px;
+}
+
+.preset-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  max-height: 160px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(62, 207, 142, 0.3) transparent;
+}
+
+.preset-btn {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  color: #8a8793;
+  cursor: pointer;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  padding: 5px 4px;
+  text-align: center;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+
+  &:hover {
+    background: rgba(62, 207, 142, 0.12);
+    border-color: rgba(62, 207, 142, 0.4);
+    color: #c8c4c0;
+  }
+
+  &.active {
+    background: rgba(62, 207, 142, 0.18);
+    border-color: rgba(62, 207, 142, 0.6);
+    color: #3ecf8e;
+  }
+}
+
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.scale-slider {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(62, 207, 142, 0.2);
+  outline: none;
+  cursor: pointer;
+
+  &::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #3ecf8e;
+    cursor: pointer;
+  }
+
+  &::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #3ecf8e;
+    border: none;
+    cursor: pointer;
+  }
+}
+
+.slider-value {
+  font-size: 10px;
+  color: #3ecf8e;
+  min-width: 28px;
+  text-align: right;
+}
+
+.hint-row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  margin-bottom: 5px;
+}
+
+.hint-key {
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: #3ecf8e;
+  background: rgba(62, 207, 142, 0.1);
+  border: 1px solid rgba(62, 207, 142, 0.3);
+  border-radius: 2px;
+  padding: 1px 5px;
+  white-space: nowrap;
+  min-width: 38px;
+  text-align: center;
+}
+
+.hint-val {
+  font-size: 10px;
+  color: #5a5760;
+}
+
+.panel-footer {
+  font-size: 9px;
+  color: rgba(138, 135, 147, 0.5);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 10px;
+
+  a {
+    color: rgba(62, 207, 142, 0.6);
+    text-decoration: none;
+
+    &:hover {
+      color: #3ecf8e;
+    }
+  }
+}
+
+.panel-toggle {
+  position: absolute;
+  bottom: 24px;
+  right: 24px;
+  background: rgba(10, 10, 20, 0.7);
+  border: 1px solid rgba(62, 207, 142, 0.25);
+  border-radius: 4px;
+  color: #3ecf8e;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 8px;
+  pointer-events: auto;
+  transition: background 0.15s;
+
+  &:hover {
+    background: rgba(62, 207, 142, 0.15);
+  }
+}
