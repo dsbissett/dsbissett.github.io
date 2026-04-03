@@ -239,6 +239,8 @@ export class PretextComponent implements AfterViewInit, OnDestroy {
   protected showPanel = true;
   protected dragonScale = 1;
   protected get dragonScaleLabel(): string { return this.dragonScale.toFixed(1); }
+  protected disruption = 1;  // multiplier applied to repulseForce at runtime
+  protected get disruptionLabel(): string { return this.disruption.toFixed(1); }
 
   // Config
   private cfg = {
@@ -359,6 +361,10 @@ export class PretextComponent implements AfterViewInit, OnDestroy {
 
   protected setDragonScale(event: Event): void {
     this.dragonScale = parseFloat((event.target as HTMLInputElement).value);
+  }
+
+  protected setDisruption(event: Event): void {
+    this.disruption = parseFloat((event.target as HTMLInputElement).value);
   }
 
   protected togglePanel(): void {
@@ -586,7 +592,7 @@ export class PretextComponent implements AfterViewInit, OnDestroy {
       const d = Math.hypot(dx, dy);
       if (d < fr && d > 0.01) {
         const proximity = 1 - d / fr;
-        const force = proximity * this.cfg.repulseForce * 2.5 / lt.mass;
+        const force = proximity * this.cfg.repulseForce * (0.015 + this.disruption) * 2.5 / lt.mass;
         lt.vx += dx / d * force + nx * force * 1.8;
         lt.vy += dy / d * force + ny * force * 1.8;
         lt.vrot += (Math.random() - 0.5) * proximity * 0.6;
@@ -634,7 +640,7 @@ export class PretextComponent implements AfterViewInit, OnDestroy {
         if (d < r && d > 0.01) {
           const proximity = 1 - d / r;
           // Base repulsion
-          const repulse = proximity * this.cfg.repulseForce / lt.mass;
+          const repulse = proximity * this.cfg.repulseForce * (0.015 + this.disruption) / lt.mass;
           lt.vx += (dx / d) * repulse;
           lt.vy += (dy / d) * repulse;
 
@@ -825,38 +831,23 @@ export class PretextComponent implements AfterViewInit, OnDestroy {
     ctx.globalAlpha = 1;
   }
 
+  // Character palette matching the reference dragon's shape
+  private readonly dragonChars = '◆◆◇▼█▓▓▒╬╬╬╬╬╬╬╬╬╬╫╫╫╪╪╪╧╧╤╤╥╥║║││┃┃╎╎╏╏::·····..'.split('');
+
+  private segScale(i: number, n: number): number {
+    const t = i / n;
+    // Head segments are large, taper to thin tail
+    return (2.0 * (1 - t * t) + 0.2) * this.dragonScale;
+  }
+
   private renderDragon(ctx: CanvasRenderingContext2D): void {
     const segs = this.segments;
     const n = Math.min(segs.length, this.cfg.segCount);
+    const now = performance.now() / 1000;
 
-    for (let i = n - 1; i >= 1; i--) {
-      const seg = segs[i];
-      const t = i / n;
-      const alpha = 0.3 + t * 0.1 + (1 - t) * 0.8;
-      ctx.globalAlpha = alpha;
-      const hue = 150 + (1 - t) * 30;
-      const light = 40 + (1 - t) * 40;
-      ctx.fillStyle = `hsl(${hue}, 80%, ${light}%)`;
-      ctx.font = `${(10 + (1 - t) * 6) * this.dpr * this.dragonScale}px monospace`;
-      ctx.textBaseline = 'middle';
-      ctx.textAlign = 'center';
-      const chars = ['≋', '~', '≈', '∿', '◇'];
-      ctx.fillText(chars[i % chars.length], seg.x, seg.y);
-    }
-
-    const head = segs[0];
-    ctx.globalAlpha = 1;
-    ctx.font = `bold ${HEAD_SIZE * this.dpr * this.dragonScale}px monospace`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.shadowColor = ACCENT;
-    ctx.shadowBlur = this.firing ? 30 * this.dpr * this.dragonScale : 12 * this.dpr * this.dragonScale;
-    ctx.fillStyle = this.firing ? '#aaffdd' : ACCENT;
-    ctx.fillText(this.firing ? '🐲' : '◈', head.x, head.y);
-    ctx.shadowBlur = 0;
-    ctx.textAlign = 'left';
-
+    // Draw fire glow behind everything
     if (this.firing) {
+      const head = segs[0];
       const second = segs[1] || head;
       const ax = head.x - second.x;
       const ay = head.y - second.y;
@@ -876,7 +867,85 @@ export class PretextComponent implements AfterViewInit, OnDestroy {
       ctx.fill();
     }
 
+    // Draw body back-to-front
+    for (let i = n - 1; i >= 0; i--) {
+      const seg = segs[i];
+      const sc = this.segScale(i, n);
+      const size = 14 * this.dpr * sc;
+      const ci = Math.min(i, this.dragonChars.length - 1);
+
+      // Angle: head points at mouse, body segments point toward previous segment
+      const angle = i === 0
+        ? Math.atan2(this.mouse.y - segs[0].y, this.mouse.x - segs[0].x)
+        : Math.atan2(segs[i - 1].y - seg.y, segs[i - 1].x - seg.x);
+
+      // Color: keep our teal/green palette, brighter at head
+      const t = i / n;
+      const hue = 150 + (1 - t) * 30;
+      const light = 35 + (1 - t) * 45;
+      const alpha = 0.35 + (1 - t) * 0.65;
+
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = `hsl(${hue}, 80%, ${light}%)`;
+      ctx.font = `bold ${size}px 'Courier New', monospace`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      // Body segment with sine wobble
+      ctx.save();
+      ctx.translate(seg.x, seg.y);
+      ctx.rotate(angle);
+      ctx.fillText(this.dragonChars[ci], 0, Math.sin(now * 5 + i * 0.35) * 1.5 * this.dpr);
+      ctx.restore();
+
+      // Wings — segments 7-16, every 2nd
+      if (i >= 7 && i <= 16 && i % 2 === 0) {
+        const wp = Math.sin(now * 3 + i * 0.5) * 0.3;
+        const wd = size * 1.4;
+        const w1 = angle + Math.PI / 2 + wp;
+        const w2 = angle - Math.PI / 2 - wp;
+        const wingSize = size * 0.85;
+        ctx.globalAlpha = alpha * 0.9;
+        ctx.font = `bold ${wingSize}px 'Courier New', monospace`;
+        ctx.fillText('≺', seg.x + Math.cos(w1) * wd, seg.y + Math.sin(w1) * wd);
+        ctx.fillText('≻', seg.x + Math.cos(w2) * wd, seg.y + Math.sin(w2) * wd);
+      }
+
+      // Spines — segments 4-30, every 3rd
+      if (i >= 4 && i <= 30 && i % 3 === 0) {
+        const sa = angle + Math.PI / 2;
+        const sd = size * 0.35;
+        const spineSize = size * 0.7;
+        ctx.globalAlpha = alpha * 0.8;
+        ctx.font = `bold ${spineSize}px 'Courier New', monospace`;
+        ctx.fillText('▴', seg.x + Math.cos(sa) * sd, seg.y + Math.sin(sa) * sd);
+      }
+    }
+
+    // Head eye — drawn on top
+    const head = segs[0];
+    const headAngle = Math.atan2(this.mouse.y - head.y, this.mouse.x - head.x);
+    const headSc = this.segScale(0, n);
+    const headSize = 14 * this.dpr * headSc;
+    const eyeOffset = headSize * 0.55;
+
+    // Blink logic
+    const blink = (now % 5) > 4.7;
+    const eyeChar = blink ? '—' : this.firing ? '◉' : '⊙';
+
     ctx.globalAlpha = 1;
+    ctx.fillStyle = this.firing ? '#aaffdd' : ACCENT;
+    ctx.font = `bold ${headSize * 0.5}px 'Courier New', monospace`;
+    ctx.shadowColor = ACCENT;
+    ctx.shadowBlur = this.firing ? 20 * this.dpr : 8 * this.dpr;
+
+    const eyeX = head.x + Math.cos(headAngle) * eyeOffset;
+    const eyeY = head.y + Math.sin(headAngle) * eyeOffset;
+    ctx.fillText(eyeChar, eyeX, eyeY);
+    ctx.shadowBlur = 0;
+
+    ctx.globalAlpha = 1;
+    ctx.textAlign = 'left';
   }
 
   private renderCrosshair(ctx: CanvasRenderingContext2D): void {

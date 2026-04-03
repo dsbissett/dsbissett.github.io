@@ -24,6 +24,23 @@
       </div>
 
       <div class="panel-section">
+        <div class="section-label">DISRUPTION</div>
+        <div class="slider-row">
+          <input
+            type="range"
+            class="scale-slider"
+            min="0"
+            max="3"
+            step="0.1"
+            [value]="disruption"
+            (input)="setDisruption($event)"
+            aria-label="Disruption force"
+          >
+          <span class="slider-value">{{ disruptionLabel }}×</span>
+        </div>
+      </div>
+
+      <div class="panel-section">
         <div class="section-label">DRAGON SCALE</div>
         <div class="slider-row">
           <input
