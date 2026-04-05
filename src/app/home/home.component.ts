@@ -30,23 +30,199 @@ const SCRAMBLE_CHARS =
   'ドレイクビセットプロジェ' +
   '的项目專案드레이크비셋' +
   'מشاريعدريك' +
-  'ΤαέργαΝτρέικ' +
+  'ΤΑΕΡΓΑΝΤΡΕΙΚ' +
   'ड्रेकबिसेट' +
   'โครงการของ';
+
 const GLITCH_TRANSLATIONS = [
-  'โครงการของ Drake Bissett',
+  // Thai
+  'โครงการของ DRAKE BISSETT',
+
+  // Japanese
   'ドレイク・ビセットのプロジェクト',
-  'Drake Bissett 的项目',
-  'Drake Bissett 的專案',
+
+  // Chinese (Simplified)
+  'DRAKE BISSETT 的项目',
+
+  // Chinese (Traditional)
+  'DRAKE BISSETT 的專案',
+
+  // Arabic
   'مشاريع دريك بيسيت',
-  'Τα έργα του Ντρέικ Μπισέτ',
-  'Проекты Дрейка Биссетта',
+
+  // Greek
+  'ΤΑ ΕΡΓΑ ΤΟΥ ΝΤΡΕΙΚ ΜΠΙΣΕΤ',
+
+  // Russian / Cyrillic
+  'ПРОЕКТЫ ДРЕЙКА БИССЕТТА',
+
+  // Korean
   '드레이크 비셋의 프로젝트',
-  'הפרויקטים של דרייק ביסט',
+
+  // Hindi / Devanagari
   'ड्रेक बिसेट की परियोजनाएँ',
+
+  // Bengali
   'ড্রেক বিসেটের প্রকল্পসমূহ',
+
+  // Tamil
   'ட்ரேக் பிசெட் அவர்களின் திட்டங்கள்',
-  'Consilia Drake Bissett',
+
+  // Latin
+  'CONSILIA DRAKE BISSETT',
+
+  // Persian / Farsi
+  'پروژه‌های دریک بیست',
+
+  // Urdu
+  'ڈریک بسیٹ کے منصوبے',
+
+  // Gujarati
+  'ડ્રેક બિસેટના પ્રોજેક્ટ્સ',
+
+  // Punjabi / Gurmukhi
+  'ਡ੍ਰੇਕ ਬਿਸੇਟ ਦੇ ਪ੍ਰੋਜੈਕਟ',
+
+  // Lao
+  'ໂຄງການຂອງ DRAKE BISSETT',
+
+  // Khmer
+  'គម្រោងរបស់ DRAKE BISSETT',
+
+  // Amharic / Ge’ez
+  'የድሬክ ቢሴት ፕሮጀክቶች',
+
+  // Tifinagh
+  'ⴰⵎⴰⵣⵉⵖ ⴷⵔⴰⴽ ⴱⵉⵙⴻⵜ',
+
+  // Polish
+  'PROJEKTY DRAKE’A BISSETTA',
+
+  // Czech
+  'PROJEKTY DRAKEA BISSETTA',
+
+  // Icelandic
+  'VERKEFNI DRAKE BISSETT',
+
+  // Armenian
+  'ԴՐԵՅՔ ԲԻՍԵԹԻ ՆԱԽԱԳԾԵՐԸ',
+
+  // Georgian
+  'დრეიკ ბისეტის პროექტები',
+
+  // Hebrew
+  'הפרויקטים של DRAKE BISSETT',
+
+  // Vietnamese
+  'CÁC DỰ ÁN CỦA DRAKE BISSETT',
+
+  // Turkish
+  'DRAKE BISSETT PROJELERİ',
+
+  // Romanian
+  'PROIECTELE LUI DRAKE BISSETT',
+
+  // Hungarian
+  'DRAKE BISSETT PROJEKTJEI',
+
+  // Serbian (Cyrillic)
+  'ПРОЈЕКТИ ДРЕЈКА БИСЕТА',
+
+  // Ukrainian
+  'ПРОЄКТИ ДРЕЙКА БІССЕТТА',
+
+  // Bulgarian
+  'ПРОЕКТИТЕ НА ДРЕЙК БИСЕТ',
+
+  // Mongolian (Cyrillic)
+  'ДРЕЙК БИССЕТТИЙН ТӨСЛҮҮД',
+
+  // Sinhala
+  'ඩ්‍රේක් බිසෙට්ගේ ව්‍යාපෘති',
+
+  // Burmese / Myanmar
+  'DRAKE BISSETT ၏ ပရောဂျက်များ',
+
+  // Telugu
+  'డ్రేక్ బిస్సెట్ ప్రాజెక్టులు',
+
+  // Kannada
+  'ಡ್ರೇಕ್ ಬಿಸ್ಸೆಟ್ ಯೋಜನೆಗಳು',
+
+  // Malayalam
+  'ഡ്രേക്ക് ബിസെറ്റിന്റെ പദ്ധതികൾ',
+
+  // Odia
+  'ଡ୍ରେକ ବିସେଟ୍ଙ୍କ ପ୍ରକଳ୍ପଗୁଡ଼ିକ',
+
+  // Assamese
+  'ড্ৰেক বিসেটৰ প্ৰকল্পসমূহ',
+
+  // Nepali
+  'ड्रेक बिसेटका परियोजनाहरू',
+
+  // Sanskrit / Devanagari
+  'ड्रेक बिसेटस्य परियोजनाः',
+
+  // Tibetan
+  'DRAKE BISSETT ཡི་ལས་གཞི་རྣམས',
+
+  // N’Ko
+  'ߘߙߍߞ ߓߌߛߍߕ ߞߍ ߞߊ߲ߞߋ߲߫',
+
+  // Vai
+  'ꕜꕃ ꔫꔻꕪ ꕉ ꔪꘋꔻ',
+
+  // Syriac
+  'ܦܪ̈ܘܝܩܛܐ ܕܕܪܝܟ ܒܝܣܝܬ',
+
+  // Thaana
+  'ޑްރޭކް ބިސެޓްގެ ޕްރޮޖެކްޓްތައް',
+
+  // Inuktitut (Canadian syllabics)
+  'ᑐᓚᐃᒃ ᐱᓯᑦ ᐱᕈᔭᒃᑦ',
+
+  // Cherokee
+  'ᏟᎵᎦ ᏈᏎᏘ ᎤᎵᏍᏕᎸᏗ',
+
+  // Yi
+  'ꄊꂵ ꀘꌠꌋ ꁯꄉ',
+
+  // Canadian Aboriginal syllabics (stylized)
+  'ᑕᕋᐃᒃ ᐱᓯᑦ ᐸᕐᔮᒃᑦ',
+
+  // Runic
+  'ᚦᚱᚨᚲᛖ ᛒᛁᛋᛋᛖᛏ ᛈᚱᛟᛃᛖᚲᛏᛋ',
+
+  // Glagolitic
+  'Ⰴⱃⰰⰽⰵ ⰱⰻⱄⱄⰵⱅ ⱂⱃⱁⱛⰵⰽⱅⱏ',
+
+  // Gothic
+  '𐌳𐍂𐌰𐌺𐌴 𐌱𐌹𐍃𐍃𐌴𐍄 𐍀𐍂𐍉𐌾𐌴𐌺𐍄𐍃',
+
+  // Ogham
+  '᚛ᚇᚏᚐᚋᚓ ᚁᚔᚄᚄᚓᚈ ᚚᚏᚑᚂᚓᚉᚈᚄ᚜',
+
+  // Fullwidth Latin
+  'ＤＲＡＫＥ ＢＩＳＳＥＴＴ ＰＲＯＪＥＣＴＳ',
+
+  // Mathematical Bold
+  '𝐃𝐑𝐀𝐊𝐄 𝐁𝐈𝐒𝐒𝐄𝐓𝐓 𝐏𝐑𝐎𝐉𝐄𝐂𝐓𝐒',
+
+  // Mathematical Fraktur
+  '𝕯𝕽𝕬𝕶𝕰 𝕭𝕴𝕾𝕾𝕰𝕿𝕿 𝕻𝕽𝕺𝕵𝕰𝕮𝕿𝕾',
+
+  // Mathematical Script
+  '𝒟𝑅𝒜𝒦𝐸 𝐵𝐼𝒮𝒮𝐸𝒯𝒯 𝒫𝑅𝒪𝒥𝐸𝒞𝒯𝒮',
+
+  // Small Caps / Phonetic-style
+  'ᴅʀᴀᴋᴇ ʙɪꜱꜱᴇᴛᴛ ᴘʀᴏᴊᴇᴄᴛꜱ',
+
+  // Circled Latin
+  'ⒹⓇⒶⓀⒺ ⒷⒾⓈⓈⒺⓉⓉ ⓅⓇⓄⒿⒺⒸⓉⓈ',
+
+  // Squared Latin
+  '🄳🅁🄰🄺🄴 🄱🄸🅂🅂🄴🅃🅃 🄿🅁🄾🄹🄴🄲🅃🅂',
 ];
 
 const CLIPPY_QUIPS = [

@@ -4,7 +4,6 @@ export interface ProjectDefinition {
   summary: string;
   tags: readonly string[];
   accent: 'aqua' | 'sun' | 'vio' | 'lime' | 'hot';
-  legacyPath?: string;
   icon: string;
 }
 
@@ -23,7 +22,6 @@ export const projectDefinitions: readonly ProjectDefinition[] = [
     summary: 'A retro command-line playground with secrets, shortcuts, and glow.',
     tags: ['CLI', 'Retro'],
     accent: 'lime',
-    legacyPath: 'legacy/terminal/index.html',
     icon: '>_',
   },
   {

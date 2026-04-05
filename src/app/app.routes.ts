@@ -1,13 +1,11 @@
 import { Routes } from '@angular/router';
 
-import { projectDefinitions } from './project-definitions';
-
 export const routes: Routes = [
   {
     path: '',
     title: "Drake Bissett's Projects",
     loadComponent: () =>
-      import('./features/home/home.component').then((m) => m.HomeComponent),
+      import('./home/home.component').then((m) => m.HomeComponent),
   },
   {
     path: 'ai-chat',
@@ -93,31 +91,14 @@ export const routes: Routes = [
         (m) => m.PinkTetrisComponent
       ),
   },
-  ...projectDefinitions
-    .filter(
-      (project) =>
-        project.path !== 'ai-chat' &&
-        project.path !== 'cloth' &&
-        project.path !== 'flappy-bird' &&
-        project.path !== 'fluid-motion' &&
-        project.path !== 'heatmap' &&
-        project.path !== 'pid' &&
-        project.path !== 'particle-life' &&
-        project.path !== 'piano' &&
-        project.path !== 'tetris' &&
-        project.path !== 'pretext'
-    )
-    .map((project) => ({
-    path: project.path,
-    title: project.title,
-    data: {
-      project,
-    },
+  {
+    path: 'terminal',
+    title: 'Terminal',
     loadComponent: () =>
-      import('./features/demo-shell/demo-shell.component').then(
-        (m) => m.DemoShellComponent
+      import('./projects/terminal/terminal.component').then(
+        (m) => m.TerminalComponent
       ),
-    })),
+  },
   {
     path: '**',
     redirectTo: '',

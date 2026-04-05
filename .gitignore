@@ -42,6 +42,7 @@ __screenshots__/
 .claude/*
 CLAUDE.md
 /reports/*
+AGENT.md
 
 # System files
 .DS_Store
