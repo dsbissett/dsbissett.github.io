@@ -41,6 +41,7 @@ __screenshots__/
 /.claude/*
 .claude/*
 CLAUDE.md
+CLAUDE.local.md
 /reports/*
 AGENT.md
 
@@ -53,3 +54,4 @@ Thumbs.db
 .vscode/tasks.json
 .claude/settings.local.json
 .claude/settings.local.json
+src/app/projects/.claude/settings.local.json
