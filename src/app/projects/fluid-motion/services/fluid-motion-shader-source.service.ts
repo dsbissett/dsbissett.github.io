@@ -72,8 +72,41 @@ export class FluidMotionShaderSourceService {
         precision mediump sampler2D;
         varying vec2 vUv;
         uniform sampler2D uTexture;
+        uniform vec2 uResolution;
+        uniform float uTime;
+
+        float hash(vec2 p) {
+          return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+        }
+
         void main () {
-          gl_FragColor = texture2D(uTexture, vUv);
+          vec2 screenUv = gl_FragCoord.xy / uResolution;
+          vec3 ink = texture2D(uTexture, vUv).rgb;
+          float peak = max(max(ink.r, ink.g), ink.b);
+          float energy = clamp(peak, 0.0, 1.35);
+          vec3 normalizedInk = peak > 0.0001 ? ink / peak : vec3(0.0);
+          vec2 centered = vUv - 0.5;
+          float vignette = smoothstep(0.86, 0.1, dot(centered, centered) * 1.7);
+          float flow = 0.5 + 0.5 * sin(vUv.x * 8.5 - vUv.y * 6.0 + uTime * 0.24);
+          vec3 background = mix(
+            vec3(0.02, 0.05, 0.11),
+            vec3(0.18, 0.03, 0.16),
+            vUv.y * 0.72 + flow * 0.18
+          );
+          background += 0.08 * vec3(0.0, 0.72, 1.0) * exp(-7.0 * distance(vUv, vec2(0.2, 0.22)));
+          background += 0.06 * vec3(1.0, 0.34, 0.28) * exp(-9.0 * distance(vUv, vec2(0.82, 0.78)));
+
+          float scanline = sin(screenUv.y * uResolution.y * 0.09 + uTime * 0.35) * 0.012;
+          float sparkle = (hash(gl_FragCoord.xy + uTime) - 0.5) * 0.03;
+          vec3 glow = normalizedInk * energy * (0.32 + 0.4 * flow);
+          vec3 color = background * vignette + ink * 0.94 + glow;
+          color += normalizedInk * energy * energy * 0.12;
+          color += vec3(scanline * 0.35);
+          color += normalizedInk * sparkle * 0.8;
+          color = 1.0 - exp(-color * 1.08);
+          color = pow(color, vec3(0.97));
+
+          gl_FragColor = vec4(color, 1.0);
         }
       `,
       divergence: `

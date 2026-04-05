@@ -7,6 +7,7 @@ import {
   inject,
   viewChild,
 } from '@angular/core';
+import { RouterLink } from '@angular/router';
 
 import { FluidMotionContextService } from './services/fluid-motion-context.service';
 import { FluidMotionFacadeService } from './services/fluid-motion-facade.service';
@@ -19,6 +20,7 @@ import { FluidMotionSimulationService } from './services/fluid-motion-simulation
 @Component({
   selector: 'app-fluid-motion',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [RouterLink],
   providers: [
     FluidMotionContextService,
     FluidMotionFacadeService,
@@ -32,8 +34,7 @@ import { FluidMotionSimulationService } from './services/fluid-motion-simulation
   styleUrl: './fluid-motion.component.scss',
 })
 export class FluidMotionComponent implements AfterViewInit, OnDestroy {
-  private readonly canvasElement =
-    viewChild.required<ElementRef<HTMLCanvasElement>>('canvas');
+  private readonly canvasElement = viewChild.required<ElementRef<HTMLCanvasElement>>('canvas');
   private readonly facade = inject(FluidMotionFacadeService);
 
   protected readonly initializationFailed = this.facade.initializationFailed;
@@ -44,5 +45,9 @@ export class FluidMotionComponent implements AfterViewInit, OnDestroy {
 
   public ngOnDestroy(): void {
     this.facade.destroy();
+  }
+
+  protected pulseBurst(): void {
+    this.facade.queueShowcaseBurst();
   }
 }

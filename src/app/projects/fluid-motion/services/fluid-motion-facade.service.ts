@@ -25,10 +25,7 @@ export class FluidMotionFacadeService {
     try {
       const contextInfo = this.contextService.createContext(canvas);
       const programs = this.programService.createPrograms(contextInfo.gl);
-      const framebuffers = this.framebufferService.initialize(
-        contextInfo.gl,
-        contextInfo.ext
-      );
+      const framebuffers = this.framebufferService.initialize(contextInfo.gl, contextInfo.ext);
       const pointers = this.pointerService.createInitialPointers();
       const blit = this.programService.createBlit(contextInfo.gl);
 
@@ -40,15 +37,17 @@ export class FluidMotionFacadeService {
         programs,
         framebuffers,
         blit,
-        pointers
+        pointers,
       );
-      this.simulationService.queueRandomSplats(
-        Math.floor(Math.random() * 20) + 5
-      );
+      this.simulationService.queueRandomSplats(Math.floor(Math.random() * 8) + 10);
       this.startLoop();
     } catch {
       this.initializationFailed.set(true);
     }
+  }
+
+  public queueShowcaseBurst(): void {
+    this.simulationService.queueRandomSplats(12);
   }
 
   public destroy(): void {

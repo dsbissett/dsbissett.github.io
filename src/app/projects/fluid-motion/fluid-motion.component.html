@@ -1,7 +1,48 @@
-<div id="fluid-motion">
-  <canvas #canvas style="width: 100%; height: 100%; position: fixed; top: 0; left: 0;"></canvas>
+<div class="fluid-motion-stage">
+  <div class="fluid-atmosphere" aria-hidden="true">
+    <div class="fluid-aura fluid-aura-left"></div>
+    <div class="fluid-aura fluid-aura-right"></div>
+    <div class="fluid-grid"></div>
+  </div>
+
+  <canvas
+    #canvas
+    class="fluid-canvas"
+    aria-label="Fluid motion simulation"
+    aria-describedby="fluid-motion-description"
+  ></canvas>
+
+  <section class="hero-panel" aria-labelledby="fluid-motion-title">
+    <div class="hero-card">
+      <p class="eyebrow">Spectral Flow Lab</p>
+      <h1 id="fluid-motion-title">Fluid Motion</h1>
+      <p id="fluid-motion-description" class="description">
+        Drag to inject neon dye, carve vortices, and watch the field re-light itself with autonomous
+        pulse bursts.
+      </p>
+
+      <div class="status-row" aria-label="Project highlights">
+        <span class="status-pill">Interactive Dye</span>
+        <span class="status-pill">Auto Pulse</span>
+        <span class="status-pill">Vorticity</span>
+      </div>
+
+      <div class="action-row">
+        <button type="button" class="action action-primary" (click)="pulseBurst()">
+          Pulse Color
+        </button>
+        <a class="action action-secondary" routerLink="/">Back Home</a>
+      </div>
+    </div>
+  </section>
 </div>
 
 @if (initializationFailed()) {
-  <p class="fluid-motion-error">WebGL is not available.</p>
+  <section class="fluid-motion-error" role="alert">
+    <p class="error-eyebrow">Renderer unavailable</p>
+    <p class="error-copy">
+      WebGL is not available in this browser, so the fluid simulation could not start.
+    </p>
+    <a class="action action-secondary" routerLink="/">Back Home</a>
+  </section>
 }
