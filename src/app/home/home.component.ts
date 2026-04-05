@@ -5,6 +5,7 @@ import {
   ElementRef,
   NgZone,
   OnInit,
+  WritableSignal,
   computed,
   effect,
   inject,
@@ -20,10 +21,19 @@ import {
   ClippyAgent,
 } from '@dsbissett/ngx-clippy';
 
-import { projectDefinitions } from '../../project-definitions';
+import {
+  projectCategories,
+  projectDefinitions,
+  type ProjectCategory,
+  type ProjectDefinition,
+} from '../project-definitions';
 
 const TITLE_LINE1 = "Drake Bissett's";
 const TITLE_LINE2 = 'Projects';
+const ALL_PROJECTS_FILTER = 'All';
+const COMPACT_HERO_QUERY = '(max-width: 720px)';
+const DESKTOP_INPUT_QUERY = '(hover: hover) and (pointer: fine)';
+const DESKTOP_COMPANION_QUERY = '(min-width: 960px) and (hover: hover) and (pointer: fine)';
 const SCRAMBLE_CHARS =
   'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%&*' +
   'ЖЦШЩЫЮЯФЪЭЁЂЃЄЅ' +
@@ -228,10 +238,10 @@ const GLITCH_TRANSLATIONS = [
 const CLIPPY_QUIPS = [
   "It looks like you're browsing a portfolio. Would you like help pretending to be impressed?",
   "I see you haven't clicked anything yet. Might I suggest... clicking something?",
-  "Fun fact: this site was built with Angular. I survived the migration from AngularJS. Barely.",
+  'Fun fact: this site was built with Angular. I survived the migration from AngularJS. Barely.',
   "Pro tip: press / to search. Or don't. I'm a paperclip, not a cop.",
   "You've been staring at this page for a while. Everything okay at home?",
-  "I used to help people write letters. Now I haunt personal websites. Career growth!",
+  'I used to help people write letters. Now I haunt personal websites. Career growth!',
   "Did you know Drake made a Tetris AI? It's smarter than me. Most things are.",
   "If you refresh this page, I come back. You can't escape me. I'm like glitter.",
   "I'm contractually obligated to ask: would you like to save this as a .doc?",
@@ -251,6 +261,13 @@ interface ShootingStar {
   travelYPx: number;
 }
 
+type ProjectCategoryFilter = ProjectCategory | typeof ALL_PROJECTS_FILTER;
+
+interface ProjectCategoryOption {
+  count: number;
+  label: ProjectCategoryFilter;
+}
+
 @Component({
   selector: 'app-home',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -261,19 +278,19 @@ interface ShootingStar {
 export class HomeComponent implements OnInit {
   protected readonly year = new Date().getFullYear();
   protected readonly query = signal('');
+  protected readonly selectedCategory = signal<ProjectCategoryFilter>(ALL_PROJECTS_FILTER);
   protected readonly projects = projectDefinitions;
+  protected readonly categories = projectCategories;
+  protected readonly isCompactHero = signal(false);
+  protected readonly supportsKeyboardShortcuts = signal(false);
+  protected readonly showDesktopCompanion = signal(false);
   protected readonly shootingStars = signal<ShootingStar[]>([]);
-  private readonly filterInput =
-    viewChild<ElementRef<HTMLInputElement>>('filterInput');
-  private readonly glitchCanvas =
-    viewChild<ElementRef<HTMLCanvasElement>>('glitchCanvas');
+  private readonly filterInput = viewChild<ElementRef<HTMLInputElement>>('filterInput');
+  private readonly glitchCanvas = viewChild<ElementRef<HTMLCanvasElement>>('glitchCanvas');
   private readonly destroyRef = inject(DestroyRef);
   private readonly ngZone = inject(NgZone);
   private shootingStarTimer: ReturnType<typeof setTimeout> | null = null;
-  private readonly shootingStarCleanupTimers = new Map<
-    number,
-    ReturnType<typeof setTimeout>
-  >();
+  private readonly shootingStarCleanupTimers = new Map<number, ReturnType<typeof setTimeout>>();
   private nextShootingStarId = 0;
   private cleanImageData: ImageData | null = null;
   private canvasCtx: CanvasRenderingContext2D | null = null;
@@ -282,18 +299,98 @@ export class HomeComponent implements OnInit {
   private audioCtx: AudioContext | null = null;
   private glitchAudioBuffer: AudioBuffer | null = null;
   private activeGlitchSource: AudioBufferSourceNode | null = null;
-  protected readonly filteredProjects = computed(() => {
-    const normalizedQuery = this.query().trim().toLowerCase();
+  private idleQuipTimer: ReturnType<typeof setInterval> | null = null;
+  private loadedAgentConfig: AgentConfig | undefined;
+  private clippyLoadStarted = false;
+  private readonly normalizedQuery = computed(() => this.query().trim().toLowerCase());
+  private readonly queryMatchedProjects = computed(() => {
+    const normalizedQuery = this.normalizedQuery();
 
     if (!normalizedQuery) {
       return this.projects;
     }
 
-    return this.projects.filter((project) => {
-      const haystack = `${project.title} ${project.tags.join(' ')} ${project.summary}`.toLowerCase();
-      return haystack.includes(normalizedQuery);
-    });
+    return this.projects.filter((project) => this.matchesProject(project, normalizedQuery));
   });
+  protected readonly filteredProjects = computed(() => {
+    const selectedCategory = this.selectedCategory();
+    const projects = this.queryMatchedProjects();
+
+    if (selectedCategory === ALL_PROJECTS_FILTER) {
+      return projects;
+    }
+
+    return projects.filter((project) => project.category === selectedCategory);
+  });
+  protected readonly featuredProjects = computed(() =>
+    this.filteredProjects().filter((project) => project.featured === true),
+  );
+  protected readonly standardProjects = computed(() =>
+    this.filteredProjects().filter((project) => project.featured !== true),
+  );
+  protected readonly hasActiveFilters = computed(
+    () => this.selectedCategory() !== ALL_PROJECTS_FILTER || this.normalizedQuery().length > 0,
+  );
+  protected readonly categoryOptions = computed<ProjectCategoryOption[]>(() => {
+    const projects = this.queryMatchedProjects();
+
+    return [
+      {
+        label: ALL_PROJECTS_FILTER,
+        count: projects.length,
+      },
+      ...this.categories.map((category) => ({
+        label: category,
+        count: projects.filter((project) => project.category === category).length,
+      })),
+    ];
+  });
+  protected readonly resultSummary = computed(() => {
+    const projectCount = this.filteredProjects().length;
+    const projectLabel = projectCount === 1 ? 'project' : 'projects';
+    const selectedCategory = this.selectedCategory();
+
+    if (!this.hasActiveFilters()) {
+      return `${projectCount} ${projectLabel} across ${this.categories.length} lanes.`;
+    }
+
+    if (selectedCategory === ALL_PROJECTS_FILTER) {
+      return `${projectCount} ${projectLabel} matching your search.`;
+    }
+
+    return `${projectCount} ${projectLabel} in ${selectedCategory}.`;
+  });
+  protected readonly featuredIntro = computed(() => {
+    const selectedCategory = this.selectedCategory();
+
+    if (!this.hasActiveFilters()) {
+      return 'Best first clicks if you want the strongest signal fast.';
+    }
+
+    if (selectedCategory === ALL_PROJECTS_FILTER) {
+      return 'Featured projects that match your current search.';
+    }
+
+    return `Featured projects inside ${selectedCategory}.`;
+  });
+  protected readonly directoryTitle = computed(() =>
+    this.hasActiveFilters() ? 'More to Explore' : 'Project Directory',
+  );
+  protected readonly directoryIntro = computed(() => {
+    if (!this.hasActiveFilters()) {
+      return 'Everything else, grouped into a cleaner scan path.';
+    }
+
+    return 'Keep narrowing with the search field or hop to another lane.';
+  });
+  protected readonly searchHint = computed(() =>
+    this.supportsKeyboardShortcuts() ? 'PRESS /' : 'TAP TO FILTER',
+  );
+  protected readonly searchPlaceholder = computed(() =>
+    this.supportsKeyboardShortcuts() ? 'SEARCH PROJECTS...' : 'Search projects or tap a lane',
+  );
+  protected readonly showClippy = computed(() => this.showDesktopCompanion());
+  protected readonly showGlitchCanvas = computed(() => !this.isCompactHero());
 
   protected readonly clippyAgent = viewChild(ClippyAgentComponent);
   protected readonly agentConfig = signal<AgentConfig | undefined>(undefined);
@@ -306,6 +403,14 @@ export class HomeComponent implements OnInit {
     effect(() => {
       const agent = this.clippyAgent();
       const config = this.agentConfig();
+      const showClippy = this.showClippy();
+
+      if (!showClippy) {
+        this.stopIdleQuips();
+        this.clippyShown = false;
+        return;
+      }
+
       if (!agent || !config || this.clippyShown) {
         return;
       }
@@ -323,23 +428,58 @@ export class HomeComponent implements OnInit {
 
       this.scheduleIdleQuips(agent);
     });
+
+    effect(() => {
+      const showGlitchCanvas = this.showGlitchCanvas();
+      const canvas = this.glitchCanvas()?.nativeElement;
+
+      if (!showGlitchCanvas) {
+        this.stopGlitchLoop();
+        return;
+      }
+
+      if (!canvas) {
+        return;
+      }
+
+      this.initGlitchCanvas();
+    });
   }
 
   ngOnInit(): void {
-    this.loadGlitchAudio();
+    this.observeMediaQuery(COMPACT_HERO_QUERY, this.isCompactHero);
+    this.observeMediaQuery(DESKTOP_INPUT_QUERY, this.supportsKeyboardShortcuts);
+    this.observeMediaQuery(DESKTOP_COMPANION_QUERY, this.showDesktopCompanion, (matches) => {
+      if (matches) {
+        this.enableClippy();
+        return;
+      }
 
-    this.agentLoader.loadAgent(ClippyAgent).subscribe((config) => {
-      this.clippyShown = false;
-      this.agentConfig.set(config);
+      this.disableClippy();
     });
 
-    this.initGlitchCanvas();
+    this.loadGlitchAudio();
     this.initParallax();
     this.initShootingStars();
+    this.initHeroResizeWatcher();
+
+    this.destroyRef.onDestroy(() => {
+      this.stopGlitchLoop();
+      this.stopIdleQuips();
+    });
   }
 
   protected updateQuery(value: string): void {
     this.query.set(value);
+  }
+
+  protected setCategory(category: ProjectCategoryFilter): void {
+    this.selectedCategory.set(category);
+  }
+
+  protected clearFilters(): void {
+    this.query.set('');
+    this.selectedCategory.set(ALL_PROJECTS_FILTER);
   }
 
   protected scrollToTop(): void {
@@ -348,8 +488,7 @@ export class HomeComponent implements OnInit {
 
   protected handleWindowKeydown(event: KeyboardEvent): void {
     const input = this.filterInput()?.nativeElement;
-    const target =
-      event.target instanceof HTMLElement ? event.target : null;
+    const target = event.target instanceof HTMLElement ? event.target : null;
 
     if (event.key === 'Backspace' && !this.isEditableTarget(target)) {
       event.preventDefault();
@@ -377,11 +516,48 @@ export class HomeComponent implements OnInit {
     return document.activeElement !== input;
   }
 
+  private matchesProject(project: ProjectDefinition, normalizedQuery: string): boolean {
+    const haystack = [
+      project.title,
+      project.category,
+      project.tags.join(' '),
+      project.summary,
+      project.previewKicker,
+      project.previewValue,
+      project.previewTags.join(' '),
+    ]
+      .join(' ')
+      .toLowerCase();
+
+    return haystack.includes(normalizedQuery);
+  }
+
+  private observeMediaQuery(
+    query: string,
+    state: WritableSignal<boolean>,
+    onChange?: (matches: boolean) => void,
+  ): void {
+    const mediaQuery = window.matchMedia(query);
+
+    const applyState = (matches: boolean) => {
+      state.set(matches);
+      onChange?.(matches);
+    };
+
+    applyState(mediaQuery.matches);
+
+    const listener = (event: MediaQueryListEvent) => {
+      applyState(event.matches);
+    };
+
+    mediaQuery.addEventListener('change', listener);
+    this.destroyRef.onDestroy(() => mediaQuery.removeEventListener('change', listener));
+  }
+
   private isEditableTarget(target: HTMLElement | null): boolean {
     return (
-      target?.closest(
-        'input, textarea, select, [contenteditable=""], [contenteditable="true"]',
-      ) !== null
+      target?.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]') !==
+      null
     );
   }
 
@@ -391,14 +567,57 @@ export class HomeComponent implements OnInit {
     return quip;
   }
 
-  private scheduleIdleQuips(agent: ClippyAgentComponent): void {
-    const interval = setInterval(() => {
-      if (!this.clippyShown) {
-        clearInterval(interval);
+  private enableClippy(): void {
+    if (this.loadedAgentConfig) {
+      this.clippyShown = false;
+      this.agentConfig.set(this.loadedAgentConfig);
+      return;
+    }
+
+    if (this.clippyLoadStarted) {
+      return;
+    }
+
+    this.clippyLoadStarted = true;
+    this.agentLoader.loadAgent(ClippyAgent).subscribe((config) => {
+      this.loadedAgentConfig = config;
+      this.clippyLoadStarted = false;
+
+      if (!this.showClippy()) {
         return;
       }
+
+      this.clippyShown = false;
+      this.agentConfig.set(config);
+    });
+  }
+
+  private disableClippy(): void {
+    this.stopIdleQuips();
+    this.clippyShown = false;
+    this.agentConfig.set(undefined);
+  }
+
+  private scheduleIdleQuips(agent: ClippyAgentComponent): void {
+    this.stopIdleQuips();
+
+    this.idleQuipTimer = setInterval(() => {
+      if (!this.clippyShown || !this.showClippy()) {
+        this.stopIdleQuips();
+        return;
+      }
+
       agent.speak(this.nextQuip());
     }, 25_000);
+  }
+
+  private stopIdleQuips(): void {
+    if (!this.idleQuipTimer) {
+      return;
+    }
+
+    clearInterval(this.idleQuipTimer);
+    this.idleQuipTimer = null;
   }
 
   private initParallax(): void {
@@ -429,10 +648,7 @@ export class HomeComponent implements OnInit {
             el: root.querySelector(layer.selector) as HTMLElement | null,
             speed: layer.speed,
           }))
-          .filter(
-            (layer): layer is { el: HTMLElement; speed: number } =>
-              layer.el !== null,
-          );
+          .filter((layer): layer is { el: HTMLElement; speed: number } => layer.el !== null);
       };
 
       const onScroll = () => {
@@ -457,9 +673,7 @@ export class HomeComponent implements OnInit {
 
       onScroll();
       window.addEventListener('scroll', onScroll, { passive: true });
-      this.destroyRef.onDestroy(() =>
-        window.removeEventListener('scroll', onScroll),
-      );
+      this.destroyRef.onDestroy(() => window.removeEventListener('scroll', onScroll));
     });
   }
 
@@ -503,9 +717,7 @@ export class HomeComponent implements OnInit {
     this.shootingStars.update((stars) => [...stars, star]);
 
     const cleanupTimer = setTimeout(() => {
-      this.shootingStars.update((stars) =>
-        stars.filter((item) => item.id !== star.id),
-      );
+      this.shootingStars.update((stars) => stars.filter((item) => item.id !== star.id));
       this.shootingStarCleanupTimers.delete(star.id);
     }, star.durationMs + 250);
 
@@ -527,11 +739,49 @@ export class HomeComponent implements OnInit {
 
   private glitchTimer: ReturnType<typeof setTimeout> | null = null;
 
+  private initHeroResizeWatcher(): void {
+    let resizeFrame = 0;
+
+    const onResize = () => {
+      if (resizeFrame) {
+        cancelAnimationFrame(resizeFrame);
+      }
+
+      resizeFrame = requestAnimationFrame(() => {
+        resizeFrame = 0;
+
+        if (this.showGlitchCanvas()) {
+          this.initGlitchCanvas();
+        }
+      });
+    };
+
+    window.addEventListener('resize', onResize, { passive: true });
+    this.destroyRef.onDestroy(() => {
+      if (resizeFrame) {
+        cancelAnimationFrame(resizeFrame);
+      }
+
+      window.removeEventListener('resize', onResize);
+    });
+  }
+
+  private stopGlitchLoop(): void {
+    if (this.glitchTimer) {
+      clearTimeout(this.glitchTimer);
+      this.glitchTimer = null;
+    }
+
+    this.stopGlitchSound();
+  }
+
   private initGlitchCanvas(): void {
+    this.stopGlitchLoop();
+
     // Wait a frame for the canvas to be in the DOM and font to load
     requestAnimationFrame(() => {
       const canvas = this.glitchCanvas()?.nativeElement;
-      if (!canvas) return;
+      if (!canvas || !this.showGlitchCanvas()) return;
 
       const dpr = window.devicePixelRatio || 1;
       const parent = canvas.parentElement!;
@@ -557,10 +807,6 @@ export class HomeComponent implements OnInit {
       this.cleanImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
       this.scheduleGlitch();
-
-      this.destroyRef.onDestroy(() => {
-        if (this.glitchTimer) clearTimeout(this.glitchTimer);
-      });
     });
   }
 
@@ -616,8 +862,7 @@ export class HomeComponent implements OnInit {
     const fontSize = Math.min(80, Math.max(40, w * 0.08));
     const lineHeight = fontSize * 0.95;
 
-    const translation =
-      GLITCH_TRANSLATIONS[Math.floor(Math.random() * GLITCH_TRANSLATIONS.length)];
+    const translation = GLITCH_TRANSLATIONS[Math.floor(Math.random() * GLITCH_TRANSLATIONS.length)];
 
     // Pre-render the clean translation image
     const translationImage = this.renderTranslation(ctx, canvas, w, h, translation);
@@ -625,9 +870,13 @@ export class HomeComponent implements OnInit {
     // Renderer that scrambles the two-line English title
     const scrambleEnglish = () => {
       this.renderScrambledText(
-        ctx, w, h, fontSize,
+        ctx,
+        w,
+        h,
+        fontSize,
         [TITLE_LINE1.toUpperCase(), TITLE_LINE2.toUpperCase()],
-        'top', lineHeight,
+        'top',
+        lineHeight,
       );
     };
 
@@ -635,17 +884,11 @@ export class HomeComponent implements OnInit {
     ctx.font = `${fontSize}px 'Righteous', sans-serif`;
     const measured = ctx.measureText(translation);
     const maxW = w * 0.9;
-    const transFontSize = measured.width > maxW
-      ? fontSize * (maxW / measured.width)
-      : fontSize;
+    const transFontSize = measured.width > maxW ? fontSize * (maxW / measured.width) : fontSize;
 
     // Renderer that scrambles the single-line translation
     const scrambleTranslation = () => {
-      this.renderScrambledText(
-        ctx, w, h, transFontSize,
-        [translation],
-        'middle', 0,
-      );
+      this.renderScrambledText(ctx, w, h, transFontSize, [translation], 'middle', 0);
     };
 
     // Randomize durations: 400-1000ms for each glitch
@@ -662,10 +905,19 @@ export class HomeComponent implements OnInit {
       const holdTime = 1000 + Math.random() * 1500;
       this.glitchTimer = setTimeout(() => {
         // Phase 3: triple-pulse scramble translation → reveal English
-        this.playTriplePulseBurst(ctx, canvas, w, h, scrambleTranslation, translationImage, glitch2Duration, () => {
-          ctx.putImageData(this.cleanImageData!, 0, 0);
-          this.scheduleGlitch();
-        });
+        this.playTriplePulseBurst(
+          ctx,
+          canvas,
+          w,
+          h,
+          scrambleTranslation,
+          translationImage,
+          glitch2Duration,
+          () => {
+            ctx.putImageData(this.cleanImageData!, 0, 0);
+            this.scheduleGlitch();
+          },
+        );
       }, holdTime);
     });
   }
@@ -780,7 +1032,7 @@ export class HomeComponent implements OnInit {
     ctx.shadowBlur = 0;
   }
 
-  // --- Glitch sound from glitch.mp3 ---
+  // --- Glitch sound from glitch.ogg ---
 
   private getAudioContext(): AudioContext | null {
     if (!this.audioCtx) {
@@ -797,7 +1049,7 @@ export class HomeComponent implements OnInit {
     const ctx = this.getAudioContext();
     if (!ctx) return;
 
-    fetch('assets/glitch.mp3')
+    fetch('assets/glitch.ogg')
       .then((res) => res.arrayBuffer())
       .then((buf) => ctx.decodeAudioData(buf))
       .then((decoded) => {
@@ -985,8 +1237,6 @@ export class HomeComponent implements OnInit {
     }
     ctx.putImageData(imgData, 0, 0);
   };
-
-
 
   private fxColorShift = (
     ctx: CanvasRenderingContext2D,

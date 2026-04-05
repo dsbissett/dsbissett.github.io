@@ -1,3 +1,20 @@
+export const projectCategories = ['AI', 'Games', 'Simulations', 'Creative', 'Tools'] as const;
+
+export type ProjectCategory = (typeof projectCategories)[number];
+
+export type ProjectPreviewStyle =
+  | 'ai'
+  | 'terminal'
+  | 'cloth'
+  | 'flappy'
+  | 'fluid'
+  | 'heat'
+  | 'pid'
+  | 'piano'
+  | 'particle'
+  | 'tetris'
+  | 'dragon';
+
 export interface ProjectDefinition {
   path: string;
   title: string;
@@ -5,6 +22,12 @@ export interface ProjectDefinition {
   tags: readonly string[];
   accent: 'aqua' | 'sun' | 'vio' | 'lime' | 'hot';
   icon: string;
+  category: ProjectCategory;
+  featured?: boolean;
+  previewStyle: ProjectPreviewStyle;
+  previewKicker: string;
+  previewValue: string;
+  previewTags: readonly string[];
 }
 
 export const projectDefinitions: readonly ProjectDefinition[] = [
@@ -15,6 +38,12 @@ export const projectDefinitions: readonly ProjectDefinition[] = [
     tags: ['AI', 'LLM'],
     accent: 'aqua',
     icon: 'AI',
+    category: 'AI',
+    featured: true,
+    previewStyle: 'ai',
+    previewKicker: 'Conversation Lab',
+    previewValue: 'PROMPT STACK',
+    previewTags: ['Modes', 'Tools', 'Experiments'],
   },
   {
     path: 'terminal',
@@ -23,6 +52,11 @@ export const projectDefinitions: readonly ProjectDefinition[] = [
     tags: ['CLI', 'Retro'],
     accent: 'lime',
     icon: '>_',
+    category: 'Tools',
+    previewStyle: 'terminal',
+    previewKicker: 'Command Surface',
+    previewValue: 'SECRET ROUTES',
+    previewTags: ['Shell', 'Glow', 'Easter Eggs'],
   },
   {
     path: 'cloth',
@@ -31,6 +65,11 @@ export const projectDefinitions: readonly ProjectDefinition[] = [
     tags: ['Physics', 'Sim'],
     accent: 'vio',
     icon: 'CL',
+    category: 'Simulations',
+    previewStyle: 'cloth',
+    previewKicker: 'Verlet Mesh',
+    previewValue: 'TEAR TEST',
+    previewTags: ['Pins', 'Wind', 'Drape'],
   },
   {
     path: 'flappy-bird',
@@ -39,6 +78,11 @@ export const projectDefinitions: readonly ProjectDefinition[] = [
     tags: ['Arcade', 'Game'],
     accent: 'sun',
     icon: 'FB',
+    category: 'Games',
+    previewStyle: 'flappy',
+    previewKicker: 'Arcade Loop',
+    previewValue: 'TAP + SCORE',
+    previewTags: ['Pipes', 'Physics', 'Retry'],
   },
   {
     path: 'fluid-motion',
@@ -47,6 +91,11 @@ export const projectDefinitions: readonly ProjectDefinition[] = [
     tags: ['Flow', 'Viz'],
     accent: 'aqua',
     icon: 'FM',
+    category: 'Simulations',
+    previewStyle: 'fluid',
+    previewKicker: 'Flow Field',
+    previewValue: 'VORTEX VIEW',
+    previewTags: ['Vectors', 'Trails', 'Dye'],
   },
   {
     path: 'heatmap',
@@ -55,6 +104,11 @@ export const projectDefinitions: readonly ProjectDefinition[] = [
     tags: ['Data', 'Color'],
     accent: 'hot',
     icon: 'HM',
+    category: 'Creative',
+    previewStyle: 'heat',
+    previewKicker: 'Density Canvas',
+    previewValue: 'THERMAL PALETTE',
+    previewTags: ['Brush', 'Gradients', 'Data'],
   },
   {
     path: 'pid',
@@ -63,15 +117,25 @@ export const projectDefinitions: readonly ProjectDefinition[] = [
     tags: ['Eng', 'Math'],
     accent: 'lime',
     icon: 'PI',
+    category: 'Tools',
+    previewStyle: 'pid',
+    previewKicker: 'Control Rig',
+    previewValue: 'LIVE TUNING',
+    previewTags: ['P', 'I', 'D'],
   },
   {
     path: 'piano',
     title: 'Piano Visualizer',
-    summary:
-      'Interactive keyboard with falling-note roll synced to curated performances.',
+    summary: 'Interactive keyboard with falling-note roll synced to curated performances.',
     tags: ['Music', 'Piano'],
     accent: 'aqua',
     icon: 'PN',
+    category: 'Creative',
+    featured: true,
+    previewStyle: 'piano',
+    previewKicker: 'Performance Roll',
+    previewValue: 'FALLING NOTES',
+    previewTags: ['Keys', 'Timing', 'Playback'],
   },
   {
     path: 'particle-life',
@@ -81,6 +145,11 @@ export const projectDefinitions: readonly ProjectDefinition[] = [
     tags: ['Sim', 'Emergence'],
     accent: 'vio',
     icon: '::',
+    category: 'Simulations',
+    previewStyle: 'particle',
+    previewKicker: 'Species Rules',
+    previewValue: 'EMERGENT SWARM',
+    previewTags: ['Orbit', 'Repel', 'Cluster'],
   },
   {
     path: 'tetris',
@@ -89,13 +158,26 @@ export const projectDefinitions: readonly ProjectDefinition[] = [
     tags: ['Retro', 'Game'],
     accent: 'vio',
     icon: '[]',
+    category: 'Games',
+    featured: true,
+    previewStyle: 'tetris',
+    previewKicker: 'Learning Stack',
+    previewValue: 'AI TRAINING',
+    previewTags: ['Ghost', 'Kicks', 'Replay'],
   },
   {
     path: 'pretext',
     title: 'Pretext Dragon',
-    summary: 'ASCII dragon powered by DOM-free text layout — guide it with your cursor, hold to breathe fire.',
+    summary:
+      'ASCII dragon powered by DOM-free text layout — guide it with your cursor, hold to breathe fire.',
     tags: ['Text', 'Physics'],
     accent: 'lime',
     icon: '◈',
+    category: 'Creative',
+    featured: true,
+    previewStyle: 'dragon',
+    previewKicker: 'ASCII Creature',
+    previewValue: 'FIRE + CURSOR',
+    previewTags: ['Text', 'Flight', 'Flame'],
   },
 ] as const;

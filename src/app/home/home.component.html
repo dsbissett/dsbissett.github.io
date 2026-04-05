@@ -25,61 +25,171 @@
 
 <div id="top" class="wrap" (window:keydown)="handleWindowKeydown($event)">
   <header class="hero">
-    <div class="googie-sign">
+    <div class="googie-sign" [class.googie-sign-compact]="isCompactHero()">
       <div class="noise" aria-hidden="true"></div>
-      <h1 class="glitch-title" aria-label="Drake Bissett's Projects">
-        <canvas #glitchCanvas class="glitch-canvas"></canvas>
-      </h1>
-      <p class="subtitle">
-        A collection of experiments, simulations, and games.
+
+      @if (showGlitchCanvas()) {
+        <h1 class="glitch-title" aria-label="Drake Bissett's Projects">
+          <canvas #glitchCanvas class="glitch-canvas"></canvas>
+        </h1>
+      } @else {
+        <h1 class="mobile-title">
+          <span>Drake Bissett's</span>
+          <span>Projects</span>
+        </h1>
+      }
+
+      <p class="subtitle">A collection of experiments, simulations, and games.</p>
+      <p class="hero-summary" aria-live="polite">
+        {{ resultSummary() }}
+        Start with the featured flights or slice the grid by lane.
       </p>
     </div>
 
-    <label class="search-wrapper" for="project-filter">
-      <input
-        #filterInput
-        id="project-filter"
-        type="text"
-        [value]="query()"
-        (input)="updateQuery(($any($event.target)).value)"
-        placeholder="SEARCH PROJECTS..."
-        autocomplete="off"
-      >
-      <span class="search-hint">PRESS /</span>
-    </label>
+    <div class="controls-panel">
+      <label class="search-wrapper" for="project-filter">
+        <span class="search-label">Quick Find</span>
+        <input
+          #filterInput
+          id="project-filter"
+          type="text"
+          [value]="query()"
+          (input)="updateQuery($any($event.target).value)"
+          [placeholder]="searchPlaceholder()"
+          autocomplete="off"
+        />
+        <span class="search-hint">{{ searchHint() }}</span>
+      </label>
+
+      <div class="filter-rail" role="group" aria-label="Project lanes">
+        @for (option of categoryOptions(); track option.label) {
+          <button
+            type="button"
+            class="filter-chip"
+            [class.is-active]="selectedCategory() === option.label"
+            [attr.aria-pressed]="selectedCategory() === option.label"
+            (click)="setCategory(option.label)"
+          >
+            <span class="filter-chip-label">{{ option.label }}</span>
+            <span class="filter-chip-count">{{ option.count }}</span>
+          </button>
+        }
+      </div>
+    </div>
   </header>
 
-  <main>
-    <section class="grid" aria-label="Project list">
-      @for (project of filteredProjects(); track project.path) {
-        <article class="card project" [attr.data-accent]="project.accent">
-          <div class="fin"></div>
-          <div class="starburst"></div>
-          <a [routerLink]="['/', project.path]">
-            <div class="card-header">
-              <div class="icon-box">{{ project.icon }}</div>
-              <div class="arrow">-&gt;</div>
-            </div>
+  <main class="landing-main">
+    @if (filteredProjects().length > 0) {
+      @if (featuredProjects().length > 0) {
+        <section class="section-shell featured-shell" aria-labelledby="featured-heading">
+          <div class="section-copy">
+            <p class="section-eyebrow">Featured Flights</p>
+            <h2 id="featured-heading" class="section-title">Start Here</h2>
+            <p class="section-summary">{{ featuredIntro() }}</p>
+          </div>
 
-            <h2>{{ project.title }}</h2>
-            <p>{{ project.summary }}</p>
+          <div class="featured-grid" aria-label="Featured projects">
+            @for (project of featuredProjects(); track project.path) {
+              <article class="card project featured" [attr.data-accent]="project.accent">
+                <div class="fin"></div>
+                <div class="starburst"></div>
+                <a [routerLink]="['/', project.path]">
+                  <div class="card-topline">
+                    <span class="card-lane">{{ project.category }}</span>
+                    <span class="featured-badge">Featured</span>
+                  </div>
 
-            <div class="meta">
-              <div class="tags" aria-label="Tags">
-                @for (tag of project.tags; track tag) {
-                  <span class="tag">{{ tag }}</span>
-                }
-              </div>
-            </div>
-          </a>
-        </article>
-      } @empty {
-        <article class="empty-state">
-          <h2>No matches</h2>
-          <p>Try a broader term like <code>game</code>, <code>physics</code>, or <code>music</code>.</p>
-        </article>
+                  <div class="preview-panel" [attr.data-preview]="project.previewStyle">
+                    <div class="preview-header">
+                      <div class="icon-box">{{ project.icon }}</div>
+                      <div class="arrow">-&gt;</div>
+                    </div>
+                    <p class="preview-kicker">{{ project.previewKicker }}</p>
+                    <p class="preview-value">{{ project.previewValue }}</p>
+                    <div class="preview-readouts" aria-hidden="true">
+                      @for (previewTag of project.previewTags; track previewTag) {
+                        <span class="preview-readout">{{ previewTag }}</span>
+                      }
+                    </div>
+                  </div>
+
+                  <h3 class="card-title">{{ project.title }}</h3>
+                  <p class="card-summary">{{ project.summary }}</p>
+
+                  <div class="meta">
+                    <div class="tags" aria-label="Tags">
+                      @for (tag of project.tags; track tag) {
+                        <span class="tag">{{ tag }}</span>
+                      }
+                    </div>
+                  </div>
+                </a>
+              </article>
+            }
+          </div>
+        </section>
       }
-    </section>
+
+      @if (standardProjects().length > 0) {
+        <section class="section-shell" aria-labelledby="directory-heading">
+          <div class="section-copy">
+            <p class="section-eyebrow">Explore</p>
+            <h2 id="directory-heading" class="section-title">{{ directoryTitle() }}</h2>
+            <p class="section-summary">{{ directoryIntro() }}</p>
+          </div>
+
+          <section class="grid" aria-label="Project list">
+            @for (project of standardProjects(); track project.path) {
+              <article class="card project" [attr.data-accent]="project.accent">
+                <div class="fin"></div>
+                <div class="starburst"></div>
+                <a [routerLink]="['/', project.path]">
+                  <div class="card-topline">
+                    <span class="card-lane">{{ project.category }}</span>
+                  </div>
+
+                  <div class="preview-panel" [attr.data-preview]="project.previewStyle">
+                    <div class="preview-header">
+                      <div class="icon-box">{{ project.icon }}</div>
+                      <div class="arrow">-&gt;</div>
+                    </div>
+                    <p class="preview-kicker">{{ project.previewKicker }}</p>
+                    <p class="preview-value">{{ project.previewValue }}</p>
+                    <div class="preview-readouts" aria-hidden="true">
+                      @for (previewTag of project.previewTags; track previewTag) {
+                        <span class="preview-readout">{{ previewTag }}</span>
+                      }
+                    </div>
+                  </div>
+
+                  <h3 class="card-title">{{ project.title }}</h3>
+                  <p class="card-summary">{{ project.summary }}</p>
+
+                  <div class="meta">
+                    <div class="tags" aria-label="Tags">
+                      @for (tag of project.tags; track tag) {
+                        <span class="tag">{{ tag }}</span>
+                      }
+                    </div>
+                  </div>
+                </a>
+              </article>
+            }
+          </section>
+        </section>
+      }
+    } @else {
+      <article class="empty-state">
+        <h2>No matches on this frequency</h2>
+        <p>
+          Try a broader term like <code>game</code>, <code>physics</code>, or <code>music</code>, or
+          clear the current lane filter.
+        </p>
+        <p>
+          <button type="button" class="reset-link" (click)="clearFilters()">Clear filters</button>
+        </p>
+      </article>
+    }
   </main>
 
   <footer class="footer">
@@ -88,6 +198,6 @@
   </footer>
 </div>
 
-@if (agentConfig(); as config) {
+@if (showClippy() && agentConfig(); as config) {
   <clippy-agent [agentConfig]="config"></clippy-agent>
 }
