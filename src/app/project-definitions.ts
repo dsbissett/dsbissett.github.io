@@ -13,7 +13,8 @@ export type ProjectPreviewStyle =
   | 'piano'
   | 'particle'
   | 'tetris'
-  | 'dragon';
+  | 'dragon'
+  | 'calculator';
 
 export interface ProjectDefinition {
   path: string;
@@ -179,5 +180,19 @@ export const projectDefinitions: readonly ProjectDefinition[] = [
     previewKicker: 'ASCII Creature',
     previewValue: 'FIRE + CURSOR',
     previewTags: ['Text', 'Flight', 'Flame'],
+  },
+  {
+    path: 'calculator',
+    title: 'Calculator',
+    summary:
+      'A pixel-perfect macOS calculator — fully functional, with a tongue-in-cheek paywall before the answer.',
+    tags: ['Tool', 'UI'],
+    accent: 'sun',
+    icon: '=',
+    category: 'Tools',
+    previewStyle: 'calculator',
+    previewKicker: 'Desk Utility',
+    previewValue: 'PAY TO SOLVE',
+    previewTags: ['Keys', 'Paywall', 'Result'],
   },
 ] as const;

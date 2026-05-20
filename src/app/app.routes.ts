@@ -100,6 +100,14 @@ export const routes: Routes = [
       ),
   },
   {
+    path: 'calculator',
+    title: 'Calculator',
+    loadComponent: () =>
+      import('./projects/calculator/calculator.component').then(
+        (m) => m.CalculatorComponent
+      ),
+  },
+  {
     path: '**',
     redirectTo: '',
   },
