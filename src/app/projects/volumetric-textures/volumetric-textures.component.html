@@ -1,0 +1,43 @@
+<div class="volumetric-stage">
+  <canvas
+    #canvas
+    class="volumetric-canvas"
+    aria-label="Raymarched 3D Worley noise field"
+  ></canvas>
+
+  <a class="back-link" routerLink="/">‹ Back Home</a>
+
+  @if (!failed()) {
+    <section class="hero-panel" aria-labelledby="volumetric-title">
+      <p class="eyebrow">Procedural Field</p>
+      <h1 id="volumetric-title">Volumetric Textures</h1>
+      <p class="description">
+        A fullscreen fragment shader raymarches a 32³ Worley noise volume in WebGL2. A gyroid colors
+        each step; ACES tonemapping flattens the bloom. Move your cursor to drift the camera.
+      </p>
+
+      <div class="status-row" aria-label="Project highlights">
+        <span class="status-pill">3D Worley</span>
+        <span class="status-pill">Raymarch</span>
+        <span class="status-pill">Gyroid Color</span>
+      </div>
+
+      <div class="action-row">
+        <button type="button" class="action action-primary" (click)="regenerate()">
+          Reseed Field
+        </button>
+        <a class="action action-secondary" routerLink="/">Back Home</a>
+      </div>
+    </section>
+  }
+
+  @if (failed()) {
+    <section class="volumetric-error" role="alert">
+      <p class="error-eyebrow">Renderer unavailable</p>
+      <p class="error-copy">
+        This demo needs WebGL2 with 3D texture support. Try a recent desktop browser.
+      </p>
+      <a class="action action-secondary" routerLink="/">Back Home</a>
+    </section>
+  }
+</div>

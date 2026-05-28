@@ -108,6 +108,14 @@ export const routes: Routes = [
       ),
   },
   {
+    path: 'volumetric-textures',
+    title: 'Volumetric Textures',
+    loadComponent: () =>
+      import(
+        './projects/volumetric-textures/volumetric-textures.component'
+      ).then((m) => m.VolumetricTexturesComponent),
+  },
+  {
     path: '**',
     redirectTo: '',
   },

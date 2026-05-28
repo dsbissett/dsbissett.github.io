@@ -14,7 +14,8 @@ export type ProjectPreviewStyle =
   | 'particle'
   | 'tetris'
   | 'dragon'
-  | 'calculator';
+  | 'calculator'
+  | 'volumetric';
 
 export interface ProjectDefinition {
   path: string;
@@ -194,5 +195,19 @@ export const projectDefinitions: readonly ProjectDefinition[] = [
     previewKicker: 'Desk Utility',
     previewValue: 'PAY TO SOLVE',
     previewTags: ['Keys', 'Paywall', 'Result'],
+  },
+  {
+    path: 'volumetric-textures',
+    title: 'Volumetric Textures',
+    summary:
+      'Raymarched 3D Worley noise — cosmic particles drifting through procedural volumetric space.',
+    tags: ['Shader', 'WebGL'],
+    accent: 'vio',
+    icon: 'VX',
+    category: 'Creative',
+    previewStyle: 'volumetric',
+    previewKicker: 'Procedural Field',
+    previewValue: 'WORLEY RAYMARCH',
+    previewTags: ['3D Noise', 'Gyroid', 'Drift'],
   },
 ] as const;
