@@ -1,4 +1,4 @@
-:root {
+:host {
   --paper: #f4ecd8;
   --paper-deep: #ebe1c0;
   --paper-dim: #ede4c8;
@@ -13,10 +13,9 @@
   --sage: #6b8a5a;
   --rule: #c4b896;
   --rule-deep: #a89878;
-}
 
-:host {
   display: block;
+  min-height: 100vh;
   background: var(--paper);
   color: var(--ink);
   font-family: 'Fraunces', Georgia, serif;
@@ -435,6 +434,12 @@ pre {
   position: relative;
   border-left: 3px solid var(--vermillion);
 
+  /* Widen past the 38em prose cap so the kernel listing needs no scrollbar;
+     caps at content width and falls back to scrolling on narrow viewports. */
+  &.prose {
+    max-width: max-content;
+  }
+
   &::before {
     content: attr(data-label);
     position: absolute;
@@ -509,38 +514,46 @@ code {
 /* Mini example grid */
 .example-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 1px;
   background: var(--rule);
   border: 1px solid var(--rule);
   margin: 2rem 0;
 
   @media (max-width: 600px) {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
 
-  > div {
-    background: var(--paper);
-    aspect-ratio: 1;
-    padding: 0.6rem;
-    position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+/* Grid cells, canvases and labels are created dynamically in TS, so they
+   never receive Angular's encapsulation attribute — target them via ng-deep. */
+:host ::ng-deep .example-grid > div {
+  background: var(--paper);
+  aspect-ratio: 1;
+  padding: 0.6rem;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  overflow: hidden;
 
-    canvas {
-      width: 100%; height: 100%;
-    }
+  canvas {
+    width: 100%; height: 100%;
+    min-width: 0;
+    min-height: 0;
+    display: block;
   }
+}
 
-  .ex-label {
-    position: absolute;
-    top: 0.4rem; left: 0.6rem;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.6rem;
-    letter-spacing: 0.1em;
-    color: var(--ink-3);
-  }
+:host ::ng-deep .example-grid .ex-label {
+  position: absolute;
+  top: 0.4rem; left: 0.6rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.6rem;
+  letter-spacing: 0.1em;
+  color: var(--ink-3);
+  z-index: 1;
 }
 
 /* ============= PER-N TABLE ============= */
