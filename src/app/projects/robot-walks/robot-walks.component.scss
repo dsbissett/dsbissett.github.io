@@ -1,15 +1,11 @@
 :host {
   --paper: #f4ecd8;
   --paper-deep: #ebe1c0;
-  --paper-dim: #ede4c8;
   --ink: #1a2238;
   --ink-2: #3a4862;
   --ink-3: #6b7691;
   --vermillion: #c8412a;
   --vermillion-deep: #962e1c;
-  --vermillion-soft: rgba(200, 65, 42, 0.18);
-  --vermillion-trace: rgba(200, 65, 42, 0.32);
-  --ochre: #b88732;
   --sage: #6b8a5a;
   --rule: #c4b896;
   --rule-deep: #a89878;
@@ -263,17 +259,6 @@ p {
   }
 }
 
-.margin-note {
-  font-style: italic;
-  color: var(--ink-3);
-  font-size: 0.95em;
-  border-left: 2px solid var(--vermillion);
-  padding-left: 1.2rem;
-  margin: 1.8rem 0;
-  max-width: 32em;
-  font-variation-settings: "opsz" 18;
-}
-
 .callout {
   background: var(--paper-deep);
   border: 1px solid var(--rule);
@@ -452,9 +437,6 @@ pre {
 
   .k { color: #e8a99a; font-weight: 500; }
   .c { color: #8895a8; font-style: italic; }
-  .n { color: #d4a13f; }
-  .v { color: #b8d4ba; }
-  .s { color: #e0c896; }
 }
 
 code {
@@ -763,4 +745,3 @@ footer {
 .delay-2 { animation-delay: 0.25s; }
 .delay-3 { animation-delay: 0.45s; }
 .delay-4 { animation-delay: 0.7s; }
-.delay-5 { animation-delay: 0.95s; }
