@@ -116,6 +116,14 @@ export const routes: Routes = [
       ).then((m) => m.VolumetricTexturesComponent),
   },
   {
+    path: 'robot-walks',
+    title: 'Robot Walks',
+    loadComponent: () =>
+      import('./projects/robot-walks/robot-walks.component').then(
+        (m) => m.RobotWalksComponent
+      ),
+  },
+  {
     path: '**',
     redirectTo: '',
   },

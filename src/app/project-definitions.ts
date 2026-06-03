@@ -15,7 +15,8 @@ export type ProjectPreviewStyle =
   | 'tetris'
   | 'dragon'
   | 'calculator'
-  | 'volumetric';
+  | 'volumetric'
+  | 'robot-walks';
 
 export interface ProjectDefinition {
   path: string;
@@ -209,5 +210,19 @@ export const projectDefinitions: readonly ProjectDefinition[] = [
     previewKicker: 'Procedural Field',
     previewValue: 'WORLEY RAYMARCH',
     previewTags: ['3D Noise', 'Gyroid', 'Drift'],
+  },
+  {
+    path: 'robot-walks',
+    title: 'Robot Walks',
+    summary:
+      'Graph theory, BEST theorem, and modular arithmetic applied to counting closed robot trajectories.',
+    tags: ['Math', 'Algorithm'],
+    accent: 'sun',
+    icon: 'RW',
+    category: 'Tools',
+    previewStyle: 'robot-walks',
+    previewKicker: 'Combinatorial Analysis',
+    previewValue: 'BEST THEOREM',
+    previewTags: ['Geometry', 'Modular Math', 'Circuits'],
   },
 ] as const;

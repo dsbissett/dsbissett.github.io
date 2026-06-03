@@ -1,0 +1,395 @@
+<!-- ============= HERO ============= -->
+<section class="hero">
+  <canvas id="heroCanvas"></canvas>
+  <div class="hero-top">
+    <div class="signature">Project Euler 208 · Robot Walks · HackerRank</div>
+    <div>MMXXVI · Solution Notes</div>
+  </div>
+  <div class="hero-content">
+    <div class="eyebrow fade in delay-1">A study in geometry, graph theory & modular arithmetic</div>
+    <h1 class="title fade in delay-2">Robot <em>Walks.</em></h1>
+    <p class="lede fade in delay-3">
+      A robot traces circular arcs across the plane — each one <em>1/n</em> of a revolution, swept either clockwise or counter-clockwise on the robot's free choice. After <em>m</em> arcs, how many distinct journeys close back to the start? Notes on the algorithm that answers this modulo a prime&nbsp;<em>K</em>.
+    </p>
+    <div class="meta-row fade in delay-4">
+      <span><span class="key">n</span> <span class="sep">∈</span> <span class="val">(1, 10]</span></span>
+      <span class="sep">·</span>
+      <span><span class="key">n</span> <span class="sep">&lt;</span> <span class="val">m</span></span>
+      <span class="sep">·</span>
+      <span><span class="key">n²·m</span> <span class="sep">≤</span> <span class="val">2·10⁴</span></span>
+      <span class="sep">·</span>
+      <span><span class="key">K</span> <span class="sep">prime,</span> <span class="val">10⁹ &lt; K &lt; 2·10⁹</span></span>
+    </div>
+  </div>
+</section>
+
+<div class="section-rule"><span class="glyph">§</span></div>
+
+<!-- ============= § 1 THE PROBLEM ============= -->
+<section>
+  <div class="section-head">
+    <div class="section-marker">§ One</div>
+    <h2>The <em>problem</em>, in plain prose.</h2>
+  </div>
+  <div class="prose">
+    <p class="lead-paragraph">
+      At every step, the robot has exactly two choices: swing its arc clockwise, or counter-clockwise. No abrupt heading changes, no turning in place — the heading flows smoothly through each arc, rotating by precisely <span class="var">2π/n</span> radians. We start facing North, and we want to count every distinct sequence of <span class="var">m</span> arcs that closes the trajectory back to the origin.
+    </p>
+    <p>
+      For <span class="var">n</span>&nbsp;=&nbsp;3 and <span class="var">m</span>&nbsp;=&nbsp;6, only eight such journeys exist. For <span class="var">n</span>&nbsp;=&nbsp;5 and <span class="var">m</span>&nbsp;=&nbsp;25, more than seventy thousand. The numbers explode quickly, which is why the answer is reported modulo a chosen prime <span class="var">K</span>.
+    </p>
+    <div class="callout">
+      <p>
+        Two seemingly small twists make this hard. <em>First</em>, the path's closure is a geometric constraint on the sum of displacement vectors — not a simple graph property. <em>Second</em>, an arc may be traversed many times in either direction, so brute enumeration is hopeless even for modest <span class="var">m</span>.
+      </p>
+    </div>
+
+    <h3>A picture — <em>n</em>=3, <em>m</em>=6 — all eight closures.</h3>
+    <p style="margin-top:0.6rem; color: var(--ink-3); font-size: 0.95em;">Two single-circle paths, six figure-eight paths. The robot starts at the marked vertex, heading North.</p>
+  </div>
+
+  <div style="margin-left: 132px; max-width: 38em;">
+    <div class="diagram-card" data-fig="Figure 1 · Closed paths for n=3, m=6">
+      <div class="example-grid" id="exampleGrid"></div>
+      <div class="diagram-caption">
+        Eight closed sequences of six 120° arcs, drawn as the robot would trace them. Each panel shows one journey, with the starting position marked in vermillion. <strong>Total: 8.</strong>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-rule"><span class="glyph">§</span></div>
+
+<!-- ============= § 2 THE HIDDEN GRAPH ============= -->
+<section>
+  <div class="section-head">
+    <div class="section-marker">§ Two</div>
+    <h2>A <em>graph</em>, hiding inside the geometry.</h2>
+  </div>
+  <div class="prose">
+    <p class="lead-paragraph">
+      The robot looks like a continuous machine, but its discrete shadow is a graph. Because every arc rotates the heading by exactly <span class="var">2π/n</span>, only <span class="var">n</span> distinct headings ever occur. The state space — though embedded in the plane — collapses onto a directed multigraph with the shape of a cycle&nbsp;<span class="var">C<sub>n</sub></span>.
+    </p>
+    <p>
+      Each arc, depending on whether it is clockwise or counter-clockwise, becomes an edge between adjacent headings. The robot's journey is a walk on this cycle. We describe a walk by a <em>multiplicity vector</em>
+      &nbsp;<span class="var">c</span>&nbsp;=&nbsp;(<span class="var">c<sub>0</sub></span>, <span class="var">c<sub>1</sub></span>, …, <span class="var">c<sub>n−1</sub></span>),
+      counting how many arcs the robot traces in each edge class. Of course, <span class="var">Σc<sub>i</sub></span>&nbsp;=&nbsp;<span class="var">m</span>.
+    </p>
+
+    <h3>Geometric closure becomes a <em>symmetry constraint</em>.</h3>
+    <p>
+      For the robot to come home, the sum of its arc displacements must vanish. By the <span class="var">n</span>-fold rotational symmetry of the arc family, this translates into a clean combinatorial condition on <span class="var">c</span>: the multiplicities must be invariant under a specific rotation of the cycle. The form of this condition is the reason every <span class="var">n</span> gets its own enumeration loop.
+    </p>
+  </div>
+
+  <div style="margin-left: 132px; max-width: 38em;">
+    <div class="diagram-card" data-fig="Figure 2 · The hidden cycle graph C_n">
+      <svg viewBox="0 0 700 320" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#c8412a"/>
+          </marker>
+          <marker id="arrowhead2" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#3a4862"/>
+          </marker>
+        </defs>
+        <!-- Cycle on the right -->
+        <g transform="translate(480,160)">
+          <!-- Cycle edges -->
+          <g stroke="#3a4862" stroke-width="1.2" fill="none">
+            <path d="M 0,-100 A 100,100 0 0,1 95,-31" marker-end="url(#arrowhead2)"/>
+            <path d="M 95,-31 A 100,100 0 0,1 59,81" marker-end="url(#arrowhead2)"/>
+            <path d="M 59,81 A 100,100 0 0,1 -59,81" marker-end="url(#arrowhead2)"/>
+            <path d="M -59,81 A 100,100 0 0,1 -95,-31" marker-end="url(#arrowhead2)"/>
+            <path d="M -95,-31 A 100,100 0 0,1 0,-100" marker-end="url(#arrowhead2)"/>
+          </g>
+          <!-- Counter cycle (reverse) -->
+          <g stroke="#c8412a" stroke-width="1.2" fill="none" stroke-dasharray="4 3" opacity="0.7">
+            <path d="M 0,-115 A 115,115 0 0,0 109,-36" marker-end="url(#arrowhead)"/>
+            <path d="M 109,-36 A 115,115 0 0,0 68,93" marker-end="url(#arrowhead)"/>
+            <path d="M 68,93 A 115,115 0 0,0 -68,93" marker-end="url(#arrowhead)"/>
+            <path d="M -68,93 A 115,115 0 0,0 -109,-36" marker-end="url(#arrowhead)"/>
+            <path d="M -109,-36 A 115,115 0 0,0 0,-115" marker-end="url(#arrowhead)"/>
+          </g>
+          <!-- Vertices -->
+          <g>
+            <circle cx="0" cy="-100" r="10" fill="#1a2238"/>
+            <circle cx="95" cy="-31" r="6" fill="#f4ecd8" stroke="#1a2238" stroke-width="1.5"/>
+            <circle cx="59" cy="81" r="6" fill="#f4ecd8" stroke="#1a2238" stroke-width="1.5"/>
+            <circle cx="-59" cy="81" r="6" fill="#f4ecd8" stroke="#1a2238" stroke-width="1.5"/>
+            <circle cx="-95" cy="-31" r="6" fill="#f4ecd8" stroke="#1a2238" stroke-width="1.5"/>
+          </g>
+          <!-- Labels -->
+          <g font-family="Fraunces, serif" font-style="italic" font-size="14" fill="#1a2238">
+            <text x="0" y="-118" text-anchor="middle">v₀</text>
+            <text x="115" y="-31" text-anchor="start">v₁</text>
+            <text x="75" y="97" text-anchor="start">v₂</text>
+            <text x="-75" y="97" text-anchor="end">v₃</text>
+            <text x="-115" y="-31" text-anchor="end">v₄</text>
+          </g>
+        </g>
+        <!-- Robot drawing on left -->
+        <g transform="translate(180,160)" id="leftRobotDiagram"></g>
+        <!-- Arrow between -->
+        <g transform="translate(330,160)" stroke="#1a2238" stroke-width="1">
+          <line x1="-20" y1="0" x2="40" y2="0" marker-end="url(#arrowhead2)"/>
+          <text x="10" y="-12" font-family="JetBrains Mono, monospace" font-size="10" fill="#3a4862" text-anchor="middle" letter-spacing="2">COLLAPSES</text>
+        </g>
+      </svg>
+      <div class="diagram-caption">
+        <strong>Left:</strong> the robot's arc-trace in the plane.
+        <strong>Right:</strong> its discrete shadow — a directed cycle <span class="var">C<sub>5</sub></span> with parallel edges in both directions. The solid black edges are clockwise arcs (heading decreases by <span class="var">2π/5</span>); dashed vermillion are counter-clockwise (heading increases).
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-rule"><span class="glyph">§</span></div>
+
+<!-- ============= § 3 BEST THEOREM ============= -->
+<section>
+  <div class="section-head">
+    <div class="section-marker">§ Three</div>
+    <h2>The <em>BEST</em> theorem.</h2>
+  </div>
+  <div class="prose">
+    <p class="lead-paragraph">
+      For a connected directed multigraph in which every vertex has equal in- and out-degree, the count of Eulerian circuits — walks that traverse every edge exactly once — has a beautiful closed form. It is one of the few "exact formulas" in combinatorics that delivers an instant huge number.
+    </p>
+  </div>
+
+  <div class="formula" data-label="Theorem" data-credit="de Bruijn · van Aardenne-Ehrenfest · Smith · Tutte">
+    <div class="formula-eq">
+      <span class="term">ec(<span class="v">G</span>)</span>
+      <span class="op">=</span>
+      <span class="term"><span class="v">T<sub class="lim">w</sub></span>(<span class="v">G</span>)</span>
+      <span class="op">·</span>
+      <span class="bigop">
+        <span class="glyph">∏</span>
+        <span class="under"><span class="v">v</span>&thinsp;∈&thinsp;<span class="v">V</span></span>
+      </span>
+      <span class="term">(deg<sup>+</sup><span class="v">v</span> − 1)!</span>
+    </div>
+    <span class="small-label">Eulerian circuits&nbsp;<span class="eq">=</span>&nbsp;arborescences rooted at <em>w</em>&nbsp;&nbsp;<span class="eq">×</span>&nbsp;&nbsp;product of (out-degree&nbsp;−&nbsp;1)! over all vertices</span>
+  </div>
+
+  <div class="prose">
+    <p>
+      <span class="var">T<sub>w</sub></span>(<span class="var">G</span>) counts the spanning arborescences (in-trees) rooted at any chosen vertex <span class="var">w</span> — remarkably, this number is the same for every <span class="var">w</span>. The other factor multiplies, at each vertex, the orderings of the outgoing edges after the first.
+    </p>
+    <p>
+      For this problem, the cycle graph has wonderful structure: <em>its arborescences have a clean polynomial expression</em>. Picking the root to be the start vertex, an arborescence is fully determined by choosing where on the cycle the "missing" edge sits — one summand per cycle position. The algorithm computes this sum directly, in <span class="var">O(n)</span> per evaluation.
+    </p>
+
+    <h3>Splitting an undirected count into <em>direction-aware</em> parts.</h3>
+    <p>
+      Our <span class="var">c<sub>i</sub></span> counts <em>total</em> traversals of edge class <span class="var">i</span>, mixing clockwise and counter-clockwise. To apply BEST, we split each into directional counts:
+      &nbsp;<span class="var">x<sub>i</sub></span> clockwise, <span class="var">y<sub>i</sub></span> counter-clockwise, with <span class="var">x<sub>i</sub>&nbsp;+&nbsp;y<sub>i</sub>&nbsp;=&nbsp;c<sub>i</sub></span>.
+    </p>
+    <p>
+      A subtle conservation law lurks here: for the directed walk to close, the <em>net angular drift</em> <span class="var">δ</span>&nbsp;=&nbsp;<span class="var">x<sub>i</sub>&nbsp;−&nbsp;y<sub>i</sub></span> must be the <em>same</em> for every edge of the cycle. (If it weren't, the in- and out-degrees would mismatch somewhere.) So the directional split is governed by a <em>single</em> integer&nbsp;<span class="var">δ</span>, ranging in steps of two from <span class="var">−min(c)</span> up to <span class="var">+min(c)</span>.
+    </p>
+    <p>
+      That single parameter is the loop variable <code>t</code> inside every <code>count_n*</code> function. Each iteration plugs in one value of <span class="var">δ</span>, computes the BEST count, and adds it to the running total.
+    </p>
+  </div>
+</section>
+
+<div class="section-rule"><span class="glyph">§</span></div>
+
+<!-- ============= § 4 THE ALGORITHM ============= -->
+<section>
+  <div class="section-head">
+    <div class="section-marker">§ Four</div>
+    <h2>The <em>algorithm</em>, four passes.</h2>
+  </div>
+  <div class="prose">
+    <p>
+      With the theorem in hand, the solver is a careful piece of bookkeeping. Every quantity lives in ℤ/Kℤ, so factorials, inverse factorials and modular inverses are precomputed once and reused throughout. Then we sum over multiplicity vectors and drifts.
+    </p>
+  </div>
+
+  <ol class="steps prose" style="list-style:none;">
+    <li>
+      <h4><em>Precompute</em> — modular machinery up to <span class="var">m</span>.</h4>
+      <p>
+        Build three arrays: <code>fact[i]</code>&nbsp;=&nbsp;<span class="var">i!</span>&nbsp;mod&nbsp;<span class="var">K</span>; <code>invfact[i]</code>&nbsp;=&nbsp;<span class="var">(i!)<sup>−1</sup></span>; and <code>invint[i]</code>&nbsp;=&nbsp;<span class="var">i<sup>−1</sup></span>. The first uses a forward loop, the second a backward pass starting from <code>fermat(fact[m])</code>, and the third the classical recurrence <span class="var">inv(i)&nbsp;=&nbsp;⌊K/i⌋·inv(K&nbsp;mod&nbsp;i)</span>.
+      </p>
+      <p class="sub">Cost: O(m). One-time.</p>
+    </li>
+    <li>
+      <h4><em>Enumerate</em> the admissible multiplicity vectors.</h4>
+      <p>
+        For each <span class="var">n</span> ∈ &#123;2, …, 10&#125;, the geometric-closure constraint forces a specific symmetry on <span class="var">c</span>. The outer loops in <code>solve_n*</code> walk this constrained lattice, parameterising it by a few free integers. Most <span class="var">n</span> admit only one or two "shapes" of <span class="var">c</span>; even <span class="var">n</span>&nbsp;=&nbsp;6,&nbsp;10 need a parity flag to handle odd <span class="var">m</span>.
+      </p>
+      <p class="sub">Cost: O(m<sup>⌈n/4⌉</sup>) where k = ⌈n/4⌉ free parameters.</p>
+    </li>
+    <li>
+      <h4><em>Evaluate</em> <code>count_n*</code> for each vector.</h4>
+      <p>
+        The inner kernel sums over the drift <span class="var">δ</span>. For each <span class="var">δ</span> it forms three pieces: the <em>vertex factor</em> (product of factorials of edge-pair sums at each vertex), the <em>multinomial</em> <span class="var">d</span> (counting orderings of <span class="var">x<sub>i</sub></span> CW and <span class="var">y<sub>i</sub></span> CCW arcs), and the <em>tree polynomial</em> (BEST's arborescence count for the cycle).
+      </p>
+      <p>
+        The multinomial is maintained <em>incrementally</em> across drifts: as <span class="var">δ</span> grows by 2, each <span class="var">x<sub>i</sub></span> ticks up by 1 and each <span class="var">y<sub>i</sub></span> ticks down. The new <span class="var">d</span> is the old one multiplied by <span class="var">y<sub>i</sub></span> and divided by <span class="var">x<sub>i</sub></span>+1 — hence the <code>invint</code> table.
+      </p>
+      <p class="sub">Cost: O(min(c) · n) per kernel call.</p>
+    </li>
+    <li>
+      <h4><em>Accumulate</em> modulo <span class="var">K</span>.</h4>
+      <p>
+        Every multiplication carries an immediate <code>% K</code>. The final result is the sum over all (vector, drift) pairs of (vertex × multinomial × tree). Print it.
+      </p>
+    </li>
+  </ol>
+
+  <div class="prose">
+    <h3>What the inner kernel looks like, distilled.</h3>
+  </div>
+  <pre class="prose" data-label="count_n* · the heart of the solver" style="margin-left:132px;"><span class="c">// for each net drift δ in steps of 2 from −min(c) to +min(c):</span>
+<span class="k">for</span> (i64 t = 0; t &lt; steps; t++) &#123;
+    <span class="c">// (1) Tree polynomial − BEST's arborescence count on the cycle</span>
+    <span class="c">//     Σ over cut-position k of ∏(x's on one side) · ∏(y's on the other)</span>
+    i64 tree = sx1;
+    tree = (tree + p1 * sx2) % K;
+    tree = (tree + p2 * sx3) % K;
+    <span class="c">// ... up to n terms ...</span>
+    tree = (tree + p_&#123;n-1&#125;) % K;
+
+    <span class="c">// (2) Accumulate this drift's contribution</span>
+    total = (total + tree * d) % K;
+
+    <span class="c">// (3) Slide δ → δ + 2: update multinomial d incrementally</span>
+    d = d * p_&#123;n-1&#125; % K * y_&#123;n-1&#125; % K;       <span class="c">// new y factors die off</span>
+    <span class="k">for</span> (i in 0..n-1) &#123;
+        ++x[i]; d = d * invint[x[i]] % K;     <span class="c">// new x⁻¹ factors</span>
+        --y[i];
+    &#125;
+&#125;
+<span class="k">return</span> vertex * total % K;</pre>
+
+  <div class="prose">
+    <p>
+      Two threads run through this loop — one tracking the tree polynomial, the other the multinomial — and they share state. The bookkeeping is delicate enough that the kernel is unrolled by hand for each <span class="var">n</span>, but the structure is identical in every case.
+    </p>
+  </div>
+</section>
+
+<div class="section-rule"><span class="glyph">§</span></div>
+
+<!-- ============= § 5 PER-N TABLE ============= -->
+<section>
+  <div class="section-head">
+    <div class="section-marker">§ Five</div>
+    <h2>Why every <em>n</em> is its own problem.</h2>
+  </div>
+  <div class="prose">
+    <p>
+      The geometric-closure constraint takes a different form for each <span class="var">n</span> — depending on whether <span class="var">n</span> is prime, composite, or shares a factor with 2. The dispatcher routes to one of nine specialised functions. The table below is the index.
+    </p>
+  </div>
+
+  <div style="margin-left:132px; max-width: 56em;">
+  <div class="n-table">
+    <div class="row">
+      <div class="n-cell">2</div>
+      <div class="n-strat-key">Closed form</div>
+      <div class="n-strat-desc">Half-circle arcs cancel in pairs: the count is the binomial coefficient <em><span class="var">C</span>(<span class="var">m</span>, <span class="var">m</span>/2)</em>, zero when <span class="var">m</span> is odd.</div>
+    </div>
+    <div class="row">
+      <div class="n-cell">3</div>
+      <div class="n-strat-key">Uniform · m ≡ 0 (mod 3)</div>
+      <div class="n-strat-desc">Every cycle edge is used the same number of times: <em><span class="var">c<sub>i</sub></span> = <span class="var">m</span>/3</em>. A single kernel call.</div>
+    </div>
+    <div class="row">
+      <div class="n-cell">4</div>
+      <div class="n-strat-key">One free parameter</div>
+      <div class="n-strat-desc">Opposite edges must balance: iterate <em><span class="var">a</span> ∈ [0, <span class="var">m</span>/2]</em> with <em><span class="var">c</span> = (<span class="var">a</span>, <span class="var">m</span>/2−<span class="var">a</span>, <span class="var">a</span>, <span class="var">m</span>/2−<span class="var">a</span>)</em>.</div>
+    </div>
+    <div class="row">
+      <div class="n-cell">5</div>
+      <div class="n-strat-key">Uniform · m ≡ 0 (mod 5)</div>
+      <div class="n-strat-desc">Like <span class="var">n</span>&nbsp;=&nbsp;3: all five multiplicities are equal to <em><span class="var">m</span>/5</em>.</div>
+    </div>
+    <div class="row">
+      <div class="n-cell">6</div>
+      <div class="n-strat-key">Parity branch · flag f</div>
+      <div class="n-strat-desc">Even and odd <span class="var">m</span> behave differently. A flag <em><span class="var">f</span> ∈ &#123;0, 3&#125;</em> selects which sub-lattice of <span class="var">c</span>-vectors to walk; both share the same kernel skeleton with a rotated index order.</div>
+    </div>
+    <div class="row">
+      <div class="n-cell">7</div>
+      <div class="n-strat-key">Uniform · m ≡ 0 (mod 7)</div>
+      <div class="n-strat-desc">A single kernel call with all <span class="var">c<sub>i</sub></span>&nbsp;=&nbsp;<em><span class="var">m</span>/7</em>.</div>
+    </div>
+    <div class="row">
+      <div class="n-cell">8</div>
+      <div class="n-strat-key">Three free parameters</div>
+      <div class="n-strat-desc">Triple loop over <em><span class="var">w<sub>0</sub></span>, <span class="var">w<sub>1</sub></span>, <span class="var">w<sub>2</sub></span></em> with an extra parity index <em><span class="var">p</span></em>; opposite edges constrained to match.</div>
+    </div>
+    <div class="row">
+      <div class="n-cell">9</div>
+      <div class="n-strat-key">Two free parameters + parity</div>
+      <div class="n-strat-desc">Threefold symmetry on the cycle: pick <em><span class="var">u<sub>0</sub></span>, <span class="var">u<sub>1</sub></span>, <span class="var">u<sub>2</sub></span></em> with matching parity, repeat the triple three times around the cycle.</div>
+    </div>
+    <div class="row">
+      <div class="n-cell">10</div>
+      <div class="n-strat-key">Four parameters · parity branch</div>
+      <div class="n-strat-desc">The most general case: quadruple loop with a parity flag, the same shape as <span class="var">n</span>&nbsp;=&nbsp;6 but two scales bigger.</div>
+    </div>
+  </div>
+  </div>
+
+  <div class="prose">
+    <p style="margin-top: 2.5rem;">
+      The pattern is suggestive: <em>prime</em> <span class="var">n</span> reduce to a single uniform call, while <em>composite</em> <span class="var">n</span> open up an interior of free parameters whose dimension grows roughly as <span class="var">n</span>/4. This is why the constraint <span class="var">n²m&nbsp;≤&nbsp;2·10⁴</span> hits hardest for <span class="var">n</span>&nbsp;=&nbsp;10: it pays for both the outer loop's volume and the inner kernel's drift sweep.
+    </p>
+  </div>
+</section>
+
+<div class="section-rule"><span class="glyph">§</span></div>
+
+<!-- ============= § 6 VERIFY ============= -->
+<section>
+  <div class="section-head">
+    <div class="section-marker">§ Six</div>
+    <h2><em>Verifying</em> the algorithm.</h2>
+  </div>
+  <div class="prose">
+    <p>
+      The three sample inputs from the problem statement land exactly. Each was hand-verified against a direct enumeration for small parameters before the modular machinery was trusted on large ones.
+    </p>
+
+    <table class="verify">
+      <thead>
+        <tr><th>Input <span class="var">(n, m, K)</span></th><th>Expected</th><th>Computed</th><th>·</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>3, 6, 1 000 000 007</td><td>8</td><td>8</td><td class="check">✓</td></tr>
+        <tr><td>6, 7, 1 000 000 009</td><td>2</td><td>2</td><td class="check">✓</td></tr>
+        <tr><td>4, 8, 1 000 000 033</td><td>18</td><td>18</td><td class="check">✓</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Complexity, briefly.</h3>
+    <p>
+      Precompute is <span class="var">O(m)</span>. The outer enumeration over <span class="var">c</span>-vectors has <span class="var">O(m<sup>⌈n/4⌉</sup>)</span> shapes for composite <span class="var">n</span>, each calling a kernel that does <span class="var">O(n · min(c))</span> work. Worst case fits comfortably under <span class="var">n²m</span>, which is exactly the bound the problem imposes — <span class="var">2·10<sup>4</sup></span>. Modular arithmetic adds a small constant factor and never any allocations after the precompute.
+    </p>
+
+    <div class="callout">
+      <p>
+        <em>The whole solution is non-asymptotic.</em> No DP table grows with <span class="var">n</span> or <span class="var">m</span> beyond the three precomputed arrays; every other quantity is a handful of 64-bit registers carried through the inner loop. The hot path is dominated by modular multiplications, of which there are roughly <span class="var">12n²m</span> across a worst-case test.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ============= FOOTER ============= -->
+<footer>
+  <div class="colophon">
+    <strong>Robot Walks · Solution Notes</strong><br>
+    Set in <em>Fraunces</em> and <em>JetBrains Mono</em>. A study by <span style="color:var(--ink);">Drake</span>.
+  </div>
+  <div class="right">
+    Project Euler 208<br>
+    HackerRank · 100% accepted
+  </div>
+</footer>
