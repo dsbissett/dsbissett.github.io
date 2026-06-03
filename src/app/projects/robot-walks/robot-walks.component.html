@@ -254,6 +254,9 @@
         Build three arrays: <code>fact[i]</code>&nbsp;=&nbsp;<span class="var">i!</span>&nbsp;mod&nbsp;<span class="var">K</span>; <code>invfact[i]</code>&nbsp;=&nbsp;<span class="var">(i!)<sup>−1</sup></span>; and <code>invint[i]</code>&nbsp;=&nbsp;<span class="var">i<sup>−1</sup></span>. The first uses a forward loop, the second a backward pass starting from <code>fermat(fact[m])</code>, and the third the classical recurrence <span class="var">inv(i)&nbsp;=&nbsp;⌊K/i⌋·inv(K&nbsp;mod&nbsp;i)</span>.
       </p>
       <p class="sub">Cost: O(m). One-time.</p>
+      <div class="diagram-card" data-fig="Pass 1 · fact → invfact ← invint">
+        <canvas id="animStep1Canvas" width="560" height="150"></canvas>
+      </div>
     </li>
     <li>
       <h4><em>Enumerate</em> the admissible multiplicity vectors.</h4>
@@ -261,6 +264,9 @@
         For each <span class="var">n</span> ∈ &#123;2, …, 10&#125;, the geometric-closure constraint forces a specific symmetry on <span class="var">c</span>. The outer loops in <code>solve_n*</code> walk this constrained lattice, parameterising it by a few free integers. Most <span class="var">n</span> admit only one or two "shapes" of <span class="var">c</span>; even <span class="var">n</span>&nbsp;=&nbsp;6,&nbsp;10 need a parity flag to handle odd <span class="var">m</span>.
       </p>
       <p class="sub">Cost: O(m<sup>⌈n/4⌉</sup>) where k = ⌈n/4⌉ free parameters.</p>
+      <div class="diagram-card" data-fig="Pass 2 · walking the c-vector lattice (n=4)">
+        <canvas id="animStep2Canvas" width="560" height="170"></canvas>
+      </div>
     </li>
     <li>
       <h4><em>Evaluate</em> <code>count_n*</code> for each vector.</h4>
@@ -271,12 +277,18 @@
         The multinomial is maintained <em>incrementally</em> across drifts: as <span class="var">δ</span> grows by 2, each <span class="var">x<sub>i</sub></span> ticks up by 1 and each <span class="var">y<sub>i</sub></span> ticks down. The new <span class="var">d</span> is the old one multiplied by <span class="var">y<sub>i</sub></span> and divided by <span class="var">x<sub>i</sub></span>+1 — hence the <code>invint</code> table.
       </p>
       <p class="sub">Cost: O(min(c) · n) per kernel call.</p>
+      <div class="diagram-card" data-fig="Pass 3 · the drift sweep δ = −2 → +2">
+        <canvas id="animStep3Canvas" width="560" height="170"></canvas>
+      </div>
     </li>
     <li>
       <h4><em>Accumulate</em> modulo <span class="var">K</span>.</h4>
       <p>
         Every multiplication carries an immediate <code>% K</code>. The final result is the sum over all (vector, drift) pairs of (vertex × multinomial × tree). Print it.
       </p>
+      <div class="diagram-card" data-fig="Pass 4 · accumulating 1 + 6 + 1 mod K">
+        <canvas id="animStep4Canvas" width="560" height="150"></canvas>
+      </div>
     </li>
   </ol>
 

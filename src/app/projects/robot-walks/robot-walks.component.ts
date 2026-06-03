@@ -408,6 +408,14 @@ export class RobotWalksComponent implements OnInit {
   private walkDims = { w: 0, h: 0 };
   private graphDims = { w: 0, h: 0 };
   private kernelDims = { w: 0, h: 0 };
+  private step1Canvas!: HTMLCanvasElement;
+  private step2Canvas!: HTMLCanvasElement;
+  private step3Canvas!: HTMLCanvasElement;
+  private step4Canvas!: HTMLCanvasElement;
+  private step1Dims = { w: 0, h: 0 };
+  private step2Dims = { w: 0, h: 0 };
+  private step3Dims = { w: 0, h: 0 };
+  private step4Dims = { w: 0, h: 0 };
   private kernelSteps: ReturnType<RobotWalksComponent['countN3Steps']> | null = null;
   private animStart = 0;
   private reducedMotion = false;
@@ -416,23 +424,24 @@ export class RobotWalksComponent implements OnInit {
     this.walkCanvas = document.getElementById('animWalkCanvas') as HTMLCanvasElement;
     this.graphCanvas = document.getElementById('animGraphCanvas') as HTMLCanvasElement;
     this.kernelCanvas = document.getElementById('animKernelCanvas') as HTMLCanvasElement;
+    this.step1Canvas = document.getElementById('animStep1Canvas') as HTMLCanvasElement;
+    this.step2Canvas = document.getElementById('animStep2Canvas') as HTMLCanvasElement;
+    this.step3Canvas = document.getElementById('animStep3Canvas') as HTMLCanvasElement;
+    this.step4Canvas = document.getElementById('animStep4Canvas') as HTMLCanvasElement;
     if (!this.walkCanvas || !this.graphCanvas || !this.kernelCanvas) return;
+    if (!this.step1Canvas || !this.step2Canvas || !this.step3Canvas || !this.step4Canvas) return;
 
     this.kernelSteps = this.countN3Steps(2, 2, 2);
     this.reducedMotion =
       window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
 
-    this.sizeAnimCanvas(this.walkCanvas, this.walkDims);
-    this.sizeAnimCanvas(this.graphCanvas, this.graphDims);
-    this.sizeAnimCanvas(this.kernelCanvas, this.kernelDims);
+    this.sizeAllAnimCanvases();
 
     let resizeTimer: ReturnType<typeof setTimeout>;
     window.addEventListener('resize', () => {
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
-        this.sizeAnimCanvas(this.walkCanvas, this.walkDims);
-        this.sizeAnimCanvas(this.graphCanvas, this.graphDims);
-        this.sizeAnimCanvas(this.kernelCanvas, this.kernelDims);
+        this.sizeAllAnimCanvases();
         if (this.reducedMotion) this.renderStaticFrames();
       }, 200);
     });
@@ -442,6 +451,16 @@ export class RobotWalksComponent implements OnInit {
       return;
     }
     requestAnimationFrame((t) => this.animLoop(t));
+  }
+
+  private sizeAllAnimCanvases(): void {
+    this.sizeAnimCanvas(this.walkCanvas, this.walkDims);
+    this.sizeAnimCanvas(this.graphCanvas, this.graphDims);
+    this.sizeAnimCanvas(this.kernelCanvas, this.kernelDims);
+    this.sizeAnimCanvas(this.step1Canvas, this.step1Dims);
+    this.sizeAnimCanvas(this.step2Canvas, this.step2Dims);
+    this.sizeAnimCanvas(this.step3Canvas, this.step3Dims);
+    this.sizeAnimCanvas(this.step4Canvas, this.step4Dims);
   }
 
   private sizeAnimCanvas(c: HTMLCanvasElement, dims: { w: number; h: number }): void {
@@ -462,6 +481,10 @@ export class RobotWalksComponent implements OnInit {
     this.drawWalk(elapsed);
     this.drawGraph(elapsed);
     this.drawKernel(elapsed);
+    this.drawPrecompute(elapsed);
+    this.drawEnumerate(elapsed);
+    this.drawEvaluate(elapsed);
+    this.drawAccumulate(elapsed);
     requestAnimationFrame((next) => this.animLoop(next));
   };
 
@@ -470,6 +493,10 @@ export class RobotWalksComponent implements OnInit {
     this.drawWalk(2.0); // first path fully traced
     this.drawGraph(99); // completed circuit
     this.drawKernel(99); // all terms summed
+    this.drawPrecompute(99); // all three tables built
+    this.drawEnumerate(99); // every c-vector enumerated
+    this.drawEvaluate(99); // last drift evaluated
+    this.drawAccumulate(99); // total accumulated
   }
 
   // ---- Figure 3: geometric walk tracer -----------------------------
@@ -859,6 +886,310 @@ export class RobotWalksComponent implements OnInit {
       ctx.fillStyle = P.sage;
       ctx.font = "italic 16px 'Fraunces', serif";
       ctx.fillText(`= ${ks.answer} closed walks`, w - 16, h - 14);
+    }
+  }
+
+  // ---- Pass 1: precompute — fact / invfact / invint tables ----------
+
+  private drawPreRow(
+    ctx: CanvasRenderingContext2D,
+    label: string,
+    y: number,
+    geom: { x0: number; cw: number; ch: number; gap: number; n: number },
+    filled: (i: number) => boolean,
+    active: number
+  ): void {
+    const P = RobotWalksComponent.PAL;
+    ctx.fillStyle = P.ink3;
+    ctx.font = "10px 'JetBrains Mono', monospace";
+    ctx.textAlign = 'right';
+    ctx.fillText(label, geom.x0 - 10, y + geom.ch * 0.68);
+    for (let i = 0; i < geom.n; i++) {
+      const cx = geom.x0 + i * (geom.cw + geom.gap);
+      const on = filled(i);
+      const act = i === active;
+      ctx.fillStyle = act ? P.paperDeep : on ? 'rgba(200,65,42,0.14)' : P.paper;
+      ctx.fillRect(cx, y, geom.cw, geom.ch);
+      ctx.strokeStyle = act ? P.verm : on ? P.rule : '#d8cfb0';
+      ctx.lineWidth = act ? 1.6 : 1;
+      ctx.strokeRect(cx, y, geom.cw, geom.ch);
+      ctx.fillStyle = on ? P.vermDeep : '#ccbf9e';
+      ctx.font = "10px 'JetBrains Mono', monospace";
+      ctx.textAlign = 'center';
+      ctx.fillText(String(i), cx + geom.cw / 2, y + geom.ch * 0.68);
+    }
+  }
+
+  private drawPrecompute(elapsed: number): void {
+    const { w, h } = this.step1Dims;
+    if (w === 0) return;
+    const ctx = this.step1Canvas.getContext('2d')!;
+    const P = RobotWalksComponent.PAL;
+    const n = 10;
+
+    const cellDur = 0.14;
+    const pA = n; // fact: forward 0..9
+    const pB = n; // invfact: backward 9..0
+    const pC = n - 1; // invint: forward 1..9
+    const total = pA + pB + pC;
+    const cycle = total * cellDur + 1.3;
+    const local = this.reducedMotion ? total * cellDur : elapsed % cycle;
+    const tick = Math.min(total, Math.floor(local / cellDur));
+
+    ctx.fillStyle = P.paper;
+    ctx.fillRect(0, 0, w, h);
+
+    const geom = { x0: 86, cw: 0, ch: 24, gap: 6, n };
+    geom.cw = Math.min(32, (w - geom.x0 - 16 - geom.gap * (n - 1)) / n);
+    const rowY = [30, 66, 102];
+
+    const factN = Math.min(n, tick);
+    this.drawPreRow(ctx, 'fact', rowY[0], geom, (i) => i < factN, tick < n ? factN - 1 : -1);
+
+    const bN = Math.min(n, Math.max(0, tick - pA));
+    this.drawPreRow(ctx, 'invfact', rowY[1], geom, (i) => i >= n - bN, bN >= 1 && bN <= n ? n - bN : -1);
+
+    const cN = Math.max(0, tick - pA - pB);
+    this.drawPreRow(ctx, 'invint', rowY[2], geom, (i) => i > 0 && i <= cN, cN >= 1 && cN <= pC ? cN : -1);
+
+    // sweep-direction hints
+    ctx.fillStyle = P.ink3;
+    ctx.font = "9px 'JetBrains Mono', monospace";
+    ctx.textAlign = 'left';
+    const hintX = geom.x0 + n * (geom.cw + geom.gap) + 4;
+    ctx.fillText('→', hintX, rowY[0] + 16);
+    ctx.fillText('←', hintX, rowY[1] + 16);
+    ctx.fillText('→', hintX, rowY[2] + 16);
+
+    if (local >= total * cellDur) {
+      ctx.fillStyle = P.sage;
+      ctx.font = "600 11px 'JetBrains Mono', monospace";
+      ctx.textAlign = 'right';
+      ctx.fillText('TABLES READY ✓', w - 14, h - 12);
+    }
+  }
+
+  // ---- Pass 2: enumerate — walking the c-vector lattice (n=4) -------
+
+  private drawEnumerate(elapsed: number): void {
+    const { w, h } = this.step2Dims;
+    if (w === 0) return;
+    const ctx = this.step2Canvas.getContext('2d')!;
+    const P = RobotWalksComponent.PAL;
+    const M = 3; // m/2 for m = 6
+
+    const stepDur = 0.7;
+    const steps = M + 1; // a = 0..M
+    const cycle = steps * stepDur + 1.2;
+    const local = this.reducedMotion ? steps * stepDur : elapsed % cycle;
+    const visited = Math.min(steps, Math.floor(local / stepDur) + 1);
+    const aCur = Math.min(M, Math.floor(local / stepDur));
+
+    ctx.fillStyle = P.paper;
+    ctx.fillRect(0, 0, w, h);
+
+    const cell = Math.min(34, (h - 64) / M);
+    const gx0 = 56;
+    const gy0 = h - 30;
+    const px = (c0: number) => gx0 + c0 * cell;
+    const py = (c1: number) => gy0 - c1 * cell;
+
+    // background lattice dots
+    ctx.fillStyle = '#cfc3a2';
+    for (let c0 = 0; c0 <= M; c0++) {
+      for (let c1 = 0; c1 <= M; c1++) {
+        ctx.beginPath();
+        ctx.arc(px(c0), py(c1), 2, 0, 2 * Math.PI);
+        ctx.fill();
+      }
+    }
+
+    // admissible diagonal c0 + c1 = M
+    ctx.beginPath();
+    ctx.moveTo(px(0), py(M));
+    ctx.lineTo(px(M), py(0));
+    ctx.strokeStyle = P.rule;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 3]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // visited admissible points
+    for (let a = 0; a < visited; a++) {
+      ctx.beginPath();
+      ctx.arc(px(a), py(M - a), a === aCur ? 7 : 5, 0, 2 * Math.PI);
+      ctx.fillStyle = a === aCur ? P.verm : 'rgba(200,65,42,0.42)';
+      ctx.fill();
+    }
+
+    // axis labels
+    ctx.fillStyle = P.ink3;
+    ctx.font = "italic 12px 'Fraunces', serif";
+    ctx.textAlign = 'center';
+    ctx.fillText('c₀', px(M) + 16, gy0 + 4);
+    ctx.fillText('c₁', gx0 - 14, py(M) - 8);
+
+    // readout
+    const readX = px(M) + 44;
+    ctx.textAlign = 'left';
+    ctx.fillStyle = P.ink2;
+    ctx.font = "11px 'JetBrains Mono', monospace";
+    ctx.fillText('c₀ + c₁ = 3', readX, py(M) + 4);
+    ctx.fillStyle = P.vermDeep;
+    ctx.font = "600 13px 'JetBrains Mono', monospace";
+    ctx.fillText(`c = (${aCur}, ${M - aCur}, ${aCur}, ${M - aCur})`, readX, py(M) + 28);
+
+    if (local >= steps * stepDur) {
+      ctx.fillStyle = P.sage;
+      ctx.font = "600 11px 'JetBrains Mono', monospace";
+      ctx.fillText('4 VECTORS ✓', readX, py(M) + 52);
+    }
+  }
+
+  // ---- Pass 3: evaluate — the drift sweep, x↑ / y↓ ------------------
+
+  private drawEvalEdge(
+    ctx: CanvasRenderingContext2D,
+    cx: number,
+    baseY: number,
+    unit: number,
+    xi: number,
+    yi: number,
+    label: string
+  ): void {
+    const P = RobotWalksComponent.PAL;
+    for (let k = 0; k < xi; k++) {
+      ctx.fillStyle = P.ink;
+      ctx.fillRect(cx - 12, baseY - (k + 1) * unit + 2, 24, unit - 3);
+    }
+    for (let k = 0; k < yi; k++) {
+      ctx.fillStyle = P.verm;
+      ctx.fillRect(cx - 12, baseY + k * unit + 2, 24, unit - 3);
+    }
+    ctx.strokeStyle = P.rule;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(cx - 16, baseY);
+    ctx.lineTo(cx + 16, baseY);
+    ctx.stroke();
+    ctx.fillStyle = P.ink3;
+    ctx.font = "9px 'JetBrains Mono', monospace";
+    ctx.textAlign = 'center';
+    ctx.fillText(label, cx, baseY + 3 * unit);
+  }
+
+  private drawEvaluate(elapsed: number): void {
+    const { w, h } = this.step3Dims;
+    if (w === 0 || !this.kernelSteps) return;
+    const ctx = this.step3Canvas.getContext('2d')!;
+    const P = RobotWalksComponent.PAL;
+    const ks = this.kernelSteps;
+    const n = ks.steps.length;
+
+    const stepDur = 1.3;
+    const cycle = n * stepDur + 1.2;
+    const local = this.reducedMotion ? n * stepDur : elapsed % cycle;
+    const idx = Math.min(n - 1, Math.floor(local / stepDur));
+    const s = ks.steps[idx];
+
+    ctx.fillStyle = P.paper;
+    ctx.fillRect(0, 0, w, h);
+
+    ctx.textAlign = 'left';
+    ctx.fillStyle = P.vermDeep;
+    ctx.font = "italic 16px 'Fraunces', serif";
+    ctx.fillText(`δ = ${s.delta > 0 ? '+' : ''}${s.delta}`, 16, 26);
+    ctx.fillStyle = P.ink3;
+    ctx.font = "9px 'JetBrains Mono', monospace";
+    ctx.fillText('x ticks ↑ (CW)   y ticks ↓ (CCW)', 78, 25);
+
+    const baseY = h / 2 + 10;
+    const unit = 13;
+    for (let i = 0; i < 3; i++) {
+      this.drawEvalEdge(ctx, 44 + i * 52, baseY, unit, s.x[i], s.y[i], `e${i}`);
+    }
+
+    // assembling product, on the right
+    const fx = 44 + 3 * 52 + 8;
+    ctx.textAlign = 'left';
+    ctx.font = "11px 'JetBrains Mono', monospace";
+    ctx.fillStyle = P.ink2;
+    ctx.fillText(`vertex = ${ks.vertex}`, fx, baseY - 30);
+    ctx.fillText(`tree   = ${s.tree}`, fx, baseY - 14);
+    ctx.fillStyle = P.vermDeep;
+    ctx.font = "700 22px 'Fraunces', serif";
+    ctx.fillText(`+${s.contribution}`, fx, baseY + 14);
+    ctx.fillStyle = P.ink3;
+    ctx.font = "9px 'JetBrains Mono', monospace";
+    ctx.fillText('vertex × tree × d', fx, baseY + 30);
+
+    if (local >= n * stepDur) {
+      ctx.fillStyle = P.sage;
+      ctx.font = "600 11px 'JetBrains Mono', monospace";
+      ctx.textAlign = 'right';
+      ctx.fillText('KERNEL DONE ✓', w - 14, 25);
+    }
+  }
+
+  // ---- Pass 4: accumulate — running total mod K --------------------
+
+  private drawAccumulate(elapsed: number): void {
+    const { w, h } = this.step4Dims;
+    if (w === 0 || !this.kernelSteps) return;
+    const ctx = this.step4Canvas.getContext('2d')!;
+    const P = RobotWalksComponent.PAL;
+    const contribs = this.kernelSteps.steps.map((s) => s.contribution);
+    const n = contribs.length;
+
+    const stepDur = 1.0;
+    const cycle = n * stepDur + 1.5;
+    const local = this.reducedMotion ? n * stepDur : elapsed % cycle;
+    const added = Math.min(n, Math.floor(local / stepDur) + 1);
+    let running = 0;
+    for (let i = 0; i < added; i++) running += contribs[i];
+
+    ctx.fillStyle = P.paper;
+    ctx.fillRect(0, 0, w, h);
+
+    ctx.textAlign = 'left';
+    ctx.fillStyle = P.ink2;
+    ctx.font = "11px 'JetBrains Mono', monospace";
+    ctx.fillText('total = (total + vertex·tree·d) % K', 16, 24);
+
+    const slotY = h / 2 + 2;
+    const slotX0 = 40;
+    const slotGap = 70;
+    for (let i = 0; i < n; i++) {
+      const cx = slotX0 + i * slotGap;
+      const on = i < added;
+      ctx.beginPath();
+      ctx.arc(cx, slotY, 17, 0, 2 * Math.PI);
+      ctx.fillStyle = on ? 'rgba(200,65,42,0.14)' : P.paper;
+      ctx.fill();
+      ctx.strokeStyle = on ? P.verm : '#d8cfb0';
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+      ctx.fillStyle = on ? P.vermDeep : '#ccbf9e';
+      ctx.font = "600 15px 'Fraunces', serif";
+      ctx.textAlign = 'center';
+      ctx.fillText(`+${contribs[i]}`, cx, slotY + 5);
+      if (i < n - 1) {
+        ctx.fillStyle = P.ink3;
+        ctx.font = "15px 'JetBrains Mono', monospace";
+        ctx.fillText('+', cx + slotGap / 2, slotY + 5);
+      }
+    }
+
+    ctx.textAlign = 'left';
+    ctx.fillStyle = P.ink2;
+    ctx.font = "600 13px 'JetBrains Mono', monospace";
+    ctx.fillText(`Σ = ${running}`, 16, h - 14);
+
+    if (added >= n) {
+      ctx.textAlign = 'right';
+      ctx.fillStyle = P.sage;
+      ctx.font = "italic 16px 'Fraunces', serif";
+      ctx.fillText(`answer = ${this.kernelSteps.answer}`, w - 14, h - 12);
     }
   }
 }
