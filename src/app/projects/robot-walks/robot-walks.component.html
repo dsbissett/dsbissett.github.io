@@ -197,10 +197,48 @@
 
 <div class="section-rule"><span class="glyph">§</span></div>
 
-<!-- ============= § 4 THE ALGORITHM ============= -->
+<!-- ============= § 4 WATCHING THE SOLVE ============= -->
 <section>
   <div class="section-head">
     <div class="section-marker">§ Four</div>
+    <h2>The solution, <em>in motion</em>.</h2>
+  </div>
+  <div class="prose">
+    <p class="lead-paragraph">
+      Three views of the very same count — <span class="var">n</span>&nbsp;=&nbsp;3, <span class="var">m</span>&nbsp;=&nbsp;6, answer&nbsp;<em>8</em>. First the robot traces each closing journey in the plane; then those journeys become Eulerian circuits on the cycle&nbsp;<span class="var">C<sub>3</sub></span>; finally the kernel's drift sum recovers the total <em>1&nbsp;+&nbsp;6&nbsp;+&nbsp;1</em> directly. The three are one story told three ways.
+    </p>
+  </div>
+
+  <div style="margin-left: 132px; max-width: 38em;">
+    <div class="diagram-card" data-fig="Figure 3 · Geometric — each closing walk traced">
+      <canvas id="animWalkCanvas" width="600" height="300"></canvas>
+      <div class="diagram-caption">
+        The robot tints each of the eight closing sequences in turn, returning to the marked origin every time. <strong>2 single circles · 6 figure-eights · 8 total.</strong>
+      </div>
+    </div>
+
+    <div class="diagram-card" data-fig="Figure 4 · Graph — the same walk as an Eulerian circuit">
+      <canvas id="animGraphCanvas" width="600" height="320"></canvas>
+      <div class="diagram-caption">
+        A token walks the cycle <span class="var">C<sub>3</sub></span>; clockwise arcs step forward, counter-clockwise step back. The multiplicity vector <span class="var">c</span> fills until every edge is used twice — <span class="var">c</span>&nbsp;=&nbsp;(2,&nbsp;2,&nbsp;2), <span class="var">Σ</span>&nbsp;=&nbsp;6.
+      </div>
+    </div>
+
+    <div class="diagram-card" data-fig="Figure 5 · Kernel — the drift sum, term by term">
+      <canvas id="animKernelCanvas" width="600" height="340"></canvas>
+      <div class="diagram-caption">
+        Each net drift <span class="var">δ</span> splits every <span class="var">c<sub>i</sub></span> into <span class="var">x<sub>i</sub></span>&nbsp;clockwise and <span class="var">y<sub>i</sub></span>&nbsp;counter-clockwise. The contribution <span class="var">vertex&nbsp;×&nbsp;tree&nbsp;×&nbsp;d</span> for <span class="var">δ</span>&nbsp;=&nbsp;−2,&nbsp;0,&nbsp;+2 is <strong>1, 6, 1</strong> — summing to the answer, 8.
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-rule"><span class="glyph">§</span></div>
+
+<!-- ============= § 5 THE ALGORITHM ============= -->
+<section>
+  <div class="section-head">
+    <div class="section-marker">§ Five</div>
     <h2>The <em>algorithm</em>, four passes.</h2>
   </div>
   <div class="prose">
@@ -279,7 +317,7 @@
 <!-- ============= § 5 PER-N TABLE ============= -->
 <section>
   <div class="section-head">
-    <div class="section-marker">§ Five</div>
+    <div class="section-marker">§ Six</div>
     <h2>Why every <em>n</em> is its own problem.</h2>
   </div>
   <div class="prose">
@@ -350,7 +388,7 @@
 <!-- ============= § 6 VERIFY ============= -->
 <section>
   <div class="section-head">
-    <div class="section-marker">§ Six</div>
+    <div class="section-marker">§ Seven</div>
     <h2><em>Verifying</em> the algorithm.</h2>
   </div>
   <div class="prose">

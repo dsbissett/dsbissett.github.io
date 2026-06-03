@@ -70,6 +70,7 @@ export class RobotWalksComponent implements OnInit {
     this.buildExampleGrid();
     this.buildLeftRobotDiagram();
     this.setupScrollFadeIn();
+    this.initSolveAnimations();
   }
 
   private heroCanvas!: HTMLCanvasElement;
@@ -371,5 +372,493 @@ export class RobotWalksComponent implements OnInit {
           fadeObserver.observe(el);
         });
     }, 100);
+  }
+
+  // ===================================================================
+  // §4 — Three animated views of the same count: n=3, m=6, answer 8.
+  // ===================================================================
+
+  private static readonly PAL = {
+    paper: '#f4ecd8',
+    paperDeep: '#ebe1c0',
+    ink: '#1a2238',
+    ink2: '#3a4862',
+    ink3: '#6b7691',
+    verm: '#c8412a',
+    vermDeep: '#962e1c',
+    sage: '#6b8a5a',
+    rule: '#c4b896',
+  };
+
+  // The eight closing walks for n=3, m=6 (CW=true, CCW=false).
+  private readonly closingPaths: readonly boolean[][] = [
+    [true, true, true, true, true, true],
+    [false, false, false, false, false, false],
+    [true, true, true, false, false, false],
+    [true, true, false, false, false, true],
+    [true, false, false, false, true, true],
+    [false, false, false, true, true, true],
+    [false, false, true, true, true, false],
+    [false, true, true, true, false, false],
+  ];
+
+  private walkCanvas!: HTMLCanvasElement;
+  private graphCanvas!: HTMLCanvasElement;
+  private kernelCanvas!: HTMLCanvasElement;
+  private walkDims = { w: 0, h: 0 };
+  private graphDims = { w: 0, h: 0 };
+  private kernelDims = { w: 0, h: 0 };
+  private kernelSteps: ReturnType<RobotWalksComponent['countN3Steps']> | null = null;
+  private animStart = 0;
+  private reducedMotion = false;
+
+  private initSolveAnimations(): void {
+    this.walkCanvas = document.getElementById('animWalkCanvas') as HTMLCanvasElement;
+    this.graphCanvas = document.getElementById('animGraphCanvas') as HTMLCanvasElement;
+    this.kernelCanvas = document.getElementById('animKernelCanvas') as HTMLCanvasElement;
+    if (!this.walkCanvas || !this.graphCanvas || !this.kernelCanvas) return;
+
+    this.kernelSteps = this.countN3Steps(2, 2, 2);
+    this.reducedMotion =
+      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+
+    this.sizeAnimCanvas(this.walkCanvas, this.walkDims);
+    this.sizeAnimCanvas(this.graphCanvas, this.graphDims);
+    this.sizeAnimCanvas(this.kernelCanvas, this.kernelDims);
+
+    let resizeTimer: ReturnType<typeof setTimeout>;
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        this.sizeAnimCanvas(this.walkCanvas, this.walkDims);
+        this.sizeAnimCanvas(this.graphCanvas, this.graphDims);
+        this.sizeAnimCanvas(this.kernelCanvas, this.kernelDims);
+        if (this.reducedMotion) this.renderStaticFrames();
+      }, 200);
+    });
+
+    if (this.reducedMotion) {
+      this.renderStaticFrames();
+      return;
+    }
+    requestAnimationFrame((t) => this.animLoop(t));
+  }
+
+  private sizeAnimCanvas(c: HTMLCanvasElement, dims: { w: number; h: number }): void {
+    const dpr = window.devicePixelRatio || 1;
+    const rect = c.getBoundingClientRect();
+    if (rect.width === 0) return;
+    c.width = Math.round(rect.width * dpr);
+    c.height = Math.round(rect.height * dpr);
+    const ctx = c.getContext('2d')!;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    dims.w = rect.width;
+    dims.h = rect.height;
+  }
+
+  private animLoop = (t: number): void => {
+    if (this.animStart === 0) this.animStart = t;
+    const elapsed = (t - this.animStart) / 1000;
+    this.drawWalk(elapsed);
+    this.drawGraph(elapsed);
+    this.drawKernel(elapsed);
+    requestAnimationFrame((next) => this.animLoop(next));
+  };
+
+  private renderStaticFrames(): void {
+    // Final, non-animated state of each figure for reduced-motion users.
+    this.drawWalk(2.0); // first path fully traced
+    this.drawGraph(99); // completed circuit
+    this.drawKernel(99); // all terms summed
+  }
+
+  // ---- Figure 3: geometric walk tracer -----------------------------
+
+  private walkGeom(seq: readonly boolean[], w: number, h: number) {
+    const n = 3;
+    const r = Math.min(w, h) * 0.16;
+    let x = 0,
+      y = 0,
+      theta = -Math.PI / 2;
+    const arcs: ArcData[] = [];
+    for (const cw of seq) {
+      const s = this.arcStep({ x, y, theta }, cw, n, r);
+      arcs.push(s);
+      x = s.nx;
+      y = s.ny;
+      theta = s.nTheta;
+    }
+    let minX = Infinity,
+      maxX = -Infinity,
+      minY = Infinity,
+      maxY = -Infinity;
+    for (const a of arcs) {
+      minX = Math.min(minX, a.cx - a.r);
+      maxX = Math.max(maxX, a.cx + a.r);
+      minY = Math.min(minY, a.cy - a.r);
+      maxY = Math.max(maxY, a.cy + a.r);
+    }
+    const bw = maxX - minX,
+      bh = maxY - minY;
+    const scale = Math.min((w - 80) / bw, (h - 80) / bh);
+    const ox = w / 2 - (minX + bw / 2) * scale;
+    const oy = h / 2 - (minY + bh / 2) * scale;
+    return { arcs, scale, ox, oy };
+  }
+
+  private drawWalk(elapsed: number): void {
+    const { w, h } = this.walkDims;
+    if (w === 0) return;
+    const ctx = this.walkCanvas.getContext('2d')!;
+    const P = RobotWalksComponent.PAL;
+
+    const traceDur = 2.0;
+    const holdDur = 0.9;
+    const cycle = traceDur + holdDur;
+    const idx = this.reducedMotion ? 0 : Math.floor(elapsed / cycle) % this.closingPaths.length;
+    const phase = this.reducedMotion ? traceDur : elapsed % cycle;
+    const seq = this.closingPaths[idx];
+    const prog = Math.min(seq.length, (phase / traceDur) * seq.length);
+
+    ctx.fillStyle = P.paper;
+    ctx.fillRect(0, 0, w, h);
+
+    const { arcs, scale, ox, oy } = this.walkGeom(seq, w, h);
+    ctx.save();
+    ctx.translate(ox, oy);
+    ctx.scale(scale, scale);
+    ctx.strokeStyle = P.verm;
+    ctx.lineWidth = 1.8 / scale;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    const full = Math.floor(prog);
+    for (let i = 0; i < arcs.length; i++) {
+      const a = arcs[i];
+      if (i < full) {
+        ctx.arc(a.cx, a.cy, a.r, a.startA, a.endA, a.antiCw);
+      } else if (i === full) {
+        const f = prog - full;
+        const ea = a.startA + (a.endA - a.startA) * f;
+        ctx.arc(a.cx, a.cy, a.r, a.startA, ea, a.antiCw);
+        break;
+      }
+    }
+    ctx.stroke();
+
+    // origin marker + heading arrow
+    ctx.fillStyle = P.verm;
+    ctx.beginPath();
+    ctx.arc(0, 0, 4 / scale, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.strokeStyle = P.ink;
+    ctx.lineWidth = 1.2 / scale;
+    ctx.beginPath();
+    ctx.moveTo(0, -4 / scale);
+    ctx.lineTo(0, -18 / scale);
+    ctx.stroke();
+    ctx.fillStyle = P.ink;
+    ctx.beginPath();
+    ctx.moveTo(0, -20 / scale);
+    ctx.lineTo(-3 / scale, -13 / scale);
+    ctx.lineTo(3 / scale, -13 / scale);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    // labels
+    const allSame = seq.every((d) => d === seq[0]);
+    ctx.fillStyle = P.ink3;
+    ctx.font = "600 11px 'JetBrains Mono', monospace";
+    ctx.textAlign = 'left';
+    ctx.fillText(`WALK ${(idx + 1).toString().padStart(2, '0')} / 08`, 16, 22);
+    ctx.fillStyle = P.vermDeep;
+    ctx.fillText(allSame ? 'SINGLE CIRCLE' : 'FIGURE-EIGHT', 16, 38);
+    if (phase >= traceDur) {
+      ctx.fillStyle = P.sage;
+      ctx.textAlign = 'right';
+      ctx.fillText('CLOSED ✓', w - 16, 22);
+    }
+  }
+
+  // ---- Figure 4: Eulerian circuit on C3 ----------------------------
+
+  private graphSeqIndices = [0, 2, 3];
+
+  private drawGraph(elapsed: number): void {
+    const { w, h } = this.graphDims;
+    if (w === 0) return;
+    const ctx = this.graphCanvas.getContext('2d')!;
+    const P = RobotWalksComponent.PAL;
+
+    const stepDur = 0.5;
+    const holdDur = 1.1;
+    const seqCount = this.graphSeqIndices.length;
+    const oneCycle = 6 * stepDur + holdDur;
+    const whichSeq = this.reducedMotion ? 0 : Math.floor(elapsed / oneCycle) % seqCount;
+    const local = this.reducedMotion ? 6 * stepDur : elapsed % oneCycle;
+    const seq = this.closingPaths[this.graphSeqIndices[whichSeq]];
+
+    // geometry of the triangle
+    const cx = w / 2,
+      cy = h * 0.42,
+      R = Math.min(w, h) * 0.3;
+    const vert = (k: number) => ({
+      x: cx + R * Math.cos(-Math.PI / 2 + (k * 2 * Math.PI) / 3),
+      y: cy + R * Math.sin(-Math.PI / 2 + (k * 2 * Math.PI) / 3),
+    });
+
+    // replay steps up to current time
+    const usage = [0, 0, 0];
+    let hIdx = 0;
+    const doneSteps = Math.min(6, Math.floor(local / stepDur));
+    const fracStep = Math.min(1, local / stepDur - doneSteps);
+    let token: { x: number; y: number; cw: boolean } | null = null;
+    for (let i = 0; i < 6; i++) {
+      const cw = seq[i];
+      const edge = cw ? hIdx : (hIdx + 2) % 3;
+      const from = hIdx;
+      const to = cw ? (hIdx + 1) % 3 : (hIdx + 2) % 3;
+      if (i < doneSteps) {
+        usage[edge]++;
+        hIdx = to;
+      } else if (i === doneSteps) {
+        const a = vert(from),
+          b = vert(to);
+        token = {
+          x: a.x + (b.x - a.x) * fracStep,
+          y: a.y + (b.y - a.y) * fracStep,
+          cw,
+        };
+        hIdx = to;
+        break;
+      }
+    }
+
+    ctx.fillStyle = P.paper;
+    ctx.fillRect(0, 0, w, h);
+
+    // edges
+    for (let e = 0; e < 3; e++) {
+      const a = vert(e),
+        b = vert((e + 1) % 3);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.strokeStyle = usage[e] > 0 ? P.verm : P.rule;
+      ctx.lineWidth = usage[e] > 0 ? 1.5 + usage[e] * 1.5 : 1.2;
+      ctx.stroke();
+      // usage count near midpoint
+      const mx = (a.x + b.x) / 2,
+        my = (a.y + b.y) / 2;
+      ctx.fillStyle = P.ink3;
+      ctx.font = "600 11px 'JetBrains Mono', monospace";
+      ctx.textAlign = 'center';
+      ctx.fillText(`e${e}:${usage[e]}`, mx, my - 6);
+    }
+
+    // vertices
+    for (let k = 0; k < 3; k++) {
+      const v = vert(k);
+      ctx.beginPath();
+      ctx.arc(v.x, v.y, k === 0 ? 8 : 6, 0, 2 * Math.PI);
+      ctx.fillStyle = k === 0 ? P.ink : P.paper;
+      ctx.fill();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = P.ink;
+      ctx.stroke();
+      ctx.fillStyle = P.ink2;
+      ctx.font = "italic 13px 'Fraunces', serif";
+      ctx.textAlign = 'center';
+      ctx.fillText(`v${k}`, v.x, v.y - 14);
+    }
+
+    // token
+    if (token) {
+      ctx.beginPath();
+      ctx.arc(token.x, token.y, 5, 0, 2 * Math.PI);
+      ctx.fillStyle = token.cw ? P.ink2 : P.verm;
+      ctx.fill();
+    }
+
+    // multiplicity vector readout
+    const sum = usage[0] + usage[1] + usage[2];
+    ctx.textAlign = 'left';
+    ctx.font = "600 12px 'JetBrains Mono', monospace";
+    ctx.fillStyle = P.ink2;
+    ctx.fillText(
+      `c = (${usage[0]}, ${usage[1]}, ${usage[2]})   Σ = ${sum} / 6`,
+      16,
+      h - 18
+    );
+    if (local >= 6 * stepDur) {
+      ctx.fillStyle = P.sage;
+      ctx.textAlign = 'right';
+      ctx.font = "600 12px 'JetBrains Mono', monospace";
+      ctx.fillText('CIRCUIT CLOSED ✓', w - 16, h - 18);
+    }
+  }
+
+  // ---- Figure 5: the drift-sum kernel ------------------------------
+
+  private countN3Steps(c0: number, c1: number, c2: number) {
+    const fact = (k: number): number => {
+      let r = 1;
+      for (let i = 2; i <= k; i++) r *= i;
+      return r;
+    };
+    const invf = (k: number) => 1 / fact(k);
+    const cmin = Math.min(c0, c1, c2);
+    const lo = -cmin,
+      hi = cmin;
+    const e0 = (c0 + c2) >> 1,
+      e1 = (c1 + c0 - 2) >> 1,
+      e2 = (c2 + c1 - 2) >> 1;
+    const vertex = fact(e0) * fact(e1) * fact(e2);
+    let x0 = (c0 + lo) >> 1,
+      x1 = (c1 + lo) >> 1,
+      x2 = (c2 + lo) >> 1;
+    let y0 = c0 - x0,
+      y1 = c1 - x1,
+      y2 = c2 - x2;
+    let d = invf(x0) * invf(y0) * invf(x1) * invf(y1) * invf(x2) * invf(y2);
+    const stepCount = (hi - lo) / 2 + 1;
+    const out: {
+      delta: number;
+      x: number[];
+      y: number[];
+      tree: number;
+      contribution: number;
+    }[] = [];
+    let total = 0;
+    for (let t = 0; t < stepCount; t++) {
+      const sx2 = x2;
+      const sx1 = x1 * sx2;
+      const p1 = y0;
+      const p2 = p1 * y1;
+      let tree = sx1;
+      tree = tree + p1 * sx2;
+      tree = tree + p2;
+      out.push({
+        delta: lo + 2 * t,
+        x: [x0, x1, x2],
+        y: [y0, y1, y2],
+        tree,
+        contribution: Math.round(vertex * tree * d),
+      });
+      total += tree * d;
+      d = d * p2 * y2;
+      x0++;
+      d *= 1 / x0;
+      x1++;
+      d *= 1 / x1;
+      x2++;
+      d *= 1 / x2;
+      y0--;
+      y1--;
+      y2--;
+    }
+    return { vertex, steps: out, answer: Math.round(vertex * total) };
+  }
+
+  private drawKernel(elapsed: number): void {
+    const { w, h } = this.kernelDims;
+    if (w === 0 || !this.kernelSteps) return;
+    const ctx = this.kernelCanvas.getContext('2d')!;
+    const P = RobotWalksComponent.PAL;
+    const ks = this.kernelSteps;
+    const nSteps = ks.steps.length;
+
+    const stepDur = 1.5;
+    const holdDur = 1.4;
+    const cycle = nSteps * stepDur + holdDur;
+    const local = this.reducedMotion ? cycle : elapsed % cycle;
+    const active = Math.min(nSteps - 1, Math.floor(local / stepDur));
+    const revealed = this.reducedMotion ? nSteps : Math.min(nSteps, Math.floor(local / stepDur) + 1);
+
+    ctx.fillStyle = P.paper;
+    ctx.fillRect(0, 0, w, h);
+
+    // header: the c-vector
+    ctx.textAlign = 'left';
+    ctx.fillStyle = P.ink2;
+    ctx.font = "italic 16px 'Fraunces', serif";
+    ctx.fillText('c = (2, 2, 2)', 18, 30);
+    ctx.fillStyle = P.ink3;
+    ctx.font = "11px 'JetBrains Mono', monospace";
+    ctx.fillText('δ sweeps −2 → +2 in steps of 2', 18, 48);
+
+    // three columns, one per delta
+    const colW = (w - 36) / nSteps;
+    let running = 0;
+    for (let i = 0; i < nSteps; i++) {
+      const s = ks.steps[i];
+      const cxc = 18 + colW * i + colW / 2;
+      const isActive = !this.reducedMotion && i === active;
+      const shown = i < revealed;
+      const top = 74;
+
+      // panel
+      ctx.fillStyle = isActive ? P.paperDeep : 'rgba(0,0,0,0)';
+      if (isActive) {
+        ctx.fillRect(18 + colW * i + 4, top - 10, colW - 8, 188);
+      }
+      ctx.strokeStyle = shown ? P.rule : '#d8cfb0';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(18 + colW * i + 4, top - 10, colW - 8, 188);
+
+      ctx.textAlign = 'center';
+      ctx.fillStyle = shown ? P.vermDeep : P.ink3;
+      ctx.font = "italic 18px 'Fraunces', serif";
+      ctx.fillText(`δ = ${s.delta > 0 ? '+' : ''}${s.delta}`, cxc, top + 12);
+
+      if (shown) {
+        // x (CW) and y (CCW) vectors
+        ctx.font = "12px 'JetBrains Mono', monospace";
+        ctx.fillStyle = P.ink2;
+        ctx.fillText(`x = (${s.x.join(',')})`, cxc, top + 40);
+        ctx.fillStyle = P.ink3;
+        ctx.font = "9px 'JetBrains Mono', monospace";
+        ctx.fillText('clockwise', cxc, top + 54);
+        ctx.fillStyle = P.verm;
+        ctx.font = "12px 'JetBrains Mono', monospace";
+        ctx.fillText(`y = (${s.y.join(',')})`, cxc, top + 76);
+        ctx.fillStyle = P.ink3;
+        ctx.font = "9px 'JetBrains Mono', monospace";
+        ctx.fillText('counter-cw', cxc, top + 90);
+
+        // tree factor
+        ctx.fillStyle = P.ink3;
+        ctx.font = "11px 'JetBrains Mono', monospace";
+        ctx.fillText(`tree = ${s.tree}`, cxc, top + 116);
+
+        // contribution
+        ctx.fillStyle = P.vermDeep;
+        ctx.font = "700 22px 'Fraunces', serif";
+        ctx.fillText(`+${s.contribution}`, cxc, top + 150);
+        ctx.fillStyle = P.ink3;
+        ctx.font = "9px 'JetBrains Mono', monospace";
+        ctx.fillText('vertex×tree×d', cxc, top + 166);
+
+        running += s.contribution;
+      }
+    }
+
+    // running total
+    ctx.textAlign = 'left';
+    ctx.fillStyle = P.ink2;
+    ctx.font = "600 13px 'JetBrains Mono', monospace";
+    const totalLabel =
+      revealed >= nSteps
+        ? `total = 1 + 6 + 1 = ${ks.answer}`
+        : `total = ${running} …`;
+    ctx.fillText(totalLabel, 18, h - 16);
+
+    if (revealed >= nSteps) {
+      ctx.textAlign = 'right';
+      ctx.fillStyle = P.sage;
+      ctx.font = "italic 16px 'Fraunces', serif";
+      ctx.fillText(`= ${ks.answer} closed walks`, w - 16, h - 14);
+    }
   }
 }
