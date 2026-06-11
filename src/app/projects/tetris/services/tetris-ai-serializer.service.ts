@@ -27,7 +27,7 @@ export class TetrisAiSerializerService {
     const modelArtifacts = await this.modelService.captureModelArtifacts();
 
     const payload: TetrisAiTrainingExport = {
-      version: 1,
+      version: 2,
       exportedAt: new Date().toISOString(),
       stats: structuredClone(stats),
       replayBuffer: structuredClone(replayBuffer),
@@ -63,7 +63,7 @@ export class TetrisAiSerializerService {
       : [];
 
     if (
-      candidate.version !== 1 ||
+      candidate.version !== 2 ||
       !this.isStats(candidate.stats) ||
       !this.isSerializedModelArtifacts(candidate.model)
     ) {
@@ -71,7 +71,7 @@ export class TetrisAiSerializerService {
     }
 
     return {
-      version: 1,
+      version: 2,
       exportedAt:
         typeof candidate.exportedAt === 'string' ? candidate.exportedAt : new Date().toISOString(),
       stats: candidate.stats,
@@ -202,18 +202,14 @@ export class TetrisAiSerializerService {
     );
   }
 
-  /**
-   * Type guard: checks if value conforms to TetrisExperience.
-   * Accepts legacy `nextFeatures` array as a fallback for `nextStateValue`.
-   */
+  /** Type guard: checks if value conforms to TetrisExperience. */
   private isExperience(value: unknown): value is TetrisExperience {
     if (!value || typeof value !== 'object') {
       return false;
     }
 
     const candidate = value as Partial<TetrisExperience>;
-    const hasNextStateValue = typeof candidate.nextStateValue === 'number';
-    const hasLegacyNextFeatures =
+    const hasNextFeatures =
       Array.isArray(candidate.nextFeatures) &&
       candidate.nextFeatures.every((item) => typeof item === 'number');
 
@@ -221,7 +217,7 @@ export class TetrisAiSerializerService {
       Array.isArray(candidate.features) &&
       candidate.features.every((item) => typeof item === 'number') &&
       typeof candidate.reward === 'number' &&
-      (hasNextStateValue || hasLegacyNextFeatures) &&
+      (candidate.done === true || hasNextFeatures) &&
       typeof candidate.done === 'boolean'
     );
   }

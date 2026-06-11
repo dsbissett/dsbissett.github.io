@@ -126,7 +126,7 @@ export class TetrisPlanSelectorService {
    */
   private computePlacementBonuses(placement: TetrisPlacement, features: number[]): number {
     const linesCleared = features[22] * 4;
-    const bumpiness = features[23] * 100;
+    const bumpiness = features[23] * 30;
     const lowBoardDensity = features[29];
     const nearCompleteRows = features[31] * 10;
     const gridHeight = TETRIS_GAME_CONFIG.gridHeight;
@@ -157,13 +157,13 @@ export class TetrisPlanSelectorService {
   private computePlacementPenalties(features: number[], previewHasI: boolean): number {
     const columnHeights = features.slice(0, 10).map((value) => value * 20);
     const linesCleared = features[22] * 4;
-    const holes = features[21] * 40;
-    const bumpiness = features[23] * 100;
+    const holes = features[21] * 20;
+    const bumpiness = features[23] * 30;
     const maxHeight = features[19] * 20;
     const aggregateHeight = features[20] * 200;
-    const coveredCells = features[24] * 120;
-    const wells = features[26] * 100;
-    const heightVariance = features[30] * 100;
+    const coveredCells = features[24] * 40;
+    const wells = features[26] * 20;
+    const heightVariance = features[30] * 25;
 
     const stackOverflowPenalty =
       columnHeights.reduce((sum, height) => sum + Math.pow(Math.max(0, height - 7), 2), 0) * 0.28;

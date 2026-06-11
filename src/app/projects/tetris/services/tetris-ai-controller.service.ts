@@ -222,12 +222,9 @@ export class TetrisAiControllerService {
     this.moveTelemetry.recordPlacement(this.plan.features);
     this.trainingTelemetry.recordRewardClip(rewardResult.wasClipped);
 
-    const nextPlacements = gameOver ? [] : this.placer.enumeratePlacements(state);
-    const nextStateValue = gameOver
-      ? 0
-      : this.agent.estimateBestFutureValue(nextPlacements.map((p) => p.features));
+    const nextFeatures = gameOver ? null : this.selectGreedyNextFeatures(state);
 
-    this.agent.remember(this.plan.features, reward, nextStateValue, gameOver);
+    this.agent.remember(this.plan.features, reward, nextFeatures, gameOver);
     this.agent.trainStep();
     this.agent.trainOnDemonstrations();
 
@@ -336,6 +333,21 @@ export class TetrisAiControllerService {
   // ---------------------------------------------------------------------------
   // Private helpers
   // ---------------------------------------------------------------------------
+
+  /**
+   * Returns the features of the online-net argmax placement for the just-spawned
+   * piece (double-DQN selection: the target network values it at train time).
+   * Returns null when no placement is available.
+   */
+  private selectGreedyNextFeatures(state: TetrisGameState): number[] | null {
+    const placements = this.placer.enumeratePlacements(state);
+    if (placements.length === 0) {
+      return null;
+    }
+
+    const values = this.agent.evaluatePlacements(placements.map((p) => p.features));
+    return placements[values.indexOf(Math.max(...values))].features;
+  }
 
   /** Sets prevMetrics from the current board state on the first piece of an episode. */
   private captureInitialMetricsIfNeeded(state: TetrisGameState): void {

@@ -133,30 +133,34 @@ export class TetrisModelService {
   }
 
   /**
-   * Returns the maximum Q-value across all feature sets using the target model.
-   * Returns 0 if the batch is empty.
+   * Runs batch inference on the target model.
+   * Returns one value per feature set (used for TD bootstrap targets).
    */
-  public estimateBestFutureValue(featuresBatch: number[][]): number {
+  public evaluateWithTargetNetwork(featuresBatch: number[][]): number[] {
     if (featuresBatch.length === 0) {
-      return 0;
+      return [];
     }
 
     return tf.tidy(() => {
       const input = tf.tensor2d(featuresBatch);
       const output = this.targetModel.predict(input) as tf.Tensor;
-      return output.max().dataSync()[0] ?? 0;
+      return Array.from(output.dataSync());
     });
   }
 
   /**
-   * Epsilon-greedy placement selection.
+   * Epsilon-greedy placement selection over the top-K ranked placements.
+   * Exploring uniformly over ALL placements injected catastrophic moves;
+   * sampling among the model's top-K keeps exploration signal without them.
    * Returns the index of the selected placement from the values array.
    */
   public selectPlacement(values: number[]): number {
-    if (Math.random() < this.stats.getEpsilon()) {
-      return Math.floor(Math.random() * values.length);
+    if (Math.random() >= this.stats.getEpsilon()) {
+      return values.indexOf(Math.max(...values));
     }
-    return values.indexOf(Math.max(...values));
+    const ranked = values.map((_, index) => index).sort((a, b) => values[b] - values[a]);
+    const pool = ranked.slice(0, Math.min(TETRIS_AI_CONFIG.explorationTopK, ranked.length));
+    return pool[Math.floor(Math.random() * pool.length)];
   }
 
   /** Returns the currently loaded model (for training). */
@@ -192,11 +196,18 @@ export class TetrisModelService {
     return model;
   }
 
-  /** Applies adam optimizer and huberLoss to a model. */
+  /**
+   * Applies adam optimizer and huberLoss to a model.
+   * Huber delta 10: rewards are clipped to [-40, 200] and bootstrapped values
+   * can reach ~400; the default delta of 1 put nearly every sample in the
+   * linear regime, capping gradient magnitude regardless of error size and
+   * making value-scale adaptation glacial.
+   */
   private compileModel(model: tf.Sequential): void {
     model.compile({
       optimizer: tf.train.adam(TETRIS_AI_CONFIG.learningRate),
-      loss: tf.losses.huberLoss,
+      loss: (labels: tf.Tensor, predictions: tf.Tensor) =>
+        tf.losses.huberLoss(labels, predictions, undefined, 10),
     });
   }
 

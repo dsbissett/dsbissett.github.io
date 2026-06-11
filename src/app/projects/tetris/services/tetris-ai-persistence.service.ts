@@ -9,11 +9,13 @@ import { TetrisAiStats } from '../interfaces/tetris-ai-stats.interface';
 const TRAINING_DB_NAME = 'tetris-ai-training-storage';
 const TRAINING_DB_VERSION = 1;
 const TRAINING_STORE_NAME = 'training-state';
-const REPLAY_INDEXED_DB_KEY = 'replay-buffer-v7';
-const REPLAY_META_INDEXED_DB_KEY = 'replay-buffer-v7-meta';
-const REPLAY_ITEM_INDEXED_DB_KEY_PREFIX = 'replay-buffer-v7-item-';
+// v8: R6 training overhaul changed the experience schema (nextFeatures replaces
+// nextStateValue) and the reward scale; v7 entries stay in IndexedDB for rollback.
+const REPLAY_INDEXED_DB_KEY = 'replay-buffer-v8';
+const REPLAY_META_INDEXED_DB_KEY = 'replay-buffer-v8-meta';
+const REPLAY_ITEM_INDEXED_DB_KEY_PREFIX = 'replay-buffer-v8-item-';
 const REPLAY_SEQUENCE_WIDTH = 10;
-const DEMONSTRATION_INDEXED_DB_KEY = 'demonstrations-v7';
+const DEMONSTRATION_INDEXED_DB_KEY = 'demonstrations-v8';
 
 interface IndexedDbEntry<T> {
   key: string;
@@ -692,8 +694,7 @@ export class TetrisAiPersistenceService {
     }
 
     const candidate = value as Partial<TetrisExperience>;
-    const hasNextStateValue = typeof candidate.nextStateValue === 'number';
-    const hasLegacyNextFeatures =
+    const hasNextFeatures =
       Array.isArray(candidate.nextFeatures) &&
       candidate.nextFeatures.every((item) => typeof item === 'number');
 
@@ -701,7 +702,7 @@ export class TetrisAiPersistenceService {
       Array.isArray(candidate.features) &&
       candidate.features.every((item) => typeof item === 'number') &&
       typeof candidate.reward === 'number' &&
-      (hasNextStateValue || hasLegacyNextFeatures) &&
+      (candidate.done === true || hasNextFeatures) &&
       typeof candidate.done === 'boolean'
     );
   }

@@ -148,14 +148,13 @@ export class TetrisReplayBufferService {
 
   /**
    * Randomly samples up to `count` entries from `pool` into `batch`,
-   * stopping when batch reaches batchSize capacity.
+   * stopping when batch reaches batchSize capacity. Draws are capped at the
+   * pool size so a near-empty stratum (e.g. the first strong-positive clears)
+   * cannot fill its whole quota with copies of one experience.
    */
   private sampleStratum(pool: TetrisExperience[], count: number, batch: TetrisExperience[]): void {
-    for (
-      let i = 0;
-      i < count && batch.length < TETRIS_AI_CONFIG.batchSize && pool.length > 0;
-      i++
-    ) {
+    const draws = Math.min(count, pool.length);
+    for (let i = 0; i < draws && batch.length < TETRIS_AI_CONFIG.batchSize; i++) {
       batch.push(pool[Math.floor(Math.random() * pool.length)]);
     }
   }

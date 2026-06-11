@@ -6,24 +6,28 @@ import { TetrisPlacementContext } from '../interfaces/tetris-placement-context.i
  * Extracts the 57-element normalised feature vector from a board state and provides
  * all board metric helpers (column heights, holes, bumpiness, etc.).
  *
- * Feature layout:
+ * Feature layout (normalisers chosen so realistic values span most of [0,1];
+ * a 1-unit change must be visible to the network, so denominators sit near the
+ * realistic maximum, not the theoretical one — decode constants in
+ * tetris-board-metrics.service.ts and tetris-plan-selector.service.ts must
+ * match in lockstep):
  *   indices  0–9  : column heights (10), normalised /20
- *   indices 10–18 : height diffs (9), shifted to [0,1] via (d+20)/40
+ *   indices 10–18 : height diffs (9), shifted to [0,1] via clamp((d+8)/16)
  *   index   19    : max height, normalised /20
  *   index   20    : aggregate height, normalised /200
- *   index   21    : holes, normalised /40
+ *   index   21    : holes, normalised /20
  *   index   22    : lines cleared, normalised /4
- *   index   23    : bumpiness, normalised /100
- *   index   24    : covered cells, normalised /120
+ *   index   23    : bumpiness, normalised /30
+ *   index   24    : covered cells, normalised /40
  *   index   25    : pillars, normalised /10
- *   index   26    : wells, normalised /100
+ *   index   26    : wells, normalised /20
  *   index   27    : row completeness (sum of (filled/width)^2 per row), normalised /20
  *   index   28    : sqrt-normalised absolute holes
  *   index   29    : low-board density (bottom 4 rows fill fraction)
- *   index   30    : height variance, normalised /100
+ *   index   30    : height variance, normalised /25
  *   index   31    : near-complete rows (>=80% filled), normalised /10
- *   index   32    : row transitions (filled↔empty across rows, walls filled), normalised /200
- *   index   33    : column transitions (filled↔empty down columns, floor filled), normalised /200
+ *   index   32    : row transitions (filled↔empty across rows, walls filled), normalised /120
+ *   index   33    : column transitions (filled↔empty down columns, floor filled), normalised /60
  *   index   34    : landing height (height from bottom where piece landed), normalised /gridHeight
  *   index   35    : eroded piece cells (linesCleared × piece cells in cleared rows), normalised /16
  *   indices 36–56 : preview queue — 3 × 7-element one-hot piece encodings
@@ -66,22 +70,22 @@ export class TetrisBoardAnalyzerService {
 
     return [
       ...heights.map((h) => this.clamp(h / 20)),        // indices 0–9
-      ...diffs.map((d) => (d + 20) / 40),               // indices 10–18 (shift to [0,1])
+      ...diffs.map((d) => this.clamp((d + 8) / 16)),    // indices 10–18 (shift to [0,1])
       this.clamp(maxHeight / 20),                        // index 19
       this.clamp(aggregateHeight / 200),                 // index 20
-      this.clamp(holes / 40),                            // index 21
+      this.clamp(holes / 20),                            // index 21
       this.clamp(linesCleared / 4),                      // index 22
-      this.clamp(bumpiness / 100),                       // index 23
-      this.clamp(coveredCells / 120),                    // index 24
+      this.clamp(bumpiness / 30),                        // index 23
+      this.clamp(coveredCells / 40),                     // index 24
       this.clamp(pillars / 10),                          // index 25
-      this.clamp(wells / 100),                           // index 26
+      this.clamp(wells / 20),                            // index 26
       this.clamp(rowCompleteness / 20),                  // index 27: row completeness
       this.clamp(Math.sqrt(holes) / 6.32),               // index 28: sqrt-normalised absolute holes
       this.clamp(lowBoardDensity),                       // index 29: low-board density
-      this.clamp(heightVariance / 100),                  // index 30: height variance (tower detector)
+      this.clamp(heightVariance / 25),                   // index 30: height variance (tower detector)
       this.clamp(nearCompleteRows / 10),                 // index 31: near-complete rows (>=80% filled)
-      this.clamp(rowTransitions / 200),                  // index 32: row transitions
-      this.clamp(columnTransitions / 200),               // index 33: column transitions
+      this.clamp(rowTransitions / 120),                  // index 32: row transitions
+      this.clamp(columnTransitions / 60),                // index 33: column transitions
       this.clamp(landingHeight / grid.length),           // index 34: landing height
       this.clamp(erodedPieceCells / 16),                 // index 35: eroded piece cells
       ...this.encodePreviewQueue(previewQueue),          // indices 36–56
@@ -173,15 +177,16 @@ export class TetrisBoardAnalyzerService {
 
   /**
    * Sums up well depths across all columns.
-   * A well is a column lower than both its neighbours.
+   * A well is a column lower than both its neighbours; board walls count as
+   * infinitely tall so edge wells (the canonical tetris-well column) register.
    * Well depth = min(leftHeight, rightHeight) − columnHeight.
    * Targets the "island" pattern where isolated clusters leave gaps.
    */
   public countWells(heights: number[]): number {
     let wells = 0;
     for (let i = 0; i < heights.length; i++) {
-      const left = i > 0 ? heights[i - 1] : heights[i];
-      const right = i < heights.length - 1 ? heights[i + 1] : heights[i];
+      const left = i > 0 ? heights[i - 1] : Number.POSITIVE_INFINITY;
+      const right = i < heights.length - 1 ? heights[i + 1] : Number.POSITIVE_INFINITY;
       const minNeighbor = Math.min(left, right);
       if (heights[i] < minNeighbor) {
         wells += minNeighbor - heights[i];
@@ -275,7 +280,7 @@ export class TetrisBoardAnalyzerService {
 
   /**
    * Counts filled↔empty transitions across each row, treating the left and right
-   * walls as filled. Max ≈ 11 per row × 20 rows = 220; normalised /200.
+   * walls as filled. Theoretical max ≈ 220; normalised /120 (realistic range).
    */
   private computeRowTransitions(grid: number[][]): number {
     let transitions = 0;
@@ -293,7 +298,8 @@ export class TetrisBoardAnalyzerService {
 
   /**
    * Counts filled↔empty transitions down each column, treating the floor as filled
-   * and the space above the board as empty. Max ≈ 20 per column × 10 columns = 200.
+   * and the space above the board as empty. Theoretical max ≈ 200; normalised /60
+   * (realistic range).
    */
   private computeColumnTransitions(grid: number[][]): number {
     const rows = grid.length;

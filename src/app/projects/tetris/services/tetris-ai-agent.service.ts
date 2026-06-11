@@ -79,26 +79,29 @@ export class TetrisAiAgentService {
     return this.model.evaluatePlacements(featuresBatch);
   }
 
-  /** Returns the maximum predicted future value across a batch using the target network. */
-  public estimateBestFutureValue(featuresBatch: number[][]): number {
-    return this.model.estimateBestFutureValue(featuresBatch);
-  }
-
   /** Epsilon-greedy selection: returns the index of the chosen placement. */
   public selectPlacement(values: number[]): number {
     return this.model.selectPlacement(values);
   }
 
-  /** Stores a transition in the replay buffer, increments step counter, and persists. */
-  public remember(features: number[], reward: number, nextStateValue: number, done: boolean): void {
-    this.replayBuffer.add({ features, reward, nextStateValue, done });
+  /**
+   * Stores a transition in the replay buffer, increments step counter, and persists.
+   * nextFeatures is the online-net argmax next afterstate (null when terminal);
+   * its value is recomputed with the target network at train time.
+   */
+  public remember(
+    features: number[],
+    reward: number,
+    nextFeatures: number[] | null,
+    done: boolean,
+  ): void {
+    this.replayBuffer.add({ features, reward, nextFeatures: nextFeatures ?? undefined, done });
     this.stats.incrementSteps();
     this.diagnostics.logReplayBufferEntry(
       this.replayBuffer.size,
       TETRIS_AI_CONFIG.replayBufferSize,
       this.stats.getStepCount(),
       reward,
-      nextStateValue,
       done,
     );
     this.trainingTelemetry.syncBufferState();

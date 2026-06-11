@@ -20,6 +20,7 @@ export class TetrisTrainerService {
   private readonly trainingTelemetry = inject(TetrisAiTrainingTelemetryService);
 
   private isTraining = false;
+  private trainingPassesSinceSync = 0;
 
   /**
    * Triggers RL training if conditions are met.
@@ -58,6 +59,7 @@ export class TetrisTrainerService {
   /** Resets the isTraining flag (e.g., after an import clears state). */
   public reset(): void {
     this.isTraining = false;
+    this.trainingPassesSinceSync = 0;
   }
 
   /** Runs one RL training step: samples batch, computes targets, fits model, logs, syncs target if needed. */
@@ -99,10 +101,28 @@ export class TetrisTrainerService {
     xs.dispose();
     ys.dispose();
 
-    if (stepCount % TETRIS_AI_CONFIG.targetNetworkUpdateFrequency === 0) {
-      this.model.syncTargetNetwork();
-      this.diagnostics.logTargetNetworkSync(stepCount);
+    this.syncTargetNetworkIfDue(stepCount);
+  }
+
+  /**
+   * Syncs the target network every (targetNetworkUpdateFrequency / trainEveryNSteps)
+   * training passes. Counting passes instead of taking stepCount % frequency keeps
+   * the cadence exact: the step counter advances during awaited fits, and
+   * 250 % 4 !== 0 meant the old modulus could only fire on multiples of 500.
+   */
+  private syncTargetNetworkIfDue(stepCount: number): void {
+    this.trainingPassesSinceSync++;
+    const passesPerSync = Math.max(
+      1,
+      Math.round(TETRIS_AI_CONFIG.targetNetworkUpdateFrequency / TETRIS_AI_CONFIG.trainEveryNSteps),
+    );
+    if (this.trainingPassesSinceSync < passesPerSync) {
+      return;
     }
+
+    this.trainingPassesSinceSync = 0;
+    this.model.syncTargetNetwork();
+    this.diagnostics.logTargetNetworkSync(stepCount);
   }
 
   /** Runs demonstration training: samples demo batch, fits model, resets counter, syncs, persists. */
@@ -136,17 +156,39 @@ export class TetrisTrainerService {
     } else {
       this.demoBuffer.resetTrainingCounter();
     }
-    this.model.syncTargetNetwork();
     this.model.persistModel();
   }
 
   /** Computes Q-learning targets from a sampled batch. */
   private computeTargets(batch: TetrisExperience[]): { targets: number[]; nextValues: number[] } {
-    const nextValues = batch.map((e) => e.nextStateValue ?? 0);
+    const nextValues = this.computeNextValues(batch);
     const targets = batch.map((e, i) =>
       e.done ? e.reward : e.reward + TETRIS_AI_CONFIG.gamma * nextValues[i],
     );
     return { targets, nextValues };
+  }
+
+  /**
+   * Computes V(s') per experience by evaluating the stored next-afterstate
+   * features with the CURRENT target network at train time, so bootstraps
+   * improve as the value function improves.
+   */
+  private computeNextValues(batch: TetrisExperience[]): number[] {
+    const nextValues = batch.map(() => 0);
+    const indices = batch
+      .map((e, i) => i)
+      .filter((i) => !batch[i].done && batch[i].nextFeatures !== undefined);
+    if (indices.length === 0) {
+      return nextValues;
+    }
+
+    const predictions = this.model.evaluateWithTargetNetwork(
+      indices.map((i) => batch[i].nextFeatures as number[]),
+    );
+    indices.forEach((batchIndex, j) => {
+      nextValues[batchIndex] = predictions[j];
+    });
+    return nextValues;
   }
 
   /** Computes current model predictions for a batch (for TD error tracking). */
