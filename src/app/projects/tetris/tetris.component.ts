@@ -128,9 +128,9 @@ export class TetrisComponent implements AfterViewInit, OnDestroy {
     }
   });
 
-  protected readonly leftPanelCollapsed = signal(false);
-  protected readonly rightPanelCollapsed = signal(false);
-  protected readonly progressPanelCollapsed = signal(false);
+  protected readonly leftPanelCollapsed = signal(isCompactViewport());
+  protected readonly rightPanelCollapsed = signal(isCompactViewport());
+  protected readonly progressPanelCollapsed = signal(isCompactViewport());
 
   protected readonly aiReady = this.facade.aiReady;
   protected readonly aiEnabled = this.facade.aiEnabled;
@@ -264,4 +264,8 @@ export class TetrisComponent implements AfterViewInit, OnDestroy {
   private toErrorMessage(error: unknown, fallback: string): string {
     return error instanceof Error ? error.message : fallback;
   }
+}
+
+function isCompactViewport(): boolean {
+  return typeof window !== 'undefined' && window.innerWidth <= 600;
 }

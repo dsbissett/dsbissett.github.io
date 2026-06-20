@@ -3,12 +3,14 @@
   --white-key-height: 180px;
   --black-key-width: calc(var(--white-key-width) * 0.64);
   --black-key-height: 110px;
+  --roll-height: 550px;
 
   display: block;
   background-color: #222;
   color: #eee;
   font-family: sans-serif;
   min-height: 100vh;
+  min-height: 100dvh;
   user-select: none;
 }
 
@@ -18,6 +20,7 @@
   align-items: center;
   justify-content: center;
   min-height: 100vh;
+  min-height: 100dvh;
   margin: 0;
   gap: 10px;
 }
@@ -96,7 +99,7 @@ select {
 .roll-container {
   position: relative;
   width: calc((52 * var(--white-key-width)) + 20px);
-  height: 550px;
+  height: var(--roll-height);
   background: #0d0f15;
   padding: 10px;
   border-radius: 5px;
@@ -247,4 +250,18 @@ select {
 .key.black span {
   color: #ddd;
   bottom: 5px;
+}
+
+@media (max-width: 500px) {
+  :host {
+    --white-key-height: 120px;
+    --black-key-height: 72px;
+    --roll-height: 42dvh;
+  }
+
+  .piano-shell {
+    justify-content: flex-start;
+    padding: 8px 0;
+    gap: 6px;
+  }
 }

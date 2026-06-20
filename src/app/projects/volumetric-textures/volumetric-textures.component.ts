@@ -5,6 +5,7 @@ import {
   ElementRef,
   OnDestroy,
   inject,
+  signal,
   viewChild,
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
@@ -36,6 +37,7 @@ export class VolumetricTexturesComponent implements AfterViewInit, OnDestroy {
   private readonly facade = inject(VolumetricTexturesFacadeService);
 
   protected readonly failed = this.facade.failed;
+  protected readonly panelCollapsed = signal(false);
 
   public ngAfterViewInit(): void {
     this.facade.initialize(this.canvasElement().nativeElement);
@@ -47,5 +49,9 @@ export class VolumetricTexturesComponent implements AfterViewInit, OnDestroy {
 
   protected regenerate(): void {
     this.facade.regenerate();
+  }
+
+  protected togglePanel(): void {
+    this.panelCollapsed.update((collapsed) => !collapsed);
   }
 }

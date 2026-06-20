@@ -58,7 +58,7 @@ export class ParticleLifeComponent implements AfterViewInit, OnDestroy {
   protected readonly controlDeckLeft = signal(24);
   protected readonly controlDeckTop = signal(24);
   protected readonly isDragging = signal(false);
-  protected readonly collapsed = signal(false);
+  protected readonly collapsed = signal(window.innerWidth <= 600);
   protected readonly dragHandleLabel = computed(() =>
     this.isDragging() ? 'Dragging controls' : 'Drag controls'
   );

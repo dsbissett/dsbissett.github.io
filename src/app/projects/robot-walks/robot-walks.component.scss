@@ -225,10 +225,17 @@ h3 {
   margin-left: 132px;
 }
 
+/* Indented figure/table wrappers that mirror the .prose offset on desktop
+   and go full-width on mobile (Figures 1–5 + the per-n table). */
+.fig-stack { margin-left: 132px; max-width: 38em; }
+.fig-stack-wide { margin-left: 132px; max-width: 56em; }
+
 @media (max-width: 720px) {
   .section-head { grid-template-columns: 1fr; gap: 0.5rem; }
   .section-marker { max-width: 200px; }
   .prose { margin-left: 0; }
+  .fig-stack,
+  .fig-stack-wide { margin-left: 0; max-width: 100%; }
 }
 
 p {
@@ -606,6 +613,8 @@ code {
     position: relative;
     padding: 2rem 0 2rem 5rem;
     border-top: 1px solid var(--rule);
+
+    @media (max-width: 720px) { padding-left: 2.6rem; }
 
     &:last-child { border-bottom: 1px solid var(--rule); }
 

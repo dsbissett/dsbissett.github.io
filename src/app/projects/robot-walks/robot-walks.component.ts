@@ -464,15 +464,20 @@ export class RobotWalksComponent implements OnInit {
   }
 
   private sizeAnimCanvas(c: HTMLCanvasElement, dims: { w: number; h: number }): void {
-    const dpr = window.devicePixelRatio || 1;
-    const rect = c.getBoundingClientRect();
-    if (rect.width === 0) return;
-    c.width = Math.round(rect.width * dpr);
-    c.height = Math.round(rect.height * dpr);
+    // Each figure is authored in a fixed design space — the canvas's initial
+    // width/height attributes. Render at that resolution and let the CSS
+    // (width:100%; height:auto) scale the crisp bitmap down to the column.
+    // Drawing into the measured CSS size instead collapses every fixed-pixel
+    // layout when the column is narrow on mobile.
+    if (dims.w === 0) {
+      dims.w = c.width;
+      dims.h = c.height;
+    }
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    c.width = Math.round(dims.w * dpr);
+    c.height = Math.round(dims.h * dpr);
     const ctx = c.getContext('2d')!;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    dims.w = rect.width;
-    dims.h = rect.height;
   }
 
   private animLoop = (t: number): void => {

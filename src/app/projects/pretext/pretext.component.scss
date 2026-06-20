@@ -2,6 +2,7 @@
   display: block;
   width: 100%;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   background: #060610;
   font-family: 'Courier New', monospace;
@@ -11,6 +12,7 @@
   position: relative;
   width: 100%;
   height: 100vh;
+  height: 100dvh;
 }
 
 .pretext-canvas {
@@ -216,5 +218,29 @@
 
   &:hover {
     background: rgba(62, 207, 142, 0.15);
+  }
+}
+
+// ─── Phone portrait ───────────────────────────────────────────────────────────
+@media (max-width: 600px) {
+  .panel {
+    top: 12px;
+    right: 12px;
+    bottom: auto;
+    width: 150px;
+    padding: 10px;
+    font-size: 10px;
+  }
+
+  .preset-grid {
+    max-height: 120px;
+  }
+
+  // Keep the reveal control clear of the OS home-bar at the bottom
+  .panel-toggle {
+    bottom: 16px;
+    right: 16px;
+    font-size: 18px;
+    padding: 10px;
   }
 }

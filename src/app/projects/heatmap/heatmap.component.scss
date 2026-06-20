@@ -218,6 +218,7 @@ button.primary:hover {
   width: 100%;
   height: 100%;
   display: block;
+  touch-action: manipulation;
 }
 
 .overlay {
@@ -254,7 +255,33 @@ button.primary:hover {
     grid-template-rows: auto minmax(520px, 1fr);
   }
 
+  .panel {
+    width: 100%;
+  }
+
   .canvasWrap {
-    height: 70vh;
+    width: 100%;
+    height: min(70vh, 70dvh);
+  }
+}
+
+@media (max-width: 520px) {
+  .app {
+    gap: 10px;
+    padding: 10px;
+    grid-template-rows: auto min(60vh, 60dvh);
+  }
+
+  .canvasWrap {
+    height: min(60vh, 60dvh);
+  }
+
+  .overlay {
+    top: 8px;
+    left: 8px;
+    right: 8px;
+    padding: 8px 10px;
+    font-size: clamp(10px, 3vw, 12px);
+    overflow-wrap: anywhere;
   }
 }

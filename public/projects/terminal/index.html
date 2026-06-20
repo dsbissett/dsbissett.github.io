@@ -268,10 +268,31 @@
     .bad{ color: rgba(255, 120, 120, .95); text-shadow: 0 0 12px rgba(255,120,120,.25); }
     .ok{ color: var(--phosphor); }
 
+    /* Hidden real input that drives the terminal on touch devices.
+       Must NOT be display:none or it cannot be focused to raise the
+       iOS soft keyboard. Kept 1px / opacity:0, parked off-screen. */
+    #mobileInput{
+      position:absolute;
+      left:0; top:0;
+      width:1px; height:1px;
+      padding:0; margin:0; border:0;
+      opacity:0;
+      background:transparent;
+      color:transparent;
+      caret-color:transparent;
+      font-size:16px; /* >=16px stops iOS auto-zoom on focus */
+      pointer-events:none;
+    }
+
+    /* "TAP TO TYPE" hint: shown only on touch/narrow screens */
+    .hint-tap{ display:none; }
+
     /* Mobile: single column */
     @media (max-width: 860px){
       .grid{ grid-template-columns: 1fr; }
       .panel.codes{ display:none; }
+      .hint-keys{ display:none; }
+      .hint-tap{ display:inline; }
     }
   </style>
 </head>
@@ -314,11 +335,23 @@
                 </div>
                 <div class="hint">
                   <span>TYPE: <span class="ok">HELP</span> / <span class="ok">LOGIN</span> / <span class="ok">READ</span> / <span class="ok">DIR</span> / <span class="ok">CLEAR</span></span>
-                  <span>ARROWS: SELECT • ENTER: RUN</span>
+                  <span class="hint-keys">ARROWS: SELECT • ENTER: RUN</span>
+                  <span class="hint-tap">TAP TO TYPE</span>
                 </div>
               </div>
             </div>
           </div>
+
+          <input
+            id="mobileInput"
+            type="text"
+            autocomplete="off"
+            autocorrect="off"
+            autocapitalize="characters"
+            spellcheck="false"
+            aria-hidden="true"
+            tabindex="-1"
+          />
 
         </div>
       </div>
@@ -336,6 +369,8 @@
   const hdrRight = $("hdrRight");
   const logBody = $("logBody");
   const kpiLeft = $("kpiLeft");
+  const mobileInput = $("mobileInput");
+  const screenEl = $("screen");
 
   // ---------- Utilities ----------
   const rand = (n) => Math.floor(Math.random() * n);
@@ -576,6 +611,11 @@
   }
 
   document.addEventListener("keydown", (e) => {
+    // When the mobile input is focused, the beforeinput path owns typing.
+    // Ignore physical-key arrows/Tab/Enter etc. here to avoid double-processing,
+    // but still allow desktop hardware keys when nothing is focused.
+    if (e.target === mobileInput && e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+
     // Keep focus "in terminal"
     const key = e.key;
 
@@ -621,6 +661,67 @@
       // soft cap line length
       setInputText(next.slice(0, 60));
     }
+  });
+
+  // ---------- Mobile / touch input ----------
+  // iOS Safari does not reliably emit keydown for the soft keyboard, so a real
+  // (visually hidden) <input> drives typing via beforeinput. Tapping the screen
+  // focuses it to raise the keyboard. The desktop keydown handler stays intact.
+
+  function focusMobileInput(){
+    // Keep the diff buffer empty; we own state.input ourselves.
+    mobileInput.value = "";
+    // preventScroll avoids the page jumping when the off-screen field focuses.
+    try { mobileInput.focus({ preventScroll: true }); }
+    catch { mobileInput.focus(); }
+  }
+
+  // Tap anywhere on the terminal surface to bring up the keyboard.
+  screenEl.addEventListener("pointerup", (e) => {
+    // Let real text-selection drags on the dump/log still work.
+    if (window.getSelection && String(window.getSelection())) return;
+    focusMobileInput();
+  });
+
+  // Drive the terminal from the hidden field. beforeinput gives us the exact
+  // intent (insertText / deleteContentBackward / insertLineBreak) cross-browser.
+  mobileInput.addEventListener("beforeinput", (e) => {
+    const type = e.inputType;
+
+    if (type === "insertLineBreak" || type === "insertParagraph"){
+      e.preventDefault();
+      const cmd = state.input;
+      setInputText("");
+      runCommand(cmd);
+      mobileInput.value = "";
+      return;
+    }
+
+    if (type === "deleteContentBackward"){
+      e.preventDefault();
+      setInputText(state.input.slice(0, -1));
+      mobileInput.value = "";
+      return;
+    }
+
+    if (type === "insertText" || type === "insertFromComposition"){
+      e.preventDefault();
+      const data = e.data || "";
+      if (!data) return;
+      const next = (state.input + data).toUpperCase();
+      setInputText(next.slice(0, 60));
+      mobileInput.value = "";
+      return;
+    }
+  });
+
+  // Safety net: if a browser fires only `input` (no usable beforeinput), sync
+  // from whatever landed in the field, then clear it.
+  mobileInput.addEventListener("input", () => {
+    if (!mobileInput.value) return;
+    const next = (state.input + mobileInput.value).toUpperCase();
+    setInputText(next.slice(0, 60));
+    mobileInput.value = "";
   });
 
   // ---------- Boot ----------

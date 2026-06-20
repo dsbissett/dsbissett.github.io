@@ -490,3 +490,70 @@
     }
   }
 }
+
+// ---------------------------------------------------------------------------
+// Responsive: iPhone portrait (≤600px) — board front-and-center, no overflow
+// ---------------------------------------------------------------------------
+
+@media (max-width: 600px) {
+  :host {
+    padding: 12px;
+  }
+
+  .experience-shell {
+    max-width: 100%;
+    gap: 12px;
+  }
+
+  // Panels are full-width and stacked (inherits column layout from ≤1100px)
+  .side-panel {
+    border-radius: 18px;
+  }
+
+  .panel-content {
+    padding: 14px 14px 16px;
+  }
+
+  // Collapsed panels show only their header bar, full-width
+  .side-panel--collapsed {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  // Keep the game container snug so the board fits within 390px
+  .game-container {
+    width: 100%;
+    padding: 12px;
+    border-radius: 18px;
+  }
+
+  .game-canvas {
+    max-width: 100%;
+    height: auto;
+  }
+
+  .preview {
+    max-width: 64px;
+  }
+
+  // Tighten panel typography
+  .ai-copy,
+  .ai-status,
+  .demo-status,
+  .training-data-status,
+  .stats-loading {
+    font-size: 0.8rem;
+  }
+
+  .stats-grid {
+    gap: 8px;
+  }
+
+  .stat-card {
+    padding: 10px 12px;
+  }
+
+  .stat-card dd {
+    font-size: 1.05rem;
+  }
+}

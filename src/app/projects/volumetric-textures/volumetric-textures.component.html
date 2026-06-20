@@ -8,26 +8,45 @@
   <a class="back-link" routerLink="/">‹ Back Home</a>
 
   @if (!failed()) {
-    <section class="hero-panel" aria-labelledby="volumetric-title">
-      <p class="eyebrow">Procedural Field</p>
-      <h1 id="volumetric-title">Volumetric Textures</h1>
-      <p class="description">
-        A fullscreen fragment shader raymarches a 32³ Worley noise volume in WebGL2. A gyroid colors
-        each step; ACES tonemapping flattens the bloom. Move your cursor to drift the camera.
-      </p>
-
-      <div class="status-row" aria-label="Project highlights">
-        <span class="status-pill">3D Worley</span>
-        <span class="status-pill">Raymarch</span>
-        <span class="status-pill">Gyroid Color</span>
-      </div>
-
-      <div class="action-row">
-        <button type="button" class="action action-primary" (click)="regenerate()">
-          Reseed Field
+    <section
+      class="hero-panel"
+      [class.is-collapsed]="panelCollapsed()"
+      aria-labelledby="volumetric-title"
+    >
+      <div class="panel-header">
+        <p class="eyebrow">Procedural Field</p>
+        <button
+          type="button"
+          class="panel-toggle"
+          [attr.aria-expanded]="!panelCollapsed()"
+          aria-label="Minimize panel"
+          (click)="togglePanel()"
+        >
+          {{ panelCollapsed() ? '+' : '–' }}
         </button>
-        <a class="action action-secondary" routerLink="/">Back Home</a>
       </div>
+
+      @if (!panelCollapsed()) {
+        <h1 id="volumetric-title">Volumetric Textures</h1>
+        <p class="description">
+          A fullscreen fragment shader raymarches a 32³ Worley noise volume in WebGL2. A gyroid
+          colors each step; ACES tonemapping flattens the bloom. Move your cursor to drift the
+          camera.
+        </p>
+
+        <div class="status-row" aria-label="Project highlights">
+          <span class="status-pill">3D Worley</span>
+          <span class="status-pill">Raymarch</span>
+          <span class="status-pill">Gyroid Color</span>
+        </div>
+
+        <div class="action-row">
+          <button type="button" class="action action-primary" (click)="regenerate()">
+            Reseed Field
+          </button>
+          <a class="action action-secondary" routerLink="/">Back Home</a>
+        </div>
+      }
     </section>
   }
 

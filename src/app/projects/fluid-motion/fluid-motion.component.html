@@ -13,27 +13,49 @@
   ></canvas>
 
   <section class="hero-panel" aria-labelledby="fluid-motion-title">
-    <div class="hero-card">
-      <p class="eyebrow">Spectral Flow Lab</p>
-      <h1 id="fluid-motion-title">Fluid Motion</h1>
-      <p id="fluid-motion-description" class="description">
-        Drag to inject neon dye, carve vortices, and watch the field re-light itself with autonomous
-        pulse bursts.
-      </p>
-
-      <div class="status-row" aria-label="Project highlights">
-        <span class="status-pill">Interactive Dye</span>
-        <span class="status-pill">Auto Pulse</span>
-        <span class="status-pill">Vorticity</span>
-      </div>
-
-      <div class="action-row">
-        <button type="button" class="action action-primary" (click)="pulseBurst()">
-          Pulse Color
+    @if (cardCollapsed()) {
+      <button
+        type="button"
+        class="hero-restore"
+        (click)="toggleCard()"
+        aria-label="Show project details"
+        aria-expanded="false"
+      >
+        <span class="hero-restore-title">Fluid Motion</span>
+        <span class="hero-restore-icon" aria-hidden="true">＋</span>
+      </button>
+    } @else {
+      <div class="hero-card">
+        <button
+          type="button"
+          class="hero-collapse"
+          (click)="toggleCard()"
+          aria-label="Minimize panel"
+          aria-expanded="true"
+        >
+          −
         </button>
-        <a class="action action-secondary" routerLink="/">Back Home</a>
+        <p class="eyebrow">Spectral Flow Lab</p>
+        <h1 id="fluid-motion-title">Fluid Motion</h1>
+        <p id="fluid-motion-description" class="description">
+          Drag to inject neon dye, carve vortices, and watch the field re-light itself with autonomous
+          pulse bursts.
+        </p>
+
+        <div class="status-row" aria-label="Project highlights">
+          <span class="status-pill">Interactive Dye</span>
+          <span class="status-pill">Auto Pulse</span>
+          <span class="status-pill">Vorticity</span>
+        </div>
+
+        <div class="action-row">
+          <button type="button" class="action action-primary" (click)="pulseBurst()">
+            Pulse Color
+          </button>
+          <a class="action action-secondary" routerLink="/">Back Home</a>
+        </div>
       </div>
-    </div>
+    }
   </section>
 </div>
 

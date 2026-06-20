@@ -115,6 +115,7 @@
   color: #ffffff;
   background: var(--calc-num);
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
   transition:
     background 0.12s ease,
     transform 0.08s ease;
@@ -188,7 +189,7 @@
 }
 
 .modal {
-  width: 360px;
+  width: min(360px, calc(100vw - 32px));
   max-width: 100%;
   padding: 28px 26px;
   border-radius: 24px;
@@ -201,7 +202,7 @@
 }
 
 .modal-wide {
-  width: 420px;
+  width: min(420px, calc(100vw - 32px));
 }
 
 @keyframes pop-in {
@@ -259,6 +260,7 @@
   color: #f0f0ff;
   text-align: left;
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
   overflow: hidden;
   transition:
     transform 0.25s ease,
@@ -546,6 +548,7 @@
   color: #050915;
   background: linear-gradient(135deg, var(--atomic-teal), #4fe0ff);
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
   box-shadow: 0 12px 28px rgba(0, 255, 245, 0.3);
   transition:
     transform 0.2s ease,

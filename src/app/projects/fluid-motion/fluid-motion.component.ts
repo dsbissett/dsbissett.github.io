@@ -5,6 +5,7 @@ import {
   ElementRef,
   OnDestroy,
   inject,
+  signal,
   viewChild,
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
@@ -38,6 +39,15 @@ export class FluidMotionComponent implements AfterViewInit, OnDestroy {
   private readonly facade = inject(FluidMotionFacadeService);
 
   protected readonly initializationFailed = this.facade.initializationFailed;
+
+  // Start collapsed on phones so the title card doesn't cover the simulation.
+  protected readonly cardCollapsed = signal(
+    typeof window !== 'undefined' && window.innerWidth <= 600,
+  );
+
+  protected toggleCard(): void {
+    this.cardCollapsed.update((collapsed) => !collapsed);
+  }
 
   public ngAfterViewInit(): void {
     this.facade.initialize(this.canvasElement().nativeElement);

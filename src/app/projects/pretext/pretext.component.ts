@@ -236,7 +236,8 @@ export class PretextComponent implements AfterViewInit, OnDestroy {
   // UI
   protected readonly presetNames = ['Default', 'Gentle', 'Chaos', 'Tiny', 'Leviathan', 'Ghost', 'Magnet', 'Serpent', 'Elastic', 'Blizzard'] as const;
   protected activePreset: string = 'Default';
-  protected showPanel = true;
+  // Start collapsed on narrow (phone) viewports so the panel doesn't block the canvas
+  protected showPanel = typeof window === 'undefined' || window.innerWidth > 600;
   protected dragonScale = 1;
   protected get dragonScaleLabel(): string { return this.dragonScale.toFixed(1); }
   protected disruption = 1;  // multiplier applied to repulseForce at runtime
@@ -414,33 +415,7 @@ export class PretextComponent implements AfterViewInit, OnDestroy {
     this.letters = [];
     this.charWidthCache.clear();
 
-    const W = this.W;
-    const H = this.H;
-    const pad = 36 * this.dpr;
-
-    // 3 columns × 2 rows — avoid the centre where the dragon lives
-    const cols = 3;
-    const colW = (W - pad * (cols + 1)) / cols;
-    const blockW = Math.min(colW, 320 * this.dpr);
-
-    // Column x positions
-    const col0x = pad;
-    const col1x = W / 2 - blockW / 2;
-    // Keep right column clear of the panel (200px wide + 24px margin + breathing room)
-    const panelClearance = 260 * this.dpr;
-    const col2x = W - panelClearance - blockW;
-
-    const row0y = 60 * this.dpr;
-    const row1y = H * 0.54;
-
-    const positions = [
-      { x: col0x, y: row0y },  // top-left
-      { x: col2x, y: row0y },  // top-right
-      { x: col0x, y: row1y },  // mid-left
-      { x: col2x, y: row1y },  // mid-right
-      { x: col1x, y: row0y },  // top-centre
-      { x: col1x, y: row1y },  // bottom-centre
-    ];
+    const { positions, blockW, fontDpr } = this.computeLayout();
 
     for (let bi = 0; bi < TEXT_BLOCKS.length; bi++) {
       const blk = TEXT_BLOCKS[bi];
@@ -450,8 +425,8 @@ export class PretextComponent implements AfterViewInit, OnDestroy {
       let curY = pos.y;
 
       for (const run of blk.runs) {
-        const font = roleFont(run.role, this.dpr);
-        const lh   = roleLineHeight(run.role, this.dpr);
+        const font = roleFont(run.role, fontDpr);
+        const lh   = roleLineHeight(run.role, fontDpr);
         const mass = roleMass(run.role);
 
         const prepared = prepareWithSegments(run.text, font);
@@ -463,9 +438,63 @@ export class PretextComponent implements AfterViewInit, OnDestroy {
         }
 
         // gap between roles
-        curY += (run.role === 'heading' ? 4 : 3) * this.dpr;
+        curY += (run.role === 'heading' ? 4 : 3) * fontDpr;
       }
     }
+  }
+
+  /**
+   * Lay the six text blocks out without overlap. Wide screens keep the original
+   * 3×2 frame around the central dragon; narrow (phone/tablet) screens fall back
+   * to a 2-column grid with scaled-down type so blocks never pile up.
+   */
+  private computeLayout(): { positions: Vec2[]; blockW: number; fontDpr: number } {
+    const W = this.W;
+    const H = this.H;
+    const cssW = W / this.dpr;
+
+    if (cssW >= 1024) {
+      const pad = 36 * this.dpr;
+      const cols = 3;
+      const colW = (W - pad * (cols + 1)) / cols;
+      const blockW = Math.min(colW, 320 * this.dpr);
+      const col0x = pad;
+      const col1x = W / 2 - blockW / 2;
+      // Keep right column clear of the panel (200px wide + 24px margin + breathing room)
+      const col2x = W - 260 * this.dpr - blockW;
+      const row0y = 60 * this.dpr;
+      const row1y = H * 0.54;
+      return {
+        blockW,
+        fontDpr: this.dpr,
+        positions: [
+          { x: col0x, y: row0y },  // top-left
+          { x: col2x, y: row0y },  // top-right
+          { x: col0x, y: row1y },  // mid-left
+          { x: col2x, y: row1y },  // mid-right
+          { x: col1x, y: row0y },  // top-centre
+          { x: col1x, y: row1y },  // bottom-centre
+        ],
+      };
+    }
+
+    // Narrow screens: a clean 2-column × 3-row grid, fonts scaled down to fit.
+    const cols = 2;
+    const rows = Math.ceil(TEXT_BLOCKS.length / cols);
+    const fontScale = cssW >= 640 ? 0.9 : 0.74;
+    const pad = 16 * this.dpr;
+    const colW = (W - pad * (cols + 1)) / cols;
+    const topPad = 56 * this.dpr; // clear of the HUD readout
+    const rowH = (H - topPad - 24 * this.dpr) / rows;
+
+    const positions: Vec2[] = [];
+    for (let bi = 0; bi < TEXT_BLOCKS.length; bi++) {
+      positions.push({
+        x: pad + (bi % cols) * (colW + pad),
+        y: topPad + Math.floor(bi / cols) * rowH,
+      });
+    }
+    return { positions, blockW: colW, fontDpr: this.dpr * fontScale };
   }
 
   private scatterLine(

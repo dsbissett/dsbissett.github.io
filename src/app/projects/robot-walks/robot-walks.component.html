@@ -48,7 +48,7 @@
     <p style="margin-top:0.6rem; color: var(--ink-3); font-size: 0.95em;">Two single-circle paths, six figure-eight paths. The robot starts at the marked vertex, heading North.</p>
   </div>
 
-  <div style="margin-left: 132px; max-width: 38em;">
+  <div class="fig-stack">
     <div class="diagram-card" data-fig="Figure 1 · Closed paths for n=3, m=6">
       <div class="example-grid" id="exampleGrid"></div>
       <div class="diagram-caption">
@@ -82,7 +82,7 @@
     </p>
   </div>
 
-  <div style="margin-left: 132px; max-width: 38em;">
+  <div class="fig-stack">
     <div class="diagram-card" data-fig="Figure 2 · The hidden cycle graph C_n">
       <svg viewBox="0 0 700 320" xmlns="http://www.w3.org/2000/svg">
         <defs>
@@ -209,7 +209,7 @@
     </p>
   </div>
 
-  <div style="margin-left: 132px; max-width: 38em;">
+  <div class="fig-stack">
     <div class="diagram-card" data-fig="Figure 3 · Geometric — each closing walk traced">
       <canvas id="animWalkCanvas" width="600" height="300"></canvas>
       <div class="diagram-caption">
@@ -295,7 +295,7 @@
   <div class="prose">
     <h3>What the inner kernel looks like, distilled.</h3>
   </div>
-  <pre class="prose" data-label="count_n* · the heart of the solver" style="margin-left:132px;"><span class="c">// for each net drift δ in steps of 2 from −min(c) to +min(c):</span>
+  <pre class="prose" data-label="count_n* · the heart of the solver"><span class="c">// for each net drift δ in steps of 2 from −min(c) to +min(c):</span>
 <span class="k">for</span> (i64 t = 0; t &lt; steps; t++) &#123;
     <span class="c">// (1) Tree polynomial − BEST's arborescence count on the cycle</span>
     <span class="c">//     Σ over cut-position k of ∏(x's on one side) · ∏(y's on the other)</span>
@@ -338,7 +338,7 @@
     </p>
   </div>
 
-  <div style="margin-left:132px; max-width: 56em;">
+  <div class="fig-stack-wide">
   <div class="n-table">
     <div class="row">
       <div class="n-cell">2</div>

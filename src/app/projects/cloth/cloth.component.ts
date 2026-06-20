@@ -56,6 +56,7 @@ export class ClothComponent implements AfterViewInit, OnDestroy {
   protected readonly controlDeckLeft = signal(24);
   protected readonly controlDeckTop = signal(24);
   protected readonly isDragging = signal(false);
+  protected readonly deckCollapsed = signal(window.innerWidth <= 600);
   protected readonly dragHandleLabel = computed(() =>
     this.isDragging() ? 'Dragging controls' : 'Drag controls'
   );
@@ -132,6 +133,10 @@ export class ClothComponent implements AfterViewInit, OnDestroy {
 
   protected reset(): void {
     this.facade.reset();
+  }
+
+  protected toggleDeckCollapsed(): void {
+    this.deckCollapsed.update((v) => !v);
   }
 
   private getClampedLeft(left: number, width: number): number {
