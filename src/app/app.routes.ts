@@ -124,6 +124,14 @@ export const routes: Routes = [
       ),
   },
   {
+    path: 'toilet-bowl',
+    title: 'Toilet Bowl',
+    loadComponent: () =>
+      import('./projects/toilet-bowl/toilet-bowl.component').then(
+        (m) => m.ToiletBowlComponent
+      ),
+  },
+  {
     path: '**',
     redirectTo: '',
   },

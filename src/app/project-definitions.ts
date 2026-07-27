@@ -16,7 +16,8 @@ export type ProjectPreviewStyle =
   | 'dragon'
   | 'calculator'
   | 'volumetric'
-  | 'robot-walks';
+  | 'robot-walks'
+  | 'toilet';
 
 export interface ProjectDefinition {
   path: string;
@@ -224,5 +225,19 @@ export const projectDefinitions: readonly ProjectDefinition[] = [
     previewKicker: 'Desk Utility',
     previewValue: 'Calculator',
     previewTags: ['Keys', 'Paywall', 'Result'],
+  },
+  {
+    path: 'toilet-bowl',
+    title: 'Toilet Bowl',
+    summary:
+      'A hand-built 3D porcelain toilet you can orbit and zoom — lathed bowl, rounded tank, raised seat and lid.',
+    tags: ['3D', 'WebGL'],
+    accent: 'aqua',
+    icon: 'WC',
+    category: 'Creative',
+    previewStyle: 'toilet',
+    previewKicker: 'Porcelain Study',
+    previewValue: 'Toilet Bowl',
+    previewTags: ['Orbit', 'Zoom', '3D'],
   },
 ] as const;
