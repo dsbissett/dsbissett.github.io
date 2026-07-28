@@ -36,9 +36,11 @@
           <span class="status-pill">Space to Fire</span>
           <span class="status-pill">Arrows to Aim</span>
           <span class="status-pill">Drag to Orbit</span>
+          <span class="status-pill">F to Flush</span>
         </div>
 
         <div class="action-row">
+          <button type="button" class="action action-secondary" (click)="flush()">Flush</button>
           <a class="action action-secondary" routerLink="/">Back Home</a>
         </div>
       }
@@ -109,6 +111,16 @@
         (contextmenu)="$event.preventDefault()"
       >
         Fire
+      </button>
+
+      <button
+        type="button"
+        class="flush-btn"
+        aria-label="Flush the toilet"
+        (pointerdown)="flush($event)"
+        (contextmenu)="$event.preventDefault()"
+      >
+        Flush
       </button>
     </div>
   }

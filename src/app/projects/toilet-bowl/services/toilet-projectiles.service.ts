@@ -256,6 +256,48 @@ export class ToiletProjectilesService {
     return this.bowlMud;
   }
 
+  /** One frame of flushing: the bowl's contents spiral inward and down the drain.
+   *  Floor piles, wall gel and plate turds are untouched. */
+  public drainBowl(dt: number): void {
+    this.suckBalls(dt);
+    this.lowerBowlField(Math.min(1, dt * 2.2));
+    this.bowlMud *= Math.max(0, 1 - dt * 2.2);
+    this.blobVersion++;
+  }
+
+  /** Bowl metaballs swirl toward the sump, sinking and shrinking until they vanish. */
+  private suckBalls(dt: number): void {
+    const c = Math.cos(dt * 4);
+    const s = Math.sin(dt * 4);
+    const k = Math.min(1, dt * 2.6);
+    for (let i = this.metaballs.length - 1; i >= 0; i--) {
+      const b = this.metaballs[i];
+      if (this.insideEllipse([b.x, 0, b.z], BOWL_INNER_RX, BOWL_INNER_RZ) > 1.3) {
+        continue;
+      }
+      const nb = {
+        x: (b.x * c - b.z * s) * (1 - k * 0.8),
+        y: b.y - dt * 0.55,
+        z: (b.x * s + b.z * c) * (1 - k * 0.8),
+        r: b.r * (1 - k * 0.3),
+      };
+      if (nb.y < SUMP_Y - 0.12 || nb.r < 0.045) {
+        this.metaballs.splice(i, 1);
+      } else {
+        this.metaballs[i] = nb;
+      }
+    }
+  }
+
+  /** Lowers the accumulated pile inside the funnel toward bare porcelain. */
+  private lowerBowlField(pull: number): void {
+    for (let i = 0; i < this.top.length; i++) {
+      if (this.base[i] > FLOOR_Y + 0.001 && this.base[i] < RIM_Y - 0.001) {
+        this.top[i] = this.base[i] + (this.top[i] - this.base[i]) * (1 - pull);
+      }
+    }
+  }
+
   public getSeatAngle(): number {
     return this.seatAngle;
   }

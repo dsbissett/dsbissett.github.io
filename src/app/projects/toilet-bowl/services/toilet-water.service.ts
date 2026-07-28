@@ -24,8 +24,15 @@ const MAX_RIPPLES = 16;
 const CLEAN_COLOR: readonly [number, number, number] = [0.16, 0.42, 0.5];
 const MUDDY_COLOR: readonly [number, number, number] = [0.15, 0.085, 0.04];
 const MAX_DIRT = 0.98;
+const BASE_DIRT = 0.12;
 /** How fast settled bowl mud (units³) murks the water toward fully dark. */
 const MURK_PER_MUD = 140;
+
+/** Flush whirlpool: center vortex depth, spiral-arm wave and rotation. */
+const WHIRL_DEPTH = 0.075;
+const WHIRL_WAVE = 0.016;
+const WHIRL_ARMS = 3;
+const WHIRL_SPEED = 9;
 
 /**
  * A pool of water inside the bowl, driven by a sum of analytic expanding-ring
@@ -43,7 +50,9 @@ export class ToiletWaterService {
   private positions = new Float32Array(0);
   private normals = new Float32Array(0);
   private readonly ripples: Ripple[] = [];
-  private dirt = 0.12;
+  private dirt = BASE_DIRT;
+  private swirl = 0;
+  private swirlT = 0;
 
   public init(): void {
     this.buildGrid();
@@ -72,7 +81,17 @@ export class ToiletWaterService {
 
   /** Murk from the mud volume settled in the bowl — the water darkens as turds land. */
   public setMud(volume: number): void {
-    this.dirt = Math.max(this.dirt, Math.min(MAX_DIRT, 0.12 + volume * MURK_PER_MUD));
+    this.dirt = Math.max(this.dirt, Math.min(MAX_DIRT, BASE_DIRT + volume * MURK_PER_MUD));
+  }
+
+  /** Flush whirlpool intensity (0..1) — spins the surface into a vortex. */
+  public setSwirl(intensity: number): void {
+    this.swirl = intensity;
+  }
+
+  /** The flush replaced the bowl water: back to clean and fresh. */
+  public freshen(): void {
+    this.dirt = BASE_DIRT;
   }
 
   /** Murky water is also more opaque, so the brown reads solid. */
@@ -81,6 +100,7 @@ export class ToiletWaterService {
   }
 
   public step(dt: number): void {
+    this.swirlT += dt;
     for (const ripple of this.ripples) {
       ripple.age += dt;
     }
@@ -142,17 +162,44 @@ export class ToiletWaterService {
   private writeMesh(): void {
     for (let i = 0; i < this.vertexCount; i++) {
       const sample = this.sample(this.baseX[i], this.baseZ[i]);
+      const whirl = this.swirlAt(this.baseX[i], this.baseZ[i]);
       const fade = this.edgeFade(this.radial[i]);
-      const nx = -sample.gx * fade;
-      const nz = -sample.gz * fade;
+      const nx = -(sample.gx + whirl.gx) * fade;
+      const nz = -(sample.gz + whirl.gz) * fade;
       const len = Math.hypot(nx, 1, nz);
       this.positions[i * 3] = this.baseX[i];
-      this.positions[i * 3 + 1] = WATER_LEVEL + sample.h * fade;
+      this.positions[i * 3 + 1] = WATER_LEVEL + (sample.h + whirl.h) * fade;
       this.positions[i * 3 + 2] = this.baseZ[i];
       this.normals[i * 3] = nx / len;
       this.normals[i * 3 + 1] = 1 / len;
       this.normals[i * 3 + 2] = nz / len;
     }
+  }
+
+  /** Whirlpool displacement with finite-difference gradients for the normals. */
+  private swirlAt(bx: number, bz: number): { h: number; gx: number; gz: number } {
+    if (this.swirl < 0.002) {
+      return { h: 0, gx: 0, gz: 0 };
+    }
+    const h = this.swirlHeight(bx, bz);
+    const e = 0.01;
+    return {
+      h,
+      gx: (this.swirlHeight(bx + e, bz) - h) / e,
+      gz: (this.swirlHeight(bx, bz + e) - h) / e,
+    };
+  }
+
+  /** A center vortex hole plus rotating spiral arms. */
+  private swirlHeight(bx: number, bz: number): number {
+    const rx = bx / WATER_RX;
+    const rz = bz / WATER_RZ;
+    const rad = Math.hypot(rx, rz);
+    const theta = Math.atan2(rz, rx);
+    const hole = -WHIRL_DEPTH * Math.exp(-(rad * rad) / 0.1);
+    const arms =
+      WHIRL_WAVE * Math.sin(WHIRL_ARMS * theta - WHIRL_SPEED * this.swirlT + 9 * rad) * rad * (1.1 - rad);
+    return this.swirl * (hole + arms);
   }
 
   private sample(bx: number, bz: number): { h: number; gx: number; gz: number } {

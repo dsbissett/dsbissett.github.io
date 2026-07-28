@@ -256,7 +256,8 @@ h1 {
 }
 
 .aim-btn,
-.fire-btn {
+.fire-btn,
+.flush-btn {
   padding: 0;
   cursor: pointer;
   touch-action: none;
@@ -281,6 +282,29 @@ h1 {
   &:active {
     color: var(--void);
     background: rgb(0 255 245 / 0.75);
+  }
+}
+
+.flush-btn {
+  position: fixed;
+  right: 30px;
+  bottom: 206px;
+  z-index: 2;
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--void);
+  background: radial-gradient(circle at 32% 28%, rgb(160 255 250 / 0.95), rgb(0 255 245 / 0.55) 70%);
+  border: 1px solid rgb(0 255 245 / 0.6);
+  box-shadow:
+    0 8px 22px rgb(0 0 0 / 0.4),
+    0 0 26px rgb(0 255 245 / 0.3);
+
+  &:active {
+    transform: scale(0.93);
   }
 }
 

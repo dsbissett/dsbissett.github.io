@@ -161,6 +161,11 @@ export const WATER_ALPHA = 0.86;
 export const FLY_PER_MUD = 0.0012;
 export const MAX_FLIES = 24;
 
+/** Flush: total swirl duration and the window in which the bowl contents drain away. */
+export const FLUSH_DURATION = 2.6;
+export const FLUSH_DRAIN_START = 0.35;
+export const FLUSH_DRAIN_END = 1.9;
+
 /** Arrow-key aim: sweep speed (units/s) and how far the stream can be steered (well past the toilet in every direction). */
 export const AIM_SPEED = 1.4;
 export const AIM_LIMIT_X = 1.6;

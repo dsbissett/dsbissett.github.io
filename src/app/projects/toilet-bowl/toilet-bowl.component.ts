@@ -62,6 +62,11 @@ export class ToiletBowlComponent implements AfterViewInit, OnDestroy {
     this.facade.setFiring(held);
   }
 
+  protected flush(event?: Event): void {
+    event?.preventDefault();
+    this.facade.flush();
+  }
+
   protected steer(direction: 'left' | 'right' | 'up' | 'down', pressed: boolean, event?: Event): void {
     event?.preventDefault();
     this.facade.steer(direction, pressed);

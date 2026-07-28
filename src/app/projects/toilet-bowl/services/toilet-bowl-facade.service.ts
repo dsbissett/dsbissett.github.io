@@ -8,6 +8,9 @@ import {
   BLOB_REBUILD_MS,
   CLOD_MESH_COUNT,
   FIRE_INTERVAL_MS,
+  FLUSH_DRAIN_END,
+  FLUSH_DRAIN_START,
+  FLUSH_DURATION,
   LAUNCH_POSITION,
   LAUNCH_TARGET,
 } from '../constants/toilet-physics.constant';
@@ -52,6 +55,7 @@ export class ToiletBowlFacadeService {
   private aimRight = false;
   private aimUp = false;
   private aimDown = false;
+  private flushT = -1;
 
   public initialize(canvas: HTMLCanvasElement): void {
     this.canvas = canvas;
@@ -103,6 +107,7 @@ export class ToiletBowlFacadeService {
       this.water.splash(impact.x, impact.z, impact.strength);
       this.water.addDirt(impact.strength * 0.04);
     }
+    this.stepFlush(dt);
     this.water.setMud(this.projectiles.getBowlMud());
     this.water.step(dt);
     this.flies.step(dt, this.projectiles.getBowlMud());
@@ -167,6 +172,43 @@ export class ToiletBowlFacadeService {
     this.aimZ = this.clamp(this.aimZ + az * AIM_SPEED * dt, -AIM_LIMIT_Z, AIM_LIMIT_Z);
   }
 
+  /** Starts a flush: the water whirlpools, the bowl drains, and fresh water returns. */
+  public flush(): void {
+    if (this.flushT < 0) {
+      this.flushT = 0;
+      this.markInteraction();
+    }
+  }
+
+  private stepFlush(dt: number): void {
+    if (this.flushT < 0) {
+      return;
+    }
+    const t = (this.flushT += dt);
+    this.water.setSwirl(this.swirlEnvelope(t));
+    if (t >= FLUSH_DRAIN_START && t <= FLUSH_DRAIN_END) {
+      this.projectiles.drainBowl(dt);
+    }
+    if (t >= FLUSH_DRAIN_END && t - dt < FLUSH_DRAIN_END) {
+      this.water.freshen();
+    }
+    if (t >= FLUSH_DURATION) {
+      this.flushT = -1;
+      this.water.setSwirl(0);
+    }
+  }
+
+  /** Swirl ramps up, holds through the drain, then dies away. */
+  private swirlEnvelope(t: number): number {
+    if (t < FLUSH_DRAIN_START) {
+      return t / FLUSH_DRAIN_START;
+    }
+    if (t <= FLUSH_DRAIN_END) {
+      return 1;
+    }
+    return Math.max(0, 1 - (t - FLUSH_DRAIN_END) / (FLUSH_DURATION - FLUSH_DRAIN_END));
+  }
+
   /** Touch/UI entry point: press-and-hold rapid fire (mirrors holding Space). */
   public setFiring(held: boolean): void {
     if (!held) {
@@ -207,6 +249,11 @@ export class ToiletBowlFacadeService {
     if (this.setArrow(event.code, true)) {
       event.preventDefault();
       this.markInteraction();
+      return;
+    }
+    if (event.code === 'KeyF') {
+      event.preventDefault();
+      this.flush();
       return;
     }
     if (event.code !== 'Space') {
