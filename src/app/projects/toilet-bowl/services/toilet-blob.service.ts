@@ -11,6 +11,15 @@ export interface Metaball {
   readonly r: number;
 }
 
+/** Accumulated mud at an (x, z) column: surface height and depth of mud there. */
+export interface MudColumn {
+  readonly top: number;
+  readonly thickness: number;
+}
+
+/** Samples the accumulation height field at a world (x, z). */
+export type MudSampler = (x: number, z: number) => MudColumn;
+
 const CORNER: readonly [number, number, number][] = [
   [0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0],
   [0, 0, 1], [1, 0, 1], [0, 1, 1], [1, 1, 1],
@@ -33,12 +42,44 @@ export class ToiletBlobService {
   private readonly field = new Float32Array(this.nx * this.ny * this.nz);
   private readonly cellVert = new Int32Array(this.nx * this.ny * this.nz);
 
-  public build(balls: readonly Metaball[]): MeshData {
+  public build(balls: readonly Metaball[], mud?: MudSampler): MeshData {
     if (balls.length === 0) {
       return { positions: [], normals: [], colors: [], indices: [] };
     }
     this.splat(balls);
+    if (mud) {
+      this.fillMud(mud);
+    }
     return this.extract();
+  }
+
+  /**
+   * Adds the accumulated-mud columns of the height field to the density field, so
+   * the interior of a pile is solid mass — metaballs alone leave hollow chimneys
+   * you could see into from above.
+   */
+  private fillMud(mud: MudSampler): void {
+    for (let k = 0; k < this.nz; k++) {
+      const z = BLOB_MIN[2] + k * BLOB_CELL;
+      for (let i = 0; i < this.nx; i++) {
+        const column = mud(BLOB_MIN[0] + i * BLOB_CELL, z);
+        if (column.thickness < 0.02) {
+          continue;
+        }
+        this.fillColumn(i, k, column);
+      }
+    }
+  }
+
+  private fillColumn(i: number, k: number, column: MudColumn): void {
+    const depth = Math.min(1, column.thickness / 0.05);
+    for (let j = 0; j < this.ny; j++) {
+      const y = BLOB_MIN[1] + j * BLOB_CELL;
+      if (y > column.top) {
+        return;
+      }
+      this.field[(k * this.ny + j) * this.nx + i] += Math.min(1, (column.top - y) / 0.05) * depth;
+    }
   }
 
   private splat(balls: readonly Metaball[]): void {

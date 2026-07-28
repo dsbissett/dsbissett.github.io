@@ -13,6 +13,7 @@ import { RouterLink } from '@angular/router';
 import { ToiletBlobService } from './services/toilet-blob.service';
 import { ToiletBowlFacadeService } from './services/toilet-bowl-facade.service';
 import { ToiletCameraService } from './services/toilet-camera.service';
+import { ToiletFliesService } from './services/toilet-flies.service';
 import { ToiletGeometryService } from './services/toilet-geometry.service';
 import { ToiletPointerService } from './services/toilet-pointer.service';
 import { ToiletProjectilesService } from './services/toilet-projectiles.service';
@@ -27,6 +28,7 @@ import { ToiletWaterService } from './services/toilet-water.service';
     ToiletBlobService,
     ToiletBowlFacadeService,
     ToiletCameraService,
+    ToiletFliesService,
     ToiletGeometryService,
     ToiletPointerService,
     ToiletProjectilesService,
@@ -41,7 +43,7 @@ export class ToiletBowlComponent implements AfterViewInit, OnDestroy {
   private readonly facade = inject(ToiletBowlFacadeService);
 
   protected readonly failed = this.facade.failed;
-  protected readonly panelCollapsed = signal(false);
+  protected readonly panelCollapsed = signal(typeof window !== 'undefined' && window.innerWidth <= 600);
 
   public ngAfterViewInit(): void {
     this.facade.initialize(this.canvasElement().nativeElement);
@@ -53,5 +55,15 @@ export class ToiletBowlComponent implements AfterViewInit, OnDestroy {
 
   protected togglePanel(): void {
     this.panelCollapsed.update((collapsed) => !collapsed);
+  }
+
+  protected setFiring(held: boolean, event?: Event): void {
+    event?.preventDefault();
+    this.facade.setFiring(held);
+  }
+
+  protected steer(direction: 'left' | 'right' | 'up' | 'down', pressed: boolean, event?: Event): void {
+    event?.preventDefault();
+    this.facade.steer(direction, pressed);
   }
 }

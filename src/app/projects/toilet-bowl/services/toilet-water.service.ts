@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 
-import { WATER_LEVEL, WATER_RX, WATER_RZ } from '../constants/toilet-physics.constant';
+import { WATER_ALPHA, WATER_LEVEL, WATER_RX, WATER_RZ } from '../constants/toilet-physics.constant';
 
 interface Ripple {
   readonly x: number;
@@ -22,7 +22,10 @@ const RIPPLE_LIFETIME = 1.7;
 const MAX_RIPPLES = 16;
 
 const CLEAN_COLOR: readonly [number, number, number] = [0.16, 0.42, 0.5];
-const MUDDY_COLOR: readonly [number, number, number] = [0.34, 0.22, 0.11];
+const MUDDY_COLOR: readonly [number, number, number] = [0.15, 0.085, 0.04];
+const MAX_DIRT = 0.98;
+/** How fast settled bowl mud (units³) murks the water toward fully dark. */
+const MURK_PER_MUD = 140;
 
 /**
  * A pool of water inside the bowl, driven by a sum of analytic expanding-ring
@@ -64,7 +67,17 @@ export class ToiletWaterService {
   }
 
   public addDirt(amount: number): void {
-    this.dirt = Math.min(0.9, this.dirt + amount);
+    this.dirt = Math.min(MAX_DIRT, this.dirt + amount);
+  }
+
+  /** Murk from the mud volume settled in the bowl — the water darkens as turds land. */
+  public setMud(volume: number): void {
+    this.dirt = Math.max(this.dirt, Math.min(MAX_DIRT, 0.12 + volume * MURK_PER_MUD));
+  }
+
+  /** Murky water is also more opaque, so the brown reads solid. */
+  public opacity(): number {
+    return WATER_ALPHA + (0.98 - WATER_ALPHA) * this.dirt;
   }
 
   public step(dt: number): void {

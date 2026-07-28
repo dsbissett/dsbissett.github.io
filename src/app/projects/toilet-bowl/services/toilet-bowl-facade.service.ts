@@ -10,10 +10,10 @@ import {
   FIRE_INTERVAL_MS,
   LAUNCH_POSITION,
   LAUNCH_TARGET,
-  WATER_ALPHA,
 } from '../constants/toilet-physics.constant';
 import { ToiletBlobService } from './toilet-blob.service';
 import { ToiletCameraService } from './toilet-camera.service';
+import { ToiletFliesService } from './toilet-flies.service';
 import { ToiletGeometryService } from './toilet-geometry.service';
 import { ToiletPointerService } from './toilet-pointer.service';
 import { ToiletProjectilesService } from './toilet-projectiles.service';
@@ -33,6 +33,7 @@ export class ToiletBowlFacadeService {
   private readonly water = inject(ToiletWaterService);
   private readonly projectiles = inject(ToiletProjectilesService);
   private readonly blob = inject(ToiletBlobService);
+  private readonly flies = inject(ToiletFliesService);
 
   public readonly failed = signal(false);
 
@@ -102,7 +103,9 @@ export class ToiletBowlFacadeService {
       this.water.splash(impact.x, impact.z, impact.strength);
       this.water.addDirt(impact.strength * 0.04);
     }
+    this.water.setMud(this.projectiles.getBowlMud());
     this.water.step(dt);
+    this.flies.step(dt, this.projectiles.getBowlMud());
     this.rebuildBlob(now);
 
     if (this.allowAutoRotate && !this.firingHeld && now - this.lastInteraction > IDLE_DELAY_MS) {
@@ -116,14 +119,14 @@ export class ToiletBowlFacadeService {
         this.camera,
         canvas.width,
         canvas.height,
-        this.projectiles.getInstances(),
+        [...this.projectiles.getInstances(), ...this.flies.getInstances()],
         this.projectiles.getSeatAngle(),
         this.projectiles.getLidAngle(),
         now / 1000,
         this.water.getPositions(),
         this.water.getNormals(),
         this.water.tint(),
-        WATER_ALPHA,
+        this.water.opacity(),
       );
     }
     this.frame = requestAnimationFrame(this.loop);
@@ -142,7 +145,7 @@ export class ToiletBowlFacadeService {
     if (version === this.lastBlobVersion || now - this.lastBlobBuild < BLOB_REBUILD_MS) {
       return;
     }
-    this.renderer.uploadBlob(this.blob.build(this.projectiles.getMetaballs()));
+    this.renderer.uploadBlob(this.blob.build(this.projectiles.getMetaballs(), this.projectiles.sampleMud));
     this.lastBlobVersion = version;
     this.lastBlobBuild = now;
   }
@@ -164,6 +167,39 @@ export class ToiletBowlFacadeService {
     this.aimZ = this.clamp(this.aimZ + az * AIM_SPEED * dt, -AIM_LIMIT_Z, AIM_LIMIT_Z);
   }
 
+  /** Touch/UI entry point: press-and-hold rapid fire (mirrors holding Space). */
+  public setFiring(held: boolean): void {
+    if (!held) {
+      this.firingHeld = false;
+      return;
+    }
+    if (this.firingHeld) {
+      return;
+    }
+    this.firingHeld = true;
+    this.fire();
+    this.lastFire = performance.now();
+  }
+
+  /** Touch/UI entry point: press-and-hold aim steering (mirrors the arrow keys). */
+  public steer(direction: 'left' | 'right' | 'up' | 'down', pressed: boolean): void {
+    switch (direction) {
+      case 'left':
+        this.aimLeft = pressed;
+        break;
+      case 'right':
+        this.aimRight = pressed;
+        break;
+      case 'up':
+        this.aimUp = pressed;
+        break;
+      case 'down':
+        this.aimDown = pressed;
+        break;
+    }
+    this.markInteraction();
+  }
+
   private readonly handleKeyDown = (event: KeyboardEvent): void => {
     if (this.isEditableTarget(event.target)) {
       return;
@@ -177,12 +213,9 @@ export class ToiletBowlFacadeService {
       return;
     }
     event.preventDefault();
-    if (event.repeat || this.firingHeld) {
-      return;
+    if (!event.repeat) {
+      this.setFiring(true);
     }
-    this.firingHeld = true;
-    this.fire();
-    this.lastFire = performance.now();
   };
 
   private readonly handleKeyUp = (event: KeyboardEvent): void => {
@@ -190,23 +223,23 @@ export class ToiletBowlFacadeService {
       return;
     }
     if (event.code === 'Space') {
-      this.firingHeld = false;
+      this.setFiring(false);
     }
   };
 
   private setArrow(code: string, pressed: boolean): boolean {
     switch (code) {
       case 'ArrowLeft':
-        this.aimLeft = pressed;
+        this.steer('left', pressed);
         return true;
       case 'ArrowRight':
-        this.aimRight = pressed;
+        this.steer('right', pressed);
         return true;
       case 'ArrowUp':
-        this.aimUp = pressed;
+        this.steer('up', pressed);
         return true;
       case 'ArrowDown':
-        this.aimDown = pressed;
+        this.steer('down', pressed);
         return true;
       default:
         return false;

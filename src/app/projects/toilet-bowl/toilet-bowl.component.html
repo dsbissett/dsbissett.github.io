@@ -45,6 +45,74 @@
     </section>
   }
 
+  @if (!failed()) {
+    <div class="touch-controls">
+      <div class="aim-pad" role="group" aria-label="Aim">
+        <button
+          type="button"
+          class="aim-btn aim-up"
+          aria-label="Aim farther"
+          (pointerdown)="steer('up', true, $event)"
+          (pointerup)="steer('up', false)"
+          (pointercancel)="steer('up', false)"
+          (pointerleave)="steer('up', false)"
+          (contextmenu)="$event.preventDefault()"
+        >
+          ▲
+        </button>
+        <button
+          type="button"
+          class="aim-btn aim-left"
+          aria-label="Aim left"
+          (pointerdown)="steer('left', true, $event)"
+          (pointerup)="steer('left', false)"
+          (pointercancel)="steer('left', false)"
+          (pointerleave)="steer('left', false)"
+          (contextmenu)="$event.preventDefault()"
+        >
+          ◀
+        </button>
+        <button
+          type="button"
+          class="aim-btn aim-down"
+          aria-label="Aim closer"
+          (pointerdown)="steer('down', true, $event)"
+          (pointerup)="steer('down', false)"
+          (pointercancel)="steer('down', false)"
+          (pointerleave)="steer('down', false)"
+          (contextmenu)="$event.preventDefault()"
+        >
+          ▼
+        </button>
+        <button
+          type="button"
+          class="aim-btn aim-right"
+          aria-label="Aim right"
+          (pointerdown)="steer('right', true, $event)"
+          (pointerup)="steer('right', false)"
+          (pointercancel)="steer('right', false)"
+          (pointerleave)="steer('right', false)"
+          (contextmenu)="$event.preventDefault()"
+        >
+          ▶
+        </button>
+      </div>
+
+      <button
+        type="button"
+        class="fire-btn"
+        aria-label="Hold to fire"
+        (pointerdown)="setFiring(true, $event)"
+        (pointerup)="setFiring(false)"
+        (pointercancel)="setFiring(false)"
+        (pointerleave)="setFiring(false)"
+        (contextmenu)="$event.preventDefault()"
+      >
+        Fire
+      </button>
+    </div>
+  }
+
   @if (failed()) {
     <section class="toilet-error" role="alert">
       <p class="error-eyebrow">Renderer unavailable</p>

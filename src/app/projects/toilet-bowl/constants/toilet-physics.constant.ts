@@ -87,8 +87,8 @@ export const DECAL_MAX = 0.06;
  * between neighbouring cells (× cell size) before mud avalanches — it sets the
  * cone slope of the growing pile.
  */
-export const GRID_RADIUS = 0.95;
-export const GRID_CELLS = 40;
+export const GRID_RADIUS = 1.7;
+export const GRID_CELLS = 72;
 export const REPOSE = 0.9;
 
 /** The bowl pile may crest this far above the rim before slow clumps spill to the floor. */
@@ -98,9 +98,9 @@ export const PILE_CREST = RIM_Y + 0.14;
  * Congealed gel blob: settled mud becomes metaballs; a surface-net isosurface over
  * this voxel region merges them into one glossy gelatinous mass.
  */
-export const BLOB_MIN: Vec3 = [-0.92, 0.02, -0.92];
-export const BLOB_MAX: Vec3 = [0.92, 1.0, 0.92];
-export const BLOB_CELL = 0.035;
+export const BLOB_MIN: Vec3 = [-1.7, 0.02, -1.7];
+export const BLOB_MAX: Vec3 = [1.7, 1.0, 1.7];
+export const BLOB_CELL = 0.045;
 export const BLOB_ISO = 0.42;
 export const BLOB_BALL_MIN = 0.11;
 export const BLOB_BALL_MAX = 0.16;
@@ -138,6 +138,15 @@ export const HINGE_MAX_SWING = 1.3;
 /** Ballistic flight time from launch point to the bowl (s). */
 export const FLIGHT_TIME = 0.44;
 
+/**
+ * Aiming behind this z means the shot must clear the upright seat/lid wall: the
+ * flight time stretches (a high mortar lob) until the arc passes LOFT_CLEAR_Y at
+ * the lid plane, capped at LOFT_MAX_TIME (aims at the toilet itself stay blocked).
+ */
+export const LOFT_CLEAR_Z = -0.3;
+export const LOFT_CLEAR_Y = 1.65;
+export const LOFT_MAX_TIME = 1.9;
+
 /** Minimum gap between shots while the spacebar is held (ms). */
 export const FIRE_INTERVAL_MS = 120;
 
@@ -148,7 +157,11 @@ export const LAUNCH_TARGET: Vec3 = [0, 0.5, 0.02];
 /** Translucency of the water surface. */
 export const WATER_ALPHA = 0.86;
 
-/** Arrow-key aim: sweep speed (units/s) and how far the stream can be steered. */
-export const AIM_SPEED = 1.1;
-export const AIM_LIMIT_X = 0.9;
-export const AIM_LIMIT_Z = 1.1;
+/** Flies: one appears per this much settled bowl mud (world units³), up to the cap. */
+export const FLY_PER_MUD = 0.0012;
+export const MAX_FLIES = 24;
+
+/** Arrow-key aim: sweep speed (units/s) and how far the stream can be steered (well past the toilet in every direction). */
+export const AIM_SPEED = 1.4;
+export const AIM_LIMIT_X = 1.6;
+export const AIM_LIMIT_Z = 1.5;

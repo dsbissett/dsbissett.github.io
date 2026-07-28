@@ -3,7 +3,7 @@ import { Injectable } from '@angular/core';
 import { Mat4, Vec3 } from '../classes/mat4.class';
 import { Quat, Quaternion } from '../classes/quat.class';
 import { RenderInstance } from '../interfaces/render-instance.interface';
-import { Metaball } from './toilet-blob.service';
+import { Metaball, MudColumn } from './toilet-blob.service';
 import {
   BLOB_BALL_MAX,
   BLOB_BALL_MIN,
@@ -38,6 +38,9 @@ import {
   LID_RX,
   LID_RZ,
   LID_THICK,
+  LOFT_CLEAR_Y,
+  LOFT_CLEAR_Z,
+  LOFT_MAX_TIME,
   MAX_CLUMPS,
   MAX_DECALS,
   MAX_DRIPPERS,
@@ -168,6 +171,7 @@ export class ToiletProjectilesService {
   private readonly cell = (2 * GRID_RADIUS) / GRID_CELLS;
   private readonly base = new Float32Array(GRID_CELLS * GRID_CELLS);
   private readonly top = new Float32Array(GRID_CELLS * GRID_CELLS);
+  private bowlMud = 0;
 
   private seatAngle = SEAT_REST_ANGLE;
   private seatVel = 0;
@@ -179,9 +183,9 @@ export class ToiletProjectilesService {
   }
 
   public fire(from: Vec3, target: Vec3): void {
-    const t = FLIGHT_TIME * (0.9 + Math.random() * 0.2);
     const tx = target[0] + (Math.random() - 0.5) * 0.08;
     const tz = target[2] + (Math.random() - 0.5) * 0.08;
+    const t = this.flightTime(from, target[1], tz);
     this.missiles.push({
       pos: [from[0], from[1], from[2]],
       vel: [(tx - from[0]) / t, (target[1] - from[1]) / t + 0.5 * GRAVITY * t, (tz - from[2]) / t],
@@ -194,6 +198,20 @@ export class ToiletProjectilesService {
       brittleness: Math.random(),
       age: 0,
     });
+  }
+
+  /** Quick lob for near targets; aims behind the upright seat/lid stretch into a
+   *  higher mortar arc that clears LOFT_CLEAR_Y at the lid plane (capped, so aims
+   *  at the toilet itself still smack it). */
+  private flightTime(from: Vec3, targetY: number, tz: number): number {
+    const base = FLIGHT_TIME * (0.9 + Math.random() * 0.2);
+    if (tz >= LOFT_CLEAR_Z) {
+      return base;
+    }
+    const rho = (from[2] - LOFT_CLEAR_Z) / (from[2] - tz);
+    const need =
+      (LOFT_CLEAR_Y - from[1] - rho * (targetY - from[1])) / (0.5 * GRAVITY * rho * (1 - rho));
+    return Math.min(LOFT_MAX_TIME, Math.max(base, Math.sqrt(Math.max(0, need))));
   }
 
   public step(dt: number): WaterImpact[] {
@@ -210,8 +228,32 @@ export class ToiletProjectilesService {
     return this.metaballs;
   }
 
+  /** Bilinearly sampled accumulated-mud column at a world (x, z), for the blob's solid fill. */
+  public readonly sampleMud = (x: number, z: number): MudColumn => {
+    const fx = Math.min(GRID_CELLS - 1.001, Math.max(0, (x + GRID_RADIUS) / this.cell - 0.5));
+    const fz = Math.min(GRID_CELLS - 1.001, Math.max(0, (z + GRID_RADIUS) / this.cell - 0.5));
+    const gx = Math.floor(fx);
+    const gz = Math.floor(fz);
+    const top = this.bilinear(this.top, gx, gz, fx - gx, fz - gz);
+    const base = this.bilinear(this.base, gx, gz, fx - gx, fz - gz);
+    return { top, thickness: top - base };
+  };
+
+  private bilinear(a: Float32Array, gx: number, gz: number, tx: number, tz: number): number {
+    const x1 = Math.min(GRID_CELLS - 1, gx + 1);
+    const z1 = Math.min(GRID_CELLS - 1, gz + 1);
+    const v0 = a[gz * GRID_CELLS + gx] * (1 - tx) + a[gz * GRID_CELLS + x1] * tx;
+    const v1 = a[z1 * GRID_CELLS + gx] * (1 - tx) + a[z1 * GRID_CELLS + x1] * tx;
+    return v0 * (1 - tz) + v1 * tz;
+  }
+
   public getBlobVersion(): number {
     return this.blobVersion;
+  }
+
+  /** Total mud volume that has settled inside the bowl opening (world units³). */
+  public getBowlMud(): number {
+    return this.bowlMud;
   }
 
   public getSeatAngle(): number {
@@ -252,6 +294,7 @@ export class ToiletProjectilesService {
     this.metaballs.length = 0;
     this.blobVersion++;
     this.top.set(this.base);
+    this.bowlMud = 0;
     this.seatAngle = SEAT_REST_ANGLE;
     this.lidAngle = LID_REST_ANGLE;
     this.seatVel = 0;
@@ -701,6 +744,9 @@ export class ToiletProjectilesService {
     const gx = this.gridCoord(x + GRID_RADIUS);
     const gz = this.gridCoord(z + GRID_RADIUS);
     this.top[gz * GRID_CELLS + gx] += amount;
+    if (this.cellType(x, z) === OPENING) {
+      this.bowlMud += amount * this.cell * this.cell;
+    }
     for (let sweep = 0; sweep < 8; sweep++) {
       if (!this.avalanche(gx, gz)) {
         return;

@@ -8,6 +8,7 @@
 
   display: block;
   min-height: 100vh;
+  min-height: 100dvh;
   overflow: hidden;
   color: var(--chrome);
   font-family: 'Comfortaa', system-ui, sans-serif;
@@ -20,6 +21,7 @@
 .toilet-stage {
   position: relative;
   min-height: 100vh;
+  min-height: 100dvh;
   isolation: isolate;
 }
 
@@ -214,6 +216,97 @@ h1 {
   &:focus-visible {
     outline: 2px solid var(--atomic-teal);
     outline-offset: 3px;
+  }
+}
+
+// On-screen fire + aim controls: only for touch-first devices.
+.touch-controls {
+  display: none;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .touch-controls {
+    display: contents;
+  }
+}
+
+.aim-pad {
+  position: fixed;
+  left: 14px;
+  bottom: 92px;
+  z-index: 2;
+  display: grid;
+  grid-template-areas:
+    '. up .'
+    'left down right';
+  gap: 6px;
+}
+
+.aim-up {
+  grid-area: up;
+}
+.aim-left {
+  grid-area: left;
+}
+.aim-down {
+  grid-area: down;
+}
+.aim-right {
+  grid-area: right;
+}
+
+.aim-btn,
+.fire-btn {
+  padding: 0;
+  cursor: pointer;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  font-family: 'Righteous', sans-serif;
+}
+
+.aim-btn {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  font-size: 16px;
+  color: var(--atomic-teal);
+  background: rgb(10 10 26 / 0.55);
+  border: 1px solid rgb(0 255 245 / 0.28);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+
+  &:active {
+    color: var(--void);
+    background: rgb(0 255 245 / 0.75);
+  }
+}
+
+.fire-btn {
+  position: fixed;
+  right: 18px;
+  bottom: 100px;
+  z-index: 2;
+  width: 86px;
+  height: 86px;
+  border-radius: 50%;
+  font-size: 17px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--chrome);
+  background: radial-gradient(circle at 32% 28%, rgb(255 96 134 / 0.85), rgb(255 46 99 / 0.55) 70%);
+  border: 1px solid rgb(255 46 99 / 0.6);
+  box-shadow:
+    0 10px 30px rgb(0 0 0 / 0.45),
+    0 0 34px rgb(255 46 99 / 0.35);
+
+  &:active {
+    transform: scale(0.93);
+    box-shadow:
+      0 6px 18px rgb(0 0 0 / 0.45),
+      0 0 46px rgb(255 46 99 / 0.55);
   }
 }
 
